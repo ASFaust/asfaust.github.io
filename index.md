@@ -4,6 +4,107 @@ title: "Welcome to My Site"
 ---
 # Welcome to my blog
 
-This is the homepage. Here’s a brief introduction.
+---
+layout: post
+title: "Rooting the Nothing Phone (1) and Uninstalling System Apps"
+date: 2024-09-18
+---
 
-- [rooting the Nothing Phone](_posts/2024-09-18-rooting.md)
+# Getting back control of my life
+
+I am definetly addicted to youtube shorts and instagram reels and stupid stuff like that. I managed to deinstall all apps and delete all social media accounts except for youtube. I love youtube, but i hate that the short form videos destroy my attention span. For this reason, i want to remove the native youtube app and install youtube revanced. I know i could just use an app blocker in order to block the original youtube app while still using revanced, but that didn't work out for me in the past. It's too easy to just disable the app blocker. I want to get rid of the app completely, and replace it with the revanced youtube app, which offers the functionality of disabling the shorts. 
+
+For this reason, i rooted my nothing phone, so that i can uninstall the original youtube app. My procedure differs from the ones that i found online. I don't rely on any shady pre-build images in my process. I download the original OTA update, extract the boot image, patch it with magisk, and flash it back to the phone. 
+
+## ⚠️ Warning: Data Reset and 2FA Considerations
+
+- **Rooting your phone** will likely trigger a factory reset, which means all data on your device will be erased, including apps, photos, messages, and settings. Ensure you have a full backup of your data before proceeding.
+- **2-Factor Authentication (2FA)**: After rooting, you may face issues with signing back into your Google account if SMS 2FA is not working. In my case, SMS-based 2FA did not work, and I was unable to use it to log in. 
+  - **Important**: It is strongly recommended to activate **backup codes** for your Google account’s 2FA before proceeding with the rooting process. These backup codes will allow you to sign in even if SMS 2FA is unavailable. You can generate backup codes from your Google Account settings under **Security > 2-Step Verification > Backup Codes**.
+
+Proceed with caution and make sure you have both backups of your data and alternate 2FA methods ready before rooting your device.
+
+---
+
+## Prerequisites
+1. **ADB & Fastboot**: Install ADB and Fastboot on your computer.
+   - On Ubuntu: 
+     ```bash
+     sudo apt install android-tools-adb android-tools-fastboot
+     ```
+   - On Windows, install [ADB & Fastboot](https://developer.android.com/studio/releases/platform-tools) tools.
+2. **Magisk**: Download the latest version of Magisk from [here](https://github.com/topjohnwu/Magisk/releases).
+3. **USB Debugging**: Enable USB debugging on your Nothing Phone (1).
+   - Go to **Settings > About Phone**, and tap **Build Number** 7 times to enable Developer Options.
+   - Go to **Settings > System > Developer Options** and turn on **USB Debugging**.
+
+## Step 1: Download OTA and Extract Boot Image
+1. Download the full OTA package corresponding to your current software version.
+   - Capture the OTA download URL using ADB, and filter the logcat output for the URL:
+     ```bash
+     adb logcat > ota_log.txt
+     cat ota_log.txt | grep https://android.googleapis.com
+     ```
+   - Download the OTA package using the URL found in the logcat output:
+    ```
+    wget https://android.googleapis.com/[path_to_ota_package].zip
+   ```
+   - When the OTA download begins, find the URL in `ota_log.txt` and download it using `wget` or your browser.
+
+2. Extract the `boot.img`:
+   - Unzip the downloaded OTA package:
+     ```bash
+     unzip package_name.zip
+     ```
+   - Extract `boot.img` from the `payload.bin` using the `payload-dumper-go` tool:
+     ```bash
+     git clone https://github.com/ssut/payload-dumper-go
+     cd payload-dumper-go
+     sudo apt install golang
+     go build
+     ./payload-dumper-go /path/to/payload.bin
+     ```
+   - The `boot.img` will be in the output directory.
+
+## Step 2: Patch the Boot Image with Magisk
+1. Copy the extracted `boot.img` to your phone.
+2. Open the **Magisk** app and select **Install**.
+3. Tap **Select and Patch a File**, and choose the `boot.img`.
+4. Magisk will create a patched image (e.g., `magisk_patched.img`). Copy this patched image back to your computer.
+
+## Step 3: Flash the Patched Boot Image
+1. Reboot your phone into **Fastboot Mode**:
+   - Using ADB:
+     ```bash
+     adb reboot bootloader
+     ```
+   - Or manually by powering off the device, then holding the **Volume Down** + **Power** buttons.
+
+2. Flash the patched boot image using fastboot:
+   ```bash
+   fastboot flash boot /path/to/magisk_patched.img
+   fastboot reboot
+
+
+## step 4: Uninstall System Apps
+1. Leave your phone connected to your computer and open an ADB shell:
+   ```bash
+   adb shell
+   ```
+2. List all installed packages:
+   ```bash
+    pm list packages
+    ```
+3. Identify the package name of the app you want to uninstall, e.g., `com.google.android.youtube`.
+4. Uninstall the app using:
+   ```bash
+   pm uninstall -k --user 0 com.google.android.youtube
+   ```
+
+## step 5: Install YouTube ReVanced
+
+ToDo
+
+## Conclusion
+After following these steps, you should have successfully rooted your Nothing Phone (1) and uninstalled system apps. Remember to proceed with caution and ensure you have backups of your data and alternate 2FA methods ready before rooting your device. Enjoy your new-found freedom from pre-installed bloatware and system apps!
+```
