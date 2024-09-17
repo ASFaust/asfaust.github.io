@@ -1,1 +1,34 @@
-theme: jekyll-theme-cayman
+title: "My GitHub Pages Site"
+description: "A blog about my awesome projects"
+author: "Andreas Faust"
+email: "your-email@example.com"  # optional
+theme: jekyll-theme-cayman  # or any other theme of your choice
+
+# If this is a project site, set baseurl to "/<repository-name>"
+# Example: baseurl: "/my-blog" for a project site at https://username.github.io/my-blog/
+# Leave baseurl as an empty string for a user/organization site.
+baseurl: ""  # For user/organization site. If project site, set it to "/<repository-name>"
+
+# The URL of your GitHub Pages site (leave empty for default GitHub Pages domain)
+# url: "https://asfaust.github.io"
+
+# Pagination settings (if applicable)
+paginate: 5  # Number of posts per page
+
+# Customizations for Markdown rendering (optional)
+markdown: kramdown
+kramdown:
+  input: GFM  # GitHub Flavored Markdown
+
+# Plugins for Jekyll (optional)
+plugins:
+#  - jekyll-feed   # Automatically adds an RSS feed
+  - jekyll-seo-tag  # Adds SEO metadata
+  - jekyll-sitemap  # Generates a sitemap.xml file
+
+# Custom settings (optional)
+permalink: pretty  # Pretty URLs, like /2024/09/18/my-post
+
+# Exclude these files from the build (optional)
+exclude:
+  - README.md
