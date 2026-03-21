@@ -99,15 +99,21 @@
 
   <script>
     var btn = document.getElementById('themeToggle');
-    function updateIcon() {
-      btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☾' : '☀';
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☾' : '☀';
     }
-    updateIcon();
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
     btn.addEventListener('click', function() {
       var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
-      localStorage.setItem('theme', isDark ? 'light' : 'dark');
-      updateIcon();
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = isDark ? '☀' : '☾';
     });
   </script>
 </body>
