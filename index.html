@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Andreas Faust</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
   <style>
     :root {
       --font-serif: Georgia, 'Times New Roman', serif;
@@ -13,10 +22,34 @@
       --color-border-secondary: #ccc;
       --color-bg: #fff;
     }
+    [data-theme="dark"] {
+      --color-text-primary: #e2e2e2;
+      --color-text-secondary: #888;
+      --color-border-secondary: #333;
+      --color-bg: #111;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); }
+    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
 
-    .page { max-width: 680px; margin: 0 auto; padding: 4rem 1rem; }
+    .site-header {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.2rem 1rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--color-text-secondary);
+      padding: 0.2rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--color-text-primary); }
+
+    .page { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
 
     h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.3rem; }
     .tagline { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 3rem; }
@@ -38,6 +71,10 @@
   </style>
 </head>
 <body>
+  <header class="site-header">
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </header>
+
   <div class="page">
     <h1>Andreas Faust</h1>
     <p class="tagline">Essays and writing</p>
@@ -59,5 +96,19 @@
       </li>
     </ul>
   </div>
+
+  <script>
+    var btn = document.getElementById('themeToggle');
+    function updateIcon() {
+      btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☾' : '☀';
+    }
+    updateIcon();
+    btn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      localStorage.setItem('theme', isDark ? 'light' : 'dark');
+      updateIcon();
+    });
+  </script>
 </body>
 </html>
