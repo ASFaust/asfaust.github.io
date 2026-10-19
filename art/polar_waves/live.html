@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polar Waves Live</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #050505; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    .overlay {
+      position: fixed;
+      font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #bbb;
+      background: rgba(0, 0, 0, 0.72);
+      border-radius: 4px;
+      padding: 0.6rem 0.9rem;
+      pointer-events: none;
+      transition: opacity 0.6s;
+    }
+    #help { left: 1rem; bottom: 1rem; }
+    #help b { color: #fff; font-weight: 600; }
+    #toast { left: 1rem; top: 1rem; opacity: 0; }
+    .hidden { opacity: 0; }
+    #fallback { display: none; color: #bbb; font: 14px sans-serif; position: fixed; inset: 0; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="overlay" id="help">
+    <b>F</b> fullscreen &nbsp; <b>Space</b> freeze &nbsp; <b>I</b> invert<br>
+    <b>N</b> next scene &nbsp; <b>1</b>–<b>7</b> pick scene &nbsp; <b>E</b> change shapes<br>
+    <b>&uarr;</b> <b>&darr;</b> speed &nbsp; <b>H</b> this help
+  </div>
+  <div class="overlay" id="toast"></div>
+  <div id="fallback">This page needs WebGL 2.</div>
+
+  <script>
+  (function() {
+    var TAU = Math.PI * 2;
+    var canvas = document.getElementById('canvas');
+    var gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+    if (!gl) {
+      document.getElementById('fallback').style.display = 'flex';
+      return;
+    }
+
+    // ---------- Shaders ----------
+
+    // Every shape is an instanced quad. Each instance carries two parameter sets (A and B),
+    // a morph between them, and a "bloom" value that raises the threshold until the ink is gone.
+    var TILE_VERT = '#version 300 es\n' +
+      'in vec2 corner;\n' +
+      'in vec4 iGeo;\n' +    // x, y, radius, rotation
+      'in vec4 iA1;\n' +     // A: a1, a2, d1, d2
+      'in vec4 iA2;\n' +     // A: warp, phase1, phase2, mirror code (bit 0: flip x, bit 1: flip y)
+      'in vec4 iB1;\n' +     // B: a1, a2, d1, d2
+      'in vec4 iB2;\n' +     // B: warp, phase1, phase2, bloom
+      'in vec2 iMode;\n' +   // morphing (0/1), progress
+      'uniform vec2 uView;\n' +
+      'uniform float uZoom;\n' +
+      'uniform float uQuad;\n' +   // quad size relative to the shape radius (> 1 lets ink spill past the rim)
+      'out vec2 vLocal;\n' +
+      'flat out vec4 vA1, vA2, vB1, vB2;\n' +
+      'flat out vec2 vMode;\n' +
+      'void main() {\n' +
+      '  float cs = cos(iGeo.w), sn = sin(iGeo.w);\n' +
+      '  vec2 q = corner * iGeo.z * uQuad;\n' +
+      '  vec2 w = iGeo.xy + vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y);\n' +
+      '  gl_Position = vec4(w * uZoom / uView, 0.0, 1.0);\n' +
+      '  vec2 l = corner;\n' +
+      '  if (mod(iA2.w, 2.0) >= 1.0) l.x = -l.x;\n' +
+      '  if (iA2.w >= 2.0) l.y = -l.y;\n' +
+      '  vLocal = l * uQuad;\n' +
+      '  vA1 = iA1; vA2 = iA2; vB1 = iB1; vB2 = iB2; vMode = iMode;\n' +
+      '}';
+
+    var TILE_FRAG = '#version 300 es\n' +
+      'precision highp float;\n' +
+      'in vec2 vLocal;\n' +
+      'flat in vec4 vA1, vA2, vB1, vB2;\n' +
+      'flat in vec2 vMode;\n' +
+      'uniform float uQuad;\n' +
+      'uniform float uRim;\n' +    // steepness of the threshold outside r = 0.5 (3 is the original curve)
+      'uniform float uSoftK;\n' +  // > 0: output exp(excess / k) for a soft union instead of coverage
+      'out vec4 outColor;\n' +
+      'float field(vec4 P1, vec4 P2, float r, float ang, float c) {\n' +
+      '  return sin(sin(r * P1.z + P2.y + ang * P1.x) * 3.14159 * P2.x + P2.z + ang * P1.y + c * P1.w);\n' +
+      '}\n' +
+      'void main() {\n' +
+      '  float r = length(vLocal);\n' +
+      '  if (r > uQuad) discard;\n' +
+      '  float ang = atan(vLocal.x, vLocal.y);\n' +
+      '  float c = (r - 0.5) * (r - 0.5) * (r < 0.5 ? 3.0 : uRim) + 0.5;\n' +
+      '  float v = field(vA1, vA2, r, ang, c);\n' +
+      '  if (vMode.x > 0.5) {\n' +
+      '    float w = vMode.y;\n' +
+      '    float vb = field(vB1, vB2, r, ang, c);\n' +
+      '    v = clamp(mix(v, vb, w) / sqrt((1.0 - w) * (1.0 - w) + w * w), -1.0, 1.0);\n' +
+      '  }\n' +
+      '  float e = (v + 1.0) * 0.5 - c - vB2.w;\n' +
+      '  if (uSoftK > 0.0) {\n' +
+      '    outColor = vec4(exp(clamp(e / uSoftK, -30.0, 10.0)));\n' +
+      '    return;\n' +
+      '  }\n' +
+      '  float aw = clamp(fwidth(e), 1e-5, 0.15);\n' +
+      '  outColor = vec4(vec3(smoothstep(-aw * 0.7, aw * 0.7, e)), 1.0);\n' +
+      '}';
+
+    // Soft union: the summed exp(e / k) of all shapes becomes coverage at k·log(sum) = 0 (log-sum-exp smooth max)
+    var SOFT_FRAG = '#version 300 es\n' +
+      'precision highp float;\n' +
+      'in vec2 uv;\n' +
+      'uniform sampler2D uSum;\n' +
+      'uniform float uK;\n' +
+      'out vec4 outColor;\n' +
+      'void main() {\n' +
+      '  float E = uK * log(max(texture(uSum, uv).r, 1e-12));\n' +
+      '  float aw = clamp(fwidth(E), 1e-5, 0.15);\n' +
+      '  outColor = vec4(vec3(smoothstep(-aw * 0.7, aw * 0.7, E)), 1.0);\n' +
+      '}';
+
+    var FINAL_VERT = '#version 300 es\n' +
+      'in vec2 pos;\n' +
+      'out vec2 uv;\n' +
+      'void main() { uv = pos * 0.5 + 0.5; gl_Position = vec4(pos, 0.0, 1.0); }';
+
+    var FINAL_FRAG = '#version 300 es\n' +
+      'precision highp float;\n' +
+      'in vec2 uv;\n' +
+      'uniform sampler2D uTex;\n' +
+      'uniform vec3 uInk, uPaper;\n' +
+      'uniform float uInv;\n' +
+      'out vec4 outColor;\n' +
+      'void main() {\n' +
+      '  float cov = texture(uTex, uv).r;\n' +
+      '  cov = mix(cov, 1.0 - cov, uInv);\n' +
+      '  outColor = vec4(mix(uPaper, uInk, cov), 1.0);\n' +
+      '}';
+
+    function program(vs, fs) {
+      function compile(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+        return s;
+      }
+      var p = gl.createProgram();
+      gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+      return p;
+    }
+    var tileProg = program(TILE_VERT, TILE_FRAG);
+    var finalProg = program(FINAL_VERT, FINAL_FRAG);
+    var softProg = program(FINAL_VERT, SOFT_FRAG);
+    // Soft union needs a float render target; without it those scenes fall back to a plain union
+    var canSoft = !!gl.getExtension('EXT_color_buffer_float');
+
+    // ---------- Buffers ----------
+
+    var FLOATS = 22, MAX_INST = 3000;
+    var instData = new Float32Array(MAX_INST * FLOATS);
+
+    var tileVao = gl.createVertexArray();
+    gl.bindVertexArray(tileVao);
+    var quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    var cornerLoc = gl.getAttribLocation(tileProg, 'corner');
+    gl.enableVertexAttribArray(cornerLoc);
+    gl.vertexAttribPointer(cornerLoc, 2, gl.FLOAT, false, 0, 0);
+    var instBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, instData.byteLength, gl.DYNAMIC_DRAW);
+    [['iGeo', 4, 0], ['iA1', 4, 4], ['iA2', 4, 8], ['iB1', 4, 12], ['iB2', 4, 16], ['iMode', 2, 20]].forEach(function(a) {
+      var loc = gl.getAttribLocation(tileProg, a[0]);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, a[1], gl.FLOAT, false, FLOATS * 4, a[2] * 4);
+      gl.vertexAttribDivisor(loc, 1);
+    });
+    gl.bindVertexArray(null);
+
+    var finalVao = gl.createVertexArray();
+    gl.bindVertexArray(finalVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var posLoc = gl.getAttribLocation(finalProg, 'pos');
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    var uView = gl.getUniformLocation(tileProg, 'uView');
+    var uZoom = gl.getUniformLocation(tileProg, 'uZoom');
+    var uQuad = gl.getUniformLocation(tileProg, 'uQuad');
+    var uRim = gl.getUniformLocation(tileProg, 'uRim');
+    var uSoftK = gl.getUniformLocation(tileProg, 'uSoftK');
+    var uSum = gl.getUniformLocation(softProg, 'uSum');
+    var uK = gl.getUniformLocation(softProg, 'uK');
+    var uTex = gl.getUniformLocation(finalProg, 'uTex');
+    var uInk = gl.getUniformLocation(finalProg, 'uInk');
+    var uPaper = gl.getUniformLocation(finalProg, 'uPaper');
+    var uInv = gl.getUniformLocation(finalProg, 'uInv');
+
+    // Coverage is rendered into a texture first, so overlapping shapes can be combined (union or XOR)
+    // before ink and paper colors are applied.
+    var fbo = gl.createFramebuffer();
+    var covTex = gl.createTexture();
+    var softFbo = gl.createFramebuffer();
+    var softTex = gl.createTexture();
+    var aspect = 1;
+
+    function setupTarget(tex, target, internal, type, w, h) {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, gl.RGBA, type, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    function resize() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = Math.round(window.innerWidth * dpr), h = Math.round(window.innerHeight * dpr);
+      var maxPx = 3840 * 2160;
+      if (w * h > maxPx) {
+        var s = Math.sqrt(maxPx / (w * h));
+        w = Math.round(w * s);
+        h = Math.round(h * s);
+      }
+      canvas.width = w;
+      canvas.height = h;
+      aspect = w / h;
+      setupTarget(covTex, fbo, gl.RGBA8, gl.UNSIGNED_BYTE, w, h);
+      if (canSoft) setupTarget(softTex, softFbo, gl.RGBA16F, gl.HALF_FLOAT, w, h);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ---------- Parameter sets ----------
+
+    var A_CHOICES = [0, 1, 2, 3, 3, 4, 5, 6];
+    var D_CHOICES = [0, 1, 2, 4, 8, 12];
+    // Continuous parameters wander slowly within these ranges. Symmetries only change at events.
+    var DRIFT = { d1: [0, 14], d2: [0, 14], sp: [-2.5, 2.5], t1: [-1, 1], t2: [-1, 1] };
+
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    function sign() { return Math.random() < 0.5 ? -1 : 1; }
+    function clamp(x, a, b) { return Math.min(Math.max(x, a), b); }
+    function smooth(u) { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); }
+
+    // Fraction of a shape covered by ink, now and a little later. Used to reject (nearly) empty shapes.
+    function inkFraction(P, ahead) {
+      var n = 20, hits = 0;
+      var ph1 = P.ph1 + ahead * P.t1, ph2 = P.ph2 + ahead * P.t2;
+      for (var j = 0; j < n; j++) {
+        for (var i = 0; i < n; i++) {
+          var x = (i + 0.5) / n * 2 - 1, y = (j + 0.5) / n * 2 - 1;
+          var r = Math.sqrt(x * x + y * y), ang = Math.atan2(x, y);
+          var c = (r - 0.5) * (r - 0.5) * 3 + 0.5;
+          var v = Math.sin(Math.sin(r * P.d1 + ph1 + ang * P.a1) * 3.14159 * P.sp + ph2 + ang * P.a2 + c * P.d2);
+          if ((v + 1) / 2 >= c) hits++;
+        }
+      }
+      return hits / (n * n);
+    }
+    function hasInk(P) { return Math.max(inkFraction(P, 0), inkFraction(P, 6)) > 0.04; }
+
+    function withTargets(P) {
+      P.tgt = {};
+      for (var k in DRIFT) P.tgt[k] = P[k];
+      return P;
+    }
+    function clone(P) {
+      var Q = Object.assign({}, P);
+      Q.tgt = Object.assign({}, P.tgt);
+      return Q;
+    }
+    function randomP() {
+      var P;
+      for (var tries = 0; tries < 40; tries++) {
+        P = { a1: pick(A_CHOICES), a2: pick(A_CHOICES), d1: pick(D_CHOICES), d2: pick(D_CHOICES),
+              sp: rnd(-2, 2), t1: rnd(-1, 1), t2: rnd(-1, 1), ph1: rnd(0, TAU), ph2: rnd(0, TAU) };
+        if (hasInk(P)) break;
+      }
+      return withTargets(P);
+    }
+    // Same shape, new symmetry
+    function variantP(P) {
+      var Q;
+      for (var tries = 0; tries < 40; tries++) {
+        Q = clone(P);
+        Q.a1 = pick(A_CHOICES);
+        Q.a2 = pick(A_CHOICES);
+        if ((Q.a1 !== P.a1 || Q.a2 !== P.a2) && hasInk(Q)) break;
+      }
+      return Q;
+    }
+
+    function advance(P, dt, speed) {
+      P.ph1 += dt * speed * P.t1;
+      P.ph2 += dt * speed * P.t2;
+      var ease = 1 - Math.exp(-dt / 7);
+      for (var k in DRIFT) P[k] += (P.tgt[k] - P[k]) * ease;
+      if (Math.random() < dt / 10) {
+        var key = pick(Object.keys(DRIFT)), range = DRIFT[key];
+        P.tgt[key] = clamp(P[key] + (Math.random() - 0.5) * (range[1] - range[0]) * 0.5, range[0], range[1]);
+      }
+    }
+
+    // ---------- Tiles ----------
+
+    var now = 0;   // director clock in seconds; stands still while frozen
+
+    function makeTile(g) {
+      return { x: g.x, y: g.y, r: g.r, rot: g.rot || 0, mir: g.mir || 0, info: g,
+               P: null, off: 0, morph: null, pend: null, bl: { from: 1, to: 1, start: 0, dur: 0 } };
+    }
+    function bloomValue(t) {
+      var b = t.bl;
+      return b.from + (b.to - b.from) * (b.dur > 0 ? smooth((now - b.start) / b.dur) : 1);
+    }
+    function setBloom(t, to, delay, dur) {
+      t.bl = { from: bloomValue(t), to: to, start: now + delay, dur: dur };
+    }
+
+    // ---------- Layouts (world units: the screen is 2 high and 2·aspect wide) ----------
+
+    function layoutSquare(rows, rf, cols, left) {
+      var cell = 2 / rows, out = [];
+      cols = cols || Math.ceil(2 * aspect / cell);
+      var x0 = left != null ? left + cell / 2 : -(cols - 1) / 2 * cell;
+      for (var j = 0; j < rows; j++) {
+        for (var i = 0; i < cols; i++) {
+          out.push({ x: x0 + i * cell, y: (j - (rows - 1) / 2) * cell, r: cell / 2 * rf, col: i, row: j });
+        }
+      }
+      return out;
+    }
+
+    function layoutHex(rows, rf) {
+      var cell = 2 / rows, dy = cell * Math.sqrt(3) / 2, r = cell / 2 * rf, out = [];
+      var nj = Math.ceil(1 / dy) + 1, ni = Math.ceil(aspect / cell) + 1;
+      for (var j = -nj; j <= nj; j++) {
+        for (var i = -ni; i <= ni; i++) {
+          var x = i * cell + ((j & 1) ? cell / 2 : 0), y = j * dy;
+          if (Math.abs(x) - r * 0.92 > aspect || Math.abs(y) - r * 0.92 > 1) continue;
+          out.push({ x: x, y: y, r: r, col: i, row: j });
+        }
+      }
+      return out;
+    }
+
+    // A big shape in the middle, one ring of smaller shapes pointing outward.
+    // With an even count, every other ring shape is mirrored across the radial line between neighbours.
+    function layoutPetal() {
+      var r0 = pick([0.4, 0.48, 0.56]), n = pick([6, 7, 8, 9, 10, 11, 12, 14, 16]), k = 0.92, spin = rnd(0, TAU);
+      var a = k * Math.PI / n, rs = a * r0 / (1 - a), R = r0 + rs;
+      var f = Math.min(1, 0.97 / (R + rs * 0.92));
+      r0 *= f; rs *= f; R *= f;
+      var out = [{ x: 0, y: 0, r: r0, ring: 0 }];
+      for (var j = 0; j < n; j++) {
+        var th = spin + j / n * TAU;
+        out.push({ x: R * Math.cos(th), y: R * Math.sin(th), r: rs, rot: th, ring: 1, j: j, n: n,
+                   mir: n % 2 === 0 && (j & 1) ? 2 : 0 });
+      }
+      return out;
+    }
+
+    // Apollonian gasket: every gap between three touching circles gets the circle that touches all three.
+    function layoutPacking(minR) {
+      var R = 0.98, out = [], MAX = 1500, sigma = rnd(0, TAU);
+      function circ(k, x, y, depth) { return { k: k, x: x, y: y, depth: depth }; }
+      function rot(x, y) {
+        var c = Math.cos(sigma), s = Math.sin(sigma);
+        return [c * x - s * y, s * x + c * y];
+      }
+      var O = circ(-1 / R, 0, 0, -1), A, B, C;
+      if (Math.random() < 0.5) {
+        // Three equal circles
+        var r3 = R / (1 + 2 / Math.sqrt(3)), cs = [];
+        for (var j = 0; j < 3; j++) {
+          var p = rot((R - r3) * Math.cos(Math.PI / 2 + j * TAU / 3), (R - r3) * Math.sin(Math.PI / 2 + j * TAU / 3));
+          cs.push(circ(1 / r3, p[0], p[1], 0));
+        }
+        A = cs[0]; B = cs[1]; C = cs[2];
+      } else {
+        // Two circles on a diameter, plus the circle touching both and the outer one
+        var r1 = R * (Math.random() < 0.4 ? 0.5 : rnd(0.28, 0.5)), r2 = R - r1;
+        var pa = rot(-(R - r1), 0), pb = rot(R - r2, 0);
+        A = circ(1 / r1, pa[0], pa[1], 0);
+        B = circ(1 / r2, pb[0], pb[1], 0);
+        var kc = O.k + A.k + B.k + 2 * Math.sqrt(O.k * A.k + A.k * B.k + B.k * O.k);
+        // Complex Descartes theorem: kc·zc = kA·zA + kB·zB + 2·sqrt(kA·kB·zA·zB) (the outer circle sits at 0)
+        var pr = A.k * B.k * (A.x * B.x - A.y * B.y), pi = A.k * B.k * (A.x * B.y + A.y * B.x);
+        var mod = Math.sqrt(Math.hypot(pr, pi)), arg = Math.atan2(pi, pr) / 2;
+        C = circ(kc, (A.k * A.x + B.k * B.x + 2 * mod * Math.cos(arg)) / kc,
+                     (A.k * A.y + B.k * B.y + 2 * mod * Math.sin(arg)) / kc, 0);
+      }
+      function add(c) { out.push({ x: c.x, y: c.y, r: 1 / c.k, depth: c.depth }); }
+      add(A); add(B); add(C);
+      function gen(c1, c2, c3, old, depth) {
+        if (out.length >= MAX) return;
+        var k = 2 * (c1.k + c2.k + c3.k) - old.k;
+        if (1 / k < minR) return;
+        var n = circ(k, (2 * (c1.k * c1.x + c2.k * c2.x + c3.k * c3.x) - old.k * old.x) / k,
+                        (2 * (c1.k * c1.y + c2.k * c2.y + c3.k * c3.y) - old.k * old.y) / k, depth);
+        add(n);
+        gen(c1, c2, n, c3, depth + 1);
+        gen(c1, c3, n, c2, depth + 1);
+        gen(c2, c3, n, c1, depth + 1);
+      }
+      gen(A, B, C, O, 1);
+      gen(O, A, B, C, 1);
+      gen(O, A, C, B, 1);
+      gen(O, B, C, A, 1);
+      return out;
+    }
+
+    // ---- Complex numbers and (anti-)Möbius transforms for the hyperbolic tiling ----
+    function C2(re, im) { return [re, im]; }
+    function cmul(a, b) { return [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]]; }
+    function cadd(a, b) { return [a[0] + b[0], a[1] + b[1]]; }
+    function cdiv(a, b) { var d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; }
+    function cconj(a) { return [a[0], -a[1]]; }
+    function cneg(a) { return [-a[0], -a[1]]; }
+    // Matrix [a, b, c, d] acts as z -> (a z + b) / (c z + d); flip = 1 means conjugate z first.
+    function mmul(A, B) {
+      return [cadd(cmul(A[0], B[0]), cmul(A[1], B[2])), cadd(cmul(A[0], B[1]), cmul(A[1], B[3])),
+              cadd(cmul(A[2], B[0]), cmul(A[3], B[2])), cadd(cmul(A[2], B[1]), cmul(A[3], B[3]))];
+    }
+    function mconj(A) { return A.map(cconj); }
+    function compose(T, S) { return { M: mmul(T.M, T.flip ? mconj(S.M) : S.M), flip: T.flip ^ S.flip }; }
+
+    // {p,q} tiling of the Poincaré disk. Neighbouring polygons are reflections of each other across
+    // their shared edge, so neighbouring shapes come out as mirror images.
+    function layoutHyperbolic(p, q, minR) {
+      var D = 0.98, MAX = 1500, spin = rnd(0, TAU);
+      var h = Math.acosh(Math.cos(Math.PI / q) / Math.sin(Math.PI / p));   // polygon inradius
+      var t0 = Math.tanh(h * 0.97 / 2);                                     // euclidean radius of a shape at the origin
+      var refl = [];
+      for (var k = 0; k < p; k++) {
+        var phi = spin + (2 * k + 1) * Math.PI / p;
+        var m = C2(Math.tanh(h / 2) * Math.cos(phi), Math.tanh(h / 2) * Math.sin(phi));
+        var Tm = [C2(1, 0), m, cconj(m), C2(1, 0)];
+        var Minv = [C2(1, 0), cneg(m), cneg(cconj(m)), C2(1, 0)];
+        var Rf = [C2(-Math.cos(2 * phi), -Math.sin(2 * phi)), C2(0, 0), C2(0, 0), C2(1, 0)];
+        refl.push({ M: mmul(mmul(Tm, Rf), mconj(Minv)), flip: 1 });
+      }
+      var out = [], seen = {}, queue = [{ T: { M: [C2(1, 0), C2(0, 0), C2(0, 0), C2(1, 0)], flip: 0 }, depth: 0 }];
+      seen['0,0'] = true;
+      while (queue.length && out.length < MAX) {
+        var item = queue.shift(), T = item.T, M = T.M;
+        var c = cdiv(M[1], M[3]), s2 = c[0] * c[0] + c[1] * c[1];
+        // A hyperbolic circle around c is a euclidean circle with a shifted centre and a smaller radius
+        var den = 1 - s2 * t0 * t0, cf = (1 - t0 * t0) / den, rad = t0 * (1 - s2) / den * D;
+        if (rad < minR) continue;
+        var deriv = cdiv(cadd(cmul(M[0], M[3]), cneg(cmul(M[1], M[2]))), cmul(M[3], M[3]));
+        out.push({ x: c[0] * cf * D, y: c[1] * cf * D, r: rad, rot: Math.atan2(deriv[1], deriv[0]),
+                   mir: T.flip ? 2 : 0, depth: item.depth, hdist: 2 * Math.atanh(Math.sqrt(s2)) });
+        for (k = 0; k < p; k++) {
+          var T2 = compose(T, refl[k]), c2 = cdiv(T2.M[1], T2.M[3]);
+          var key = Math.round(c2[0] * 1e4) + ',' + Math.round(c2[1] * 1e4);
+          if (seen[key] || c2[0] * c2[0] + c2[1] * c2[1] > 0.9999) continue;
+          seen[key] = true;
+          queue.push({ T: T2, depth: item.depth + 1 });
+        }
+      }
+      return out;
+    }
+
+    // ---------- Groups and time delays ----------
+
+    function sharedGroup(tiles, offFn) {
+      var P = randomP();
+      tiles.forEach(function(t, i) { t.P = P; t.off = offFn ? offFn(t, i) : 0; });
+      return { tiles: tiles };
+    }
+    function ownGroups(tiles) {
+      return tiles.map(function(t) { t.P = randomP(); return { tiles: [t] }; });
+    }
+    // Structured time delays: a wave that runs across the layout
+    function linearDelay(axis) {
+      var k = rnd(0.6, 3) * sign();
+      return function(t) { return k * (axis === 'x' ? t.x : axis === 'y' ? t.y : Math.hypot(t.x, t.y)); };
+    }
+    function originTile(tiles) {
+      return tiles.filter(function(t) { return Math.abs(t.x) < 1e-6 && Math.abs(t.y) < 1e-6; })[0] || null;
+    }
+
+    // ---------- Scenes ----------
+
+    var SCENES = {
+      solo: { label: 'Solo', weight: 3, build: function() {
+        var t = makeTile({ x: 0, y: 0, r: 0.97 });
+        return { tiles: [t], groups: [sharedGroup([t])] };
+      } },
+
+      // Three combinations only: mirrored and in sync, or plain with a horizontal or vertical wave
+      grid: { label: 'Grid', weight: 2, build: function() {
+        var tiles = layoutSquare(pick([2, 3, 4]), 0.98).map(makeTile), kind = pick(['mirror', 'x', 'y']);
+        if (kind === 'mirror') tiles.forEach(function(t) { t.mir = (t.info.col & 1) | ((t.info.row & 1) << 1); });
+        return { tiles: tiles, groups: [sharedGroup(tiles, kind === 'mirror' ? null : linearDelay(kind))] };
+      } },
+
+      // Every tile its own shape; the grid drifts slowly right to left and new shapes enter from the right
+      gridVaried: { label: 'Grid, varied', weight: 1.5, build: function() {
+        var rows = pick([2, 3]), cell = 2 / rows, cols = Math.ceil(2 * aspect / cell) + 1;
+        var tiles = layoutSquare(rows, 0.98, cols, -aspect).map(makeTile);
+        return { tiles: tiles, groups: ownGroups(tiles), pickMany: true,
+                 scroll: { speed: cell / rnd(15, 25), cell: cell, span: cols * cell, left: -aspect - cell / 2 } };
+      } },
+
+      petals: { label: 'Petals', weight: 2, build: function() {
+        var tiles = layoutPetal().map(makeTile), ring = tiles.slice(1);
+        // Mirrored rings stay in sync so neighbours mesh; otherwise a ripple runs around the centre
+        var K = ring.length % 2 === 0 ? 0 : rnd(1, 4) * sign();
+        return { tiles: tiles, groups: [sharedGroup([tiles[0]]), sharedGroup(ring, function(t) { return t.info.j / t.info.n * K; })] };
+      } },
+
+      overlap: { label: 'Overlap', weight: 1.5, build: function() {
+        var tiles = layoutHex(pick([1.6, 2, 2.4]), rnd(1.3, 1.7)).map(makeTile);
+        if (Math.random() < 0.5) tiles.forEach(function(t) { t.mir = (t.info.row & 1) ? 2 : 0; });
+        return { tiles: tiles, groups: [sharedGroup(tiles, linearDelay(pick(['x', 'y', 'dist'])))], blend: 'xor' };
+      } },
+
+      packing: { label: 'Circle packing', weight: 2, build: function() {
+        var tiles = layoutPacking(pick([0.03, 0.045, 0.06])).map(function(g) {
+          g.rot = Math.atan2(g.y, g.x);
+          return makeTile(g);
+        });
+        if (Math.random() < 0.5) tiles.forEach(function(t) { t.mir = (t.info.depth & 1) ? 2 : 0; });
+        var k = rnd(0.5, 2) * sign(), kind = pick(['depth', 'size', 'dist']);
+        var off = function(t) {
+          return kind === 'depth' ? k * t.info.depth : kind === 'size' ? k * Math.log(t.r) : k * 2 * Math.hypot(t.x, t.y);
+        };
+        return { tiles: tiles, groups: [sharedGroup(tiles, off)] };
+      } },
+
+      hyperbolic: { label: 'Hyperbolic', weight: 2, build: function() {
+        var pq = pick([[5, 4], [6, 4], [8, 4], [4, 6], [3, 8], [4, 8]]);
+        var tiles = layoutHyperbolic(pq[0], pq[1], pick([0.03, 0.045])).map(makeTile);
+        var k = rnd(0.6, 2) * sign(), kind = Math.random() < 0.7 ? 'hdist' : 'x';
+        return { tiles: tiles, groups: [sharedGroup(tiles, function(t) { return kind === 'hdist' ? k * t.info.hdist : k * 2 * t.x; })],
+                 // Neighbours exchange mass: a gentler rim lets the waves reach the shared edge, and a soft union
+                 // (smoothness k) merges shapes that come close. quad: drawn area, so spilled ink is not cut off.
+                 soft: { k: rnd(0.04, 0.09), rim: rnd(1.0, 1.6), quad: 1.5 } };
+      } }
+    };
+    var SCENE_KEYS = Object.keys(SCENES);
+
+    // Stagger orders for blooming in and drying up: each returns a sort value per tile
+    var ORDERS = {
+      dist: function(t) { return Math.hypot(t.x, t.y); },
+      out: function(t) { return -Math.hypot(t.x, t.y); },
+      ang: function(t) { return Math.atan2(t.y, t.x); },
+      rows: function(t) { return -t.y * 100 + t.x; },
+      size: function(t) { return -t.r; }
+    };
+    var ORDER_NAMES = Object.keys(ORDERS);
+    function orderKeys(tiles, name) {
+      var n = tiles.length, vals = tiles.map(function(t, i) { return [ORDERS[name](t, i), i]; });
+      vals.sort(function(a, b) { return a[0] - b[0]; });
+      var keys = new Array(n);
+      vals.forEach(function(v, rank) { keys[v[1]] = n > 1 ? rank / (n - 1) : 0; });
+      return keys;
+    }
+
+    // ---------- Zoom through the empty centre ----------
+
+    // The centre of every shape is empty (the threshold is above 1 for r < 0.09), so zooming far enough
+    // into a shape at the origin fills the screen with paper.
+    function zoomDepth(sc) {
+      return Math.hypot(aspect, 1) / (0.085 * sc.zoomTile.r) * 1.1;
+    }
+    function zoomValue(sc) {
+      var z = sc.zoomAnim;
+      if (!z) return 1;
+      var u = smooth((now - z.start) / z.dur);
+      return Math.exp(Math.log(z.from) + (Math.log(z.to) - Math.log(z.from)) * u);
+    }
+
+    // ---------- Director ----------
+
+    var current = null, leaving = null, leaveEnd = 0, startNextAt = 0, forcedNext = null, lastName = null;
+    var sceneEnd = 0, nextEvent = 0, lastExitZoomed = false;
+    var speed = 1.2, frozen = false;
+
+    function chooseNext() {
+      if (forcedNext) { var f = forcedNext; forcedNext = null; return f; }
+      var options = SCENE_KEYS.filter(function(k) { return k !== lastName; });
+      var total = options.reduce(function(s, k) { return s + SCENES[k].weight; }, 0), x = Math.random() * total;
+      for (var i = 0; i < options.length; i++) {
+        x -= SCENES[options[i]].weight;
+        if (x <= 0) return options[i];
+      }
+      return options[0];
+    }
+
+    function startScene(name) {
+      var sc = SCENES[name].build();
+      sc.name = name;
+      sc.zoomTile = originTile(sc.tiles);
+      var intro;
+      if (sc.zoomTile && Math.random() < (lastExitZoomed ? 0.7 : 0.4)) {
+        // Zoom out of the centre hole, everything already in full bloom
+        intro = rnd(4, 6);
+        sc.tiles.forEach(function(t) { t.bl = { from: 0, to: 0, start: now, dur: 0 }; });
+        sc.zoomAnim = { from: zoomDepth(sc), to: 1, start: now, dur: intro };
+      } else {
+        var keys = orderKeys(sc.tiles, pick(ORDER_NAMES));
+        intro = sc.tiles.length > 1 ? rnd(2, 6) : 0;
+        sc.tiles.forEach(function(t, i) { setBloom(t, 0, keys[i] * intro, 2.2); });
+      }
+      sceneEnd = now + intro + rnd(30, 75);
+      nextEvent = now + intro + rnd(6, 12);
+      current = sc;
+      lastName = name;
+    }
+
+    function exitScene(fast) {
+      if (!current) return;
+      var sc = current;
+      sc.tiles.forEach(function(t) { t.pend = null; });
+      if (sc.zoomTile && Math.random() < 0.5) {
+        // Zoom into the centre hole until only paper is left
+        var dur = fast ? 2.5 : rnd(4, 6);
+        sc.zoomAnim = { from: zoomValue(sc), to: zoomDepth(sc), start: now, dur: dur };
+        leaveEnd = now + dur;
+        startNextAt = now + dur;
+        lastExitZoomed = true;
+      } else {
+        var keys = orderKeys(sc.tiles, pick(ORDER_NAMES));
+        var stag = sc.tiles.length > 1 ? (fast ? 1 : rnd(1.5, 4)) : 0, bdur = fast ? 0.8 : 1.6;
+        sc.tiles.forEach(function(t, i) { setBloom(t, 1, keys[i] * stag, bdur); });
+        leaveEnd = now + stag + bdur;
+        startNextAt = now + stag * 0.7 + (fast ? 0.3 : 1.0);
+        lastExitZoomed = false;
+      }
+      leaving = sc;
+      current = null;
+    }
+
+    function busy(g) {
+      return g.tiles.some(function(t) { return t.morph || t.pend; });
+    }
+
+    // Change the shape of one group (or a few), staggered across its tiles
+    function transitionGroup(g) {
+      var P = g.tiles[0].P;
+      var Q = Math.random() < 0.5 ? variantP(P) : randomP();
+      var bloom = Math.random() < 0.5;
+      var keys = orderKeys(g.tiles, pick(ORDER_NAMES));
+      var stag = g.tiles.length > 1 ? rnd(1, 4) : 0, dur = rnd(3, 5);
+      g.tiles.forEach(function(t, i) {
+        var d = keys[i] * stag;
+        if (bloom) {
+          // Dry up, swap, bloom again
+          setBloom(t, 1, d, 1.2);
+          t.pend = { at: now + d + 1.2, Q: Q };
+        } else {
+          t.morph = { Q: Q, start: now + d, dur: dur };
+        }
+      });
+    }
+
+    function fireEvent() {
+      if (!current) return;
+      var free = current.groups.filter(function(g) { return !busy(g); });
+      if (!free.length) { nextEvent = now + 2; return; }
+      for (var i = free.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1)), tmp = free[i];
+        free[i] = free[j]; free[j] = tmp;
+      }
+      var count = current.pickMany ? 1 + Math.floor(Math.random() * Math.min(3, free.length)) : 1;
+      for (i = 0; i < count; i++) transitionGroup(free[i]);
+      nextEvent = now + rnd(7, 16);
+    }
+
+    function updateTiles(sc, active, dt) {
+      var sl = sc.scroll, shift = sl ? sl.speed * dt * speed / 1.2 : 0;
+      sc.tiles.forEach(function(t) {
+        if (sl) {
+          t.x -= shift;
+          if (t.x < sl.left) {
+            // Left the screen: wrap around to the right with a fresh shape
+            t.x += sl.span;
+            t.P = randomP();
+            t.morph = null;
+            t.pend = null;
+          }
+        }
+        if (t.morph && now >= t.morph.start + t.morph.dur) { t.P = t.morph.Q; t.morph = null; }
+        if (t.pend && now >= t.pend.at) { t.P = t.pend.Q; t.pend = null; setBloom(t, 0, 0, 1.6); }
+        active.add(t.P);
+        if (t.morph) active.add(t.morph.Q);
+        if (t.pend) active.add(t.pend.Q);
+      });
+    }
+
+    function step(dt) {
+      if (current && now >= sceneEnd) exitScene(false);
+      if (!current && now >= startNextAt) startScene(chooseNext());
+      if (leaving && now >= leaveEnd) leaving = null;
+      if (current && now >= nextEvent) fireEvent();
+      var active = new Set();
+      if (leaving) updateTiles(leaving, active, dt);
+      if (current) updateTiles(current, active, dt);
+      active.forEach(function(P) { advance(P, dt, speed); });
+    }
+
+    // ---------- Rendering ----------
+
+    function fillTile(o, t) {
+      var P = t.P, Q = t.morph ? t.morph.Q : P, off = t.off;
+      instData[o] = t.x; instData[o + 1] = t.y; instData[o + 2] = t.r; instData[o + 3] = t.rot;
+      instData[o + 4] = P.a1; instData[o + 5] = P.a2; instData[o + 6] = P.d1; instData[o + 7] = P.d2;
+      instData[o + 8] = P.sp; instData[o + 9] = P.ph1 + off * P.t1; instData[o + 10] = P.ph2 + off * P.t2; instData[o + 11] = t.mir;
+      instData[o + 12] = Q.a1; instData[o + 13] = Q.a2; instData[o + 14] = Q.d1; instData[o + 15] = Q.d2;
+      instData[o + 16] = Q.sp; instData[o + 17] = Q.ph1 + off * Q.t1; instData[o + 18] = Q.ph2 + off * Q.t2;
+      instData[o + 19] = 0.65 * smooth(bloomValue(t));
+      instData[o + 20] = t.morph ? 1 : 0;
+      instData[o + 21] = t.morph ? smooth((now - t.morph.start) / t.morph.dur) : 0;
+    }
+
+    // Draws a scene's coverage into the coverage buffer (which must be bound).
+    function drawScene(sc) {
+      var n = Math.min(sc.tiles.length, MAX_INST);
+      for (var i = 0; i < n; i++) fillTile(i * FLOATS, sc.tiles[i]);
+      var soft = canSoft && sc.soft;
+
+      gl.useProgram(tileProg);
+      gl.uniform2f(uView, aspect, 1);
+      gl.bindVertexArray(tileVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, instData, 0, n * FLOATS);
+      gl.uniform1f(uZoom, zoomValue(sc));
+      gl.uniform1f(uQuad, sc.soft ? sc.soft.quad : 1);
+      gl.uniform1f(uRim, sc.soft ? sc.soft.rim : 3);
+      gl.uniform1f(uSoftK, soft ? sc.soft.k : 0);
+      gl.enable(gl.BLEND);
+
+      if (soft) {
+        // Sum exp(e / k) of all shapes, then turn the sum into coverage
+        gl.bindFramebuffer(gl.FRAMEBUFFER, softFbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.useProgram(softProg);
+        gl.bindVertexArray(finalVao);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, softTex);
+        gl.uniform1i(uSum, 0);
+        gl.uniform1f(uK, sc.soft.k);
+        gl.blendEquation(gl.MAX);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      } else {
+        if (sc.blend === 'xor') {
+          gl.blendEquation(gl.FUNC_ADD);
+          gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_COLOR);
+        } else {
+          gl.blendEquation(gl.MAX);
+        }
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+      }
+      gl.disable(gl.BLEND);
+    }
+
+    var INK = [0.95, 0.95, 0.95], PAPER = [0.02, 0.02, 0.02];
+    var inv = /[?&]light\b/.test(location.search) ? 1 : 0, invTarget = inv;
+
+    function render() {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      if (leaving) drawScene(leaving);
+      if (current) drawScene(current);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.useProgram(finalProg);
+      gl.bindVertexArray(finalVao);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, covTex);
+      gl.uniform1i(uTex, 0);
+      gl.uniform3fv(uInk, INK);
+      gl.uniform3fv(uPaper, PAPER);
+      gl.uniform1f(uInv, smooth(inv));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    // ---------- Operator controls ----------
+
+    var help = document.getElementById('help'), toastEl = document.getElementById('toast'), toastTimer = 0;
+    function toast(text) {
+      toastEl.textContent = text;
+      toastEl.style.opacity = 1;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() { toastEl.style.opacity = 0; }, 2500);
+    }
+    var helpTimer = setTimeout(function() { help.classList.add('hidden'); }, 8000);
+
+    function toggleFullscreen() {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function() {});
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      var k = e.key;
+      if (k === 'f' || k === 'F') toggleFullscreen();
+      else if (k === ' ') { e.preventDefault(); frozen = !frozen; toast(frozen ? 'Frozen' : 'Running'); }
+      else if (k === 'i' || k === 'I') invTarget = 1 - invTarget;
+      else if (k === 'e' || k === 'E') { fireEvent(); toast('Changing shapes'); }
+      else if (k === 'n' || k === 'N' || k === 'ArrowRight') { exitScene(true); toast('Next scene'); }
+      else if (k >= '1' && k <= String(SCENE_KEYS.length)) {
+        forcedNext = SCENE_KEYS[+k - 1];
+        if (current) exitScene(true);
+        toast(SCENES[forcedNext].label);
+      }
+      else if (k === 'ArrowUp' || k === 'ArrowDown') {
+        e.preventDefault();
+        speed = clamp(speed * (k === 'ArrowUp' ? 1.25 : 0.8), 0.1, 8);
+        toast('Speed ' + speed.toFixed(2));
+      }
+      else if (k === 'h' || k === 'H' || k === '?') { clearTimeout(helpTimer); help.classList.toggle('hidden'); }
+    });
+    canvas.addEventListener('dblclick', toggleFullscreen);
+
+    // Hide the cursor when the mouse rests
+    var cursorTimer = 0;
+    function wakeCursor() {
+      document.body.style.cursor = '';
+      clearTimeout(cursorTimer);
+      cursorTimer = setTimeout(function() { document.body.style.cursor = 'none'; }, 2000);
+    }
+    document.addEventListener('mousemove', wakeCursor);
+    wakeCursor();
+
+    // Keep the screen awake
+    function requestWakeLock() {
+      if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+        navigator.wakeLock.request('screen').catch(function() {});
+      }
+    }
+    requestWakeLock();
+    document.addEventListener('visibilitychange', requestWakeLock);
+
+    // ---------- Main loop ----------
+
+    var params = new URLSearchParams(location.search);
+    forcedNext = SCENES[params.get('scene')] ? params.get('scene') : 'solo';
+    startScene(chooseNext());
+
+    var last = performance.now();
+    function frame(ts) {
+      var dt = Math.min((ts - last) / 1000, 0.1);
+      last = ts;
+      inv += clamp(invTarget - inv, -dt * 2.5, dt * 2.5);
+      if (!frozen) {
+        now += dt;
+        step(dt);
+      }
+      render();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>

@@ -64,7 +64,8 @@
     .fallback { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; text-align: center; font-size: 14px; color: var(--color-text-secondary); padding: 2rem; }
 
     .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0.5rem; }
-    .controls button {
+    .controls button, .controls .button {
+      text-decoration: none;
       font: inherit;
       font-size: 13px;
       background: none;
@@ -74,7 +75,7 @@
       padding: 0.4rem 0.8rem;
       cursor: pointer;
     }
-    .controls button:hover { border-color: var(--color-text-secondary); }
+    .controls button:hover, .controls .button:hover { border-color: var(--color-text-secondary); }
     .controls button:disabled { color: var(--color-text-secondary); cursor: progress; }
     .hint { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
 
@@ -127,9 +128,9 @@
       <button id="playBtn">Pause</button>
       <button id="saveBtn">Save PNG</button>
       <button id="gifBtn">Save GIF</button>
+      <a class="button" href="live.html">Live mode &rarr;</a>
     </div>
     <p class="hint">Click the image or press N for a new shape, Space to pause. The URL always points to the shape on screen, so you can share it.</p>
-
     <div class="panels">
       <details>
         <summary>Parameters</summary>
