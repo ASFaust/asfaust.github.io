@@ -414,6 +414,23 @@ export class TracePlane {
     ctx.fillStyle = accent;
     ctx.fill();
 
+    // how to use the map, while it is not active on a touch screen, or a passing note
+    const hint = this.note || (!this.active && matchMedia('(pointer: coarse)').matches ? 'tap to use the map' : null);
+    if (hint) {
+      ctx.font = `${10 * dpr}px ui-monospace, Menlo, monospace`;
+      const tw = ctx.measureText(hint).width, pad = 4 * dpr;
+      ctx.fillStyle = css.getPropertyValue('--color-bg').trim() || '#fff';
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(w / 2 - tw / 2 - pad, h - 22 * dpr, tw + 2 * pad, 16 * dpr);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = ink;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(hint, w / 2, h - 14 * dpr);
+      ctx.textAlign = 'left';
+      ctx.font = `${9 * dpr}px ui-monospace, Menlo, monospace`;
+    }
+
     // still refining
     if (this.computing) {
       ctx.fillStyle = muted;
@@ -451,24 +468,63 @@ export class TracePlane {
     return Math.hypot(x - mx, y - my) < MARKER_PX * this.dpr;
   }
 
+  // A map only takes over scrolling gestures while it is active, so the page still scrolls past it.
+  // Inactive: touch scrolls the page and the wheel scrolls the sidebar; taps still count, and a
+  // mouse can drag at once (a mouse drag never scrolls). Ctrl/⌘ + wheel (and trackpad pinch) zoom.
+  // Active (after a click or tap on the map): drag, wheel and pinch move the map. A click or tap
+  // anywhere else, Esc, or scrolling the page makes it inactive again.
+  setActive(on) {
+    if (this.active === on) return;
+    this.active = on;
+    this.canvas.classList.toggle('active', on);
+    this.draw();
+  }
+
+  // a short note on the map, e.g. how to zoom
+  flash(text) {
+    this.note = text;
+    clearTimeout(this.noteTimer);
+    this.noteTimer = setTimeout(() => { this.note = null; this.draw(); }, 1600);
+    this.draw();
+  }
+
   bind() {
     const cv = this.canvas;
     const pointers = new Map();
     let start = null, moved = 0, lastTap = null, pinchD = 0, settle = 0;
     const later = () => { clearTimeout(settle); settle = setTimeout(() => this.refresh(), 150); };
+    this.active = false;
+
+    const tap = e => {
+      if (!this.active) this.setActive(true);
+      // two taps close together set the value
+      const now = performance.now(), at = this.local(e);
+      if (lastTap && now - lastTap.t < 400 && Math.hypot(at[0] - lastTap.x, at[1] - lastTap.y) < 12 * this.dpr) {
+        lastTap = null;
+        const p = this.pick(e);
+        this.onPick(p.t, p.cusp, true);
+      } else lastTap = { t: now, x: at[0], y: at[1] };
+    };
 
     cv.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
+      if (e.pointerType === 'mouse') this.setActive(true);
+      start = this.local(e);
+      moved = 0;
+      if (!this.active) {
+        // touch on an inactive map: the browser may scroll; only a tap is ours
+        this.mode = 'tap';
+        pointers.set(e.pointerId, start);
+        return;
+      }
       cv.setPointerCapture(e.pointerId);
-      pointers.set(e.pointerId, this.local(e));
+      pointers.set(e.pointerId, start);
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         this.mode = 'pinch';
         pinchD = Math.hypot(a[0] - b[0], a[1] - b[1]);
         return;
       }
-      start = this.local(e);
-      moved = 0;
       clearTimeout(settle);
       if (this.nearMarker(e)) {
         this.mode = 'point';
@@ -481,16 +537,15 @@ export class TracePlane {
     });
 
     cv.addEventListener('pointermove', e => {
-      const p = this.pick(e);
-      this.onHover(p);
       if (!pointers.has(e.pointerId)) {
-        cv.classList.toggle('on-marker', this.nearMarker(e));
+        if (e.pointerType === 'mouse') cv.classList.toggle('on-marker', this.nearMarker(e));
         return;
       }
       const prev = pointers.get(e.pointerId), cur = this.local(e);
       pointers.set(e.pointerId, cur);
       moved = Math.max(moved, Math.hypot(cur[0] - start[0], cur[1] - start[1]) / this.dpr);
       if (this.mode === 'point') {
+        const p = this.pick(e);
         this.onPick(p.t, p.cusp, false);
       } else if (this.mode === 'pan') {
         const s = this.scale;
@@ -505,36 +560,42 @@ export class TracePlane {
       }
     });
 
-    const end = e => {
+    const end = (e, cancelled) => {
       if (!pointers.delete(e.pointerId)) return;
       cv.classList.remove('panning');
       const mode = this.mode;
       if (pointers.size) return; // still pinching with one finger
       this.mode = null;
+      if (mode === 'tap') { if (!cancelled && moved <= 8) tap(e); return; }
       if (mode === 'point') {
         const p = this.pick(e);
         this.onPick(p.t, p.cusp, true);
         return;
       }
       if (mode === 'pinch' || moved > 4) { later(); return; }
-      // a tap: two of them close together set the value
-      const now = performance.now(), at = this.local(e);
-      if (lastTap && now - lastTap.t < 400 && Math.hypot(at[0] - lastTap.x, at[1] - lastTap.y) < 12 * this.dpr) {
-        lastTap = null;
-        const p = this.pick(e);
-        this.onPick(p.t, p.cusp, true);
-      } else lastTap = { t: now, x: at[0], y: at[1] };
+      if (!cancelled) tap(e);
     };
-    cv.addEventListener('pointerup', end);
-    cv.addEventListener('pointercancel', end);
-    cv.addEventListener('pointerleave', () => { if (!pointers.size) this.onHover(null); });
+    cv.addEventListener('pointerup', e => end(e, false));
+    cv.addEventListener('pointercancel', e => end(e, true));
 
     cv.addEventListener('wheel', e => {
+      if (!this.active && !e.ctrlKey && !e.metaKey) {
+        // let the page scroll; say how to zoom
+        this.flash(matchMedia('(pointer: coarse)').matches ? 'tap the map to zoom' : 'click the map or hold Ctrl to zoom');
+        return;
+      }
       e.preventDefault();
       const [x, y] = this.local(e);
       this.zoomBy(Math.exp(Math.max(-1, Math.min(1, e.deltaY * (e.deltaMode ? 0.05 : 0.002)))), x, y);
       this.draw();   // cached cells show at once
       later();       // new cells once the wheel rests
     }, { passive: false });
+
+    // anything else makes the map inactive again
+    const owner = cv.closest('.plane') || cv;
+    document.addEventListener('pointerdown', e => { if (!owner.contains(e.target)) this.setActive(false); }, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') this.setActive(false); });
+    const scroller = cv.closest('.sidebar');
+    if (scroller) scroller.addEventListener('scroll', () => { if (!pointers.size) this.setActive(false); }, { passive: true });
   }
 }
