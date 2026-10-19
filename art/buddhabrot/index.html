@@ -194,8 +194,16 @@
         <summary>Sampling</summary>
         <div class="params">
           <div class="param">
+            <label for="p-method"><span>Method</span></label>
+            <small>Metropolis follows the orbits that cross the view, for zoomed renders</small>
+            <select id="p-method">
+              <option value="boundary">boundary</option>
+              <option value="metropolis">metropolis</option>
+            </select>
+          </div>
+          <div class="param">
             <label for="p-samples"><span>Samples</span><span id="v-samples"></span></label>
-            <small>boundary points whose orbits are traced</small>
+            <small id="samplesNote">boundary points whose orbits are traced</small>
             <input type="range" id="p-samples" min="0" max="1000" step="1">
           </div>
           <div class="param">
@@ -203,12 +211,12 @@
             <small>longer orbits reach deeper into the set</small>
             <input type="number" id="p-iter" min="2" max="1000000" step="1">
           </div>
-          <div class="param">
+          <div class="param boundary-only">
             <label for="p-nearby"><span>Nearby points / boundary</span><span id="v-nearby"></span></label>
             <small>extra Gaussian samples around each boundary point</small>
             <input type="range" id="p-nearby" min="0" max="1000" step="1">
           </div>
-          <div class="param">
+          <div class="param boundary-only">
             <label for="p-ndist"><span>Nearby distance</span><span id="v-ndist"></span></label>
             <small>1 / standard deviation of the nearby samples</small>
             <input type="range" id="p-ndist" min="0" max="1000" step="1">
@@ -227,6 +235,29 @@
             <label for="p-refine"><span>Refine steps</span></label>
             <small>random bisection steps that pull samples onto the boundary</small>
             <input type="number" id="p-refine" min="0" max="10000" step="1">
+          </div>
+          <div class="param metro-only">
+            <label for="p-chain"><span>Mutations per chain</span></label>
+            <small>orbits traced by each Metropolis chain</small>
+            <input type="number" id="p-chain" min="1" max="1000000" step="1">
+          </div>
+          <div class="param metro-only">
+            <label for="p-burn"><span>Burn-in</span></label>
+            <small>mutations per chain before anything is drawn</small>
+            <input type="number" id="p-burn" min="0" max="1000000" step="1">
+          </div>
+          <div class="param metro-only">
+            <label for="p-large"><span>Large step probability</span></label>
+            <small>chance of jumping to a uniformly random point</small>
+            <input type="number" id="p-large" min="0" max="1" step="0.01">
+          </div>
+          <div class="param metro-only">
+            <label for="p-mmin"><span>Mutation radius min / max</span></label>
+            <small>log-uniform, as a fraction of the view size</small>
+            <div class="row">
+              <input type="number" id="p-mmin" step="any" aria-label="Mutation radius min">
+              <input type="number" id="p-mmax" step="any" aria-label="Mutation radius max">
+            </div>
           </div>
           <div class="param">
             <label for="p-seed"><span>Seed</span></label>
@@ -351,6 +382,7 @@ zₙ₊₁ = zₙ² + c</pre>
       <p>stays bounded. The usual picture colours each <code>c</code> by how quickly its orbit escapes. The Buddhabrot looks at the orbits themselves: every <code>c</code> that escapes leaves a trail of points <code>z₁, z₂, …</code>, and each of those adds one to a counter at its pixel. Millions of trails pile up into the seated figure that gives the image its name. The real axis runs from top to bottom here, so the figure sits upright.</p>
       <p>Most random points escape after a few steps and only add noise near the centre. The interesting orbits are long, and they start right at the edge of the set. So the explorer does not sample the plane at random. It first renders a coarse Mandelbrot grid, collects every pair of neighbouring cells where one is inside and one outside, and then moves each pair closer to the boundary: a random point near the middle of the pair replaces whichever end is on the same side. After a few dozen of these steps the outside point sits a hair's breadth from the set, where orbits take the longest to escape.</p>
       <p>Optional nearby points scatter a Gaussian cloud around each boundary sample; some of them land inside the set and add their full, never escaping orbits, which fills in the body. Everything after the histogram, from scaling and clipping to blur and colour, runs instantly in your browser without recomputing the orbits. The heavy part is spread over Web Workers, one per CPU core.</p>
+      <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the plain Buddhabrot of the window, only with far less noise. The walks start from boundary points of the whole set whose orbits reach the view.</p>
     </div>
   </div>
 
@@ -418,6 +450,23 @@ zₙ₊₁ = zₙ² + c</pre>
       }
     }
 
+    // Histogram indices of an escaping orbit's points inside the view, written to buf; returns their count. Orbits that never escape count 0.
+    function hits(cr, ci, buf) {
+      var q = (cr - 0.25) * (cr - 0.25) + ci * ci;
+      if (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) return 0;
+      if ((cr + 1) * (cr + 1) + ci * ci <= 0.0625) return 0;
+      var zr = 0, zi = 0, n = 0;
+      for (var k = 0; k < histIter; k++) {
+        var t = zr * zr - zi * zi + cr;
+        zi = 2 * zr * zi + ci;
+        zr = t;
+        if (zr * zr + zi * zi > 4) return n;
+        var fx = (zr - bx0) * sx, fy = (zi - by0) * sy;
+        if (fx >= 0 && fx < res && fy >= 0 && fy < res) buf[n++] = (fx | 0) * res + (fy | 0);
+      }
+      return 0;
+    }
+
     function progress(n) { postMessage({ cmd: 'progress', n: n }); }
 
     onmessage = function(e) {
@@ -456,7 +505,7 @@ zₙ₊₁ = zₙ² + c</pre>
           sx = res / (d.b.xmax - d.b.xmin);
           sy = res / (d.b.ymax - d.b.ymin);
           histIter = d.maxIter;
-          hist = new Uint32Array(res * res);
+          hist = d.weighted ? new Float64Array(res * res) : new Uint32Array(res * res);
           postMessage({ cmd: 'done' });
         } else if (d.cmd === 'trace') {
           var pts = d.pts, count = pts.length / 2, nearby = d.nearby, sigma = d.sigma, r = rng(d.seed), done = 0;
@@ -472,6 +521,45 @@ zₙ₊₁ = zₙ² + c</pre>
             if (done >= 4096) { progress(done); done = 0; }
           }
           progress(done);
+          postMessage({ cmd: 'done' });
+        } else if (d.cmd === 'seed') {
+          // keep the starting points whose orbits reach the view
+          var sp = d.pts, sn = sp.length / 2, sbuf = new Int32Array(histIter), keep = [], sdone = 0;
+          for (var i = 0; i < sn; i++) {
+            if (hits(sp[2 * i], sp[2 * i + 1], sbuf) > 0) keep.push(sp[2 * i], sp[2 * i + 1]);
+            if (++sdone === 4096) { progress(sdone); sdone = 0; }
+          }
+          progress(sdone);
+          var kept = new Float64Array(keep);
+          postMessage({ cmd: 'done', pts: kept }, [kept.buffer]);
+        } else if (d.cmd === 'metro') {
+          // Metropolis chains over c with target f(c) = orbit points in the view. Both proposals are symmetric:
+          // a large step is uniform on [-2, 2]², which holds every c with f > 0, and a small step has a log-uniform
+          // radius and uniform angle. So a proposal is accepted with probability min(1, f' / f).
+          var mp = d.pts, chains = mp.length / 2, mr = rng(d.seed), mdone = 0;
+          var cur = new Int32Array(histIter), prop = new Int32Array(histIter), swap;
+          var size = Math.max(res / sx, res / sy), logMin = Math.log(d.rmin * size), logSpan = Math.log(d.rmax / d.rmin);
+          for (var c = 0; c < chains; c++) {
+            var cr = mp[2 * c], ci = mp[2 * c + 1], fc = hits(cr, ci, cur);
+            for (var s = -d.burn; s < d.steps; s++) {
+              var nr, ni;
+              if (mr() < d.large) { nr = 4 * mr() - 2; ni = 4 * mr() - 2; }
+              else {
+                var rad = Math.exp(logMin + logSpan * mr()), th = 2 * Math.PI * mr();
+                nr = cr + rad * Math.cos(th); ni = ci + rad * Math.sin(th);
+              }
+              var fp = hits(nr, ni, prop), a = fp >= fc ? 1 : fp / fc, k, wt;
+              // Expected-value splatting: proposal and current state both count, by their acceptance odds.
+              // Each orbit spreads total weight 1 over its f points, so the image is that of uniformly sampled c.
+              if (s >= 0) {
+                if (fp > 0) { wt = a / fp; for (k = 0; k < fp; k++) hist[prop[k]] += wt; }
+                if (a < 1) { wt = (1 - a) / fc; for (k = 0; k < fc; k++) hist[cur[k]] += wt; }
+              }
+              if (mr() < a) { swap = cur; cur = prop; prop = swap; cr = nr; ci = ni; fc = fp; }
+              if (++mdone === 4096) { progress(mdone); mdone = 0; }
+            }
+          }
+          progress(mdone);
           postMessage({ cmd: 'done' });
         } else if (d.cmd === 'histGet') {
           var h = hist;
@@ -505,6 +593,7 @@ zₙ₊₁ = zₙ² + c</pre>
       };
 
       var DEFAULTS = {
+        method: 'boundary',
         samples: 50000,
         nearby_points: 0,
         nearby_distance: 1000,
@@ -512,6 +601,11 @@ zₙ₊₁ = zₙ² + c</pre>
         resolution: 800,
         mandelbrot_resolution: 400,
         refine_steps: 80,
+        chain_length: 100,
+        burn_in: 20,
+        large_step: 0.05,
+        mutation_min: 1e-7,
+        mutation_max: 1,
         seed: 0,
         xmin: -2.0,
         xmax: 1.0,
@@ -533,7 +627,7 @@ zₙ₊₁ = zₙ² + c</pre>
         'Default': {}
       };
 
-      var GEN_KEYS = ['samples', 'nearby_points', 'nearby_distance', 'max_iter', 'resolution', 'mandelbrot_resolution', 'refine_steps', 'seed', 'xmin', 'xmax', 'ymin', 'ymax'];
+      var GEN_KEYS = ['method', 'samples', 'nearby_points', 'nearby_distance', 'max_iter', 'resolution', 'mandelbrot_resolution', 'refine_steps', 'chain_length', 'burn_in', 'large_step', 'mutation_min', 'mutation_max', 'seed', 'xmin', 'xmax', 'ymin', 'ymax'];
       var KEYS = Object.keys(DEFAULTS);
 
       var st = Object.assign({}, DEFAULTS);
@@ -566,8 +660,8 @@ zₙ₊₁ = zₙ² + c</pre>
         }
       };
       var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_distance: 'ndist', soft_strength: 'blurs' };
-      var NUMBER_IDS = { max_iter: 'iter', resolution: 'res', mandelbrot_resolution: 'mres', refine_steps: 'refine', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
-      var INT_KEYS = { max_iter: 1, resolution: 1, mandelbrot_resolution: 1, refine_steps: 1, seed: 1 };
+      var NUMBER_IDS = { max_iter: 'iter', resolution: 'res', mandelbrot_resolution: 'mres', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
+      var INT_KEYS = { max_iter: 1, resolution: 1, mandelbrot_resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1 };
 
       var cmapSel = $('p-cmap');
       Object.keys(CMAPS).forEach(function(name) {
@@ -583,6 +677,11 @@ zₙ₊₁ = zₙ² + c</pre>
           $('v-' + id).textContent = SLIDERS[k].fmt(st[k]);
         });
         Object.keys(NUMBER_IDS).forEach(function(k) { $('p-' + NUMBER_IDS[k]).value = st[k]; });
+        $('p-method').value = st.method;
+        var metro = st.method === 'metropolis';
+        document.querySelectorAll('.metro-only').forEach(function(el) { el.classList.toggle('hidden', !metro); });
+        document.querySelectorAll('.boundary-only').forEach(function(el) { el.classList.toggle('hidden', metro); });
+        $('samplesNote').textContent = metro ? 'Metropolis chains, each started at a boundary point whose orbit crosses the view' : 'boundary points whose orbits are traced';
         $('p-scale').value = st.scale_mode;
         $('p-root').value = st.root;
         $('v-root').textContent = (+st.root).toFixed(2);
@@ -615,11 +714,17 @@ zₙ₊₁ = zₙ² + c</pre>
         out.resolution = clamp(out.resolution, 128, 4096);
         out.mandelbrot_resolution = clamp(out.mandelbrot_resolution, 6, 4096);
         out.refine_steps = clamp(out.refine_steps, 0, 10000);
+        out.chain_length = clamp(out.chain_length, 1, 1e6);
+        out.burn_in = clamp(out.burn_in, 0, 1e6);
+        out.large_step = clamp(out.large_step, 0, 1);
+        out.mutation_min = clamp(out.mutation_min, 1e-15, 1);
+        out.mutation_max = clamp(out.mutation_max, out.mutation_min, 10);
         out.seed = clamp(out.seed, 0, 2147483647);
         out.root = clamp(out.root, 1.1, 20);
         out.min_clip = clamp(out.min_clip, 0, 1);
         out.max_clip = clamp(out.max_clip, 0, 1);
         out.soft_strength = clamp(out.soft_strength, 10, 200000);
+        if (['boundary', 'metropolis'].indexOf(out.method) < 0) out.method = DEFAULTS.method;
         if (['linear', 'nth root', 'log'].indexOf(out.scale_mode) < 0) out.scale_mode = DEFAULTS.scale_mode;
         if (!CMAPS[out.cmap]) out.cmap = 'gray';
         return out;
@@ -775,13 +880,16 @@ zₙ₊₁ = zₙ² + c</pre>
         setRunning(true);
         setStatus(result ? '' : 'Generating…');
         var t0 = performance.now();
+        // Orbits that cross a zoomed view mostly start outside it, so Metropolis looks for starting points on the whole set.
+        var metro = p.method === 'metropolis';
+        var sb = metro ? { xmin: DEFAULTS.xmin, xmax: DEFAULTS.xmax, ymin: DEFAULTS.ymin, ymax: DEFAULTS.ymax } : b;
         try {
           // 1. coarse Mandelbrot grid: which cells are inside the set
           var n = Math.min(p.mandelbrot_resolution, p.resolution);
           setStage('Mandelbrot', 0, 10, n * n);
           var img = new Uint8Array(n * n);
           await runJobs(chunks(n, nCores, 4, 1).map(function(c) {
-            return { start: c[0], msg: { cmd: 'mandel', x0: c[0], x1: c[1], n: n, b: b, maxIter: p.max_iter } };
+            return { start: c[0], msg: { cmd: 'mandel', x0: c[0], x1: c[1], n: n, b: sb, maxIter: p.max_iter } };
           }), nCores, function(job, d) {
             img.set(d.img, job.start * n);
             addProgress(d.img.length);
@@ -791,7 +899,7 @@ zₙ₊₁ = zₙ² + c</pre>
           // 2. inside/outside neighbour pairs, resampled to the sample count
           setStage('Sampling', 10, 15);
           await tick();
-          var bp = boundaryPairs(img, n, b);
+          var bp = boundaryPairs(img, n, sb);
           if (bp.m === 0) throw new Error('No boundary of the Mandelbrot set in view. Widen the bounds or raise the Mandelbrot resolution.');
           var pts = resample(bp.pairs, bp.m, p.samples, rng(mixSeed(p.seed, 0, 0)));
           if (id !== genId) return;
@@ -812,19 +920,49 @@ zₙ₊₁ = zₙ² + c</pre>
           pts = null;
           if (id !== genId) return;
 
-          // 4. trace orbits into one histogram per worker; cap workers so the histograms fit in memory
-          var res = p.resolution, bytes = res * res * 4;
+          // 4. trace orbits into one histogram per worker; cap workers so the histograms fit in memory.
+          // Metropolis splats fractional weights, which need doubles.
+          var res = p.resolution, bytes = res * res * (metro ? 8 : 4);
           var nTrace = Math.max(1, Math.min(nCores, Math.floor(768e6 / bytes)));
-          var total = p.samples * (1 + p.nearby_points);
-          setStage('Buddhabrot', 45, 95, total);
           var inits = [];
-          for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter } });
+          for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, weighted: metro } });
           await runJobs(inits, nTrace);
-          var perWorker = p.nearby_points > 0 ? 64 : 16;
-          await runJobs(chunks(p.samples, nTrace, perWorker, 1).map(function(c, i) {
-            var slice = outside.slice(2 * c[0], 2 * c[1]);
-            return { msg: { cmd: 'trace', pts: slice, nearby: p.nearby_points, sigma: 1 / p.nearby_distance, seed: mixSeed(p.seed, 2, i) }, transfer: [slice.buffer] };
-          }), nTrace, null, addProgress);
+          var total;
+          if (!metro) {
+            total = p.samples * (1 + p.nearby_points);
+            setStage('Buddhabrot', 45, 95, total);
+            var perWorker = p.nearby_points > 0 ? 64 : 16;
+            await runJobs(chunks(p.samples, nTrace, perWorker, 1).map(function(c, i) {
+              var slice = outside.slice(2 * c[0], 2 * c[1]);
+              return { msg: { cmd: 'trace', pts: slice, nearby: p.nearby_points, sigma: 1 / p.nearby_distance, seed: mixSeed(p.seed, 2, i) }, transfer: [slice.buffer] };
+            }), nTrace, null, addProgress);
+          } else {
+            // 4a. keep the boundary points whose orbits cross the view
+            setStage('Seeding', 45, 50, p.samples);
+            var found = [];
+            await runJobs(chunks(p.samples, nTrace, 4, 64).map(function(c, i) {
+              var slice = outside.slice(2 * c[0], 2 * c[1]);
+              return { idx: i, msg: { cmd: 'seed', pts: slice }, transfer: [slice.buffer] };
+            }), nTrace, function(job, d) { found[job.idx] = d.pts; }, addProgress);
+            if (id !== genId) return;
+            var nFound = found.reduce(function(s, f) { return s + f.length / 2; }, 0);
+            if (nFound === 0) throw new Error('No starting orbit reaches this view. Raise the samples or max iterations.');
+            var seeds = new Float64Array(2 * nFound), o = 0;
+            found.forEach(function(f) { seeds.set(f, o); o += f.length; });
+
+            // 4b. one chain per sample, started at a random seed; burn-in carries the chains away from the boundary bias
+            var starts = new Float64Array(2 * p.samples), rand = rng(mixSeed(p.seed, 3, 0));
+            for (var j = 0; j < p.samples; j++) {
+              var q = Math.floor(rand() * nFound);
+              starts[2 * j] = seeds[2 * q]; starts[2 * j + 1] = seeds[2 * q + 1];
+            }
+            total = p.samples * (p.burn_in + p.chain_length);
+            setStage('Metropolis', 50, 95, total);
+            await runJobs(chunks(p.samples, nTrace, 16, 1).map(function(c, i) {
+              var slice = starts.slice(2 * c[0], 2 * c[1]);
+              return { msg: { cmd: 'metro', pts: slice, steps: p.chain_length, burn: p.burn_in, large: p.large_step, rmin: p.mutation_min, rmax: p.mutation_max, seed: mixSeed(p.seed, 4, i) }, transfer: [slice.buffer] };
+            }), nTrace, null, addProgress);
+          }
           if (id !== genId) return;
 
           // 5. combine
@@ -1145,6 +1283,7 @@ zₙ₊₁ = zₙ² + c</pre>
           writeHash();
         });
       });
+      $('p-method').addEventListener('change', function() { st.method = this.value; syncInputs(); writeHash(); });
       $('p-scale').addEventListener('change', function() { st.scale_mode = this.value; syncInputs(); scheduleRender(); writeHash(); });
       cmapSel.addEventListener('change', function() { st.cmap = this.value; scheduleRender(); writeHash(); });
       $('p-root').addEventListener('input', function() { st.root = +this.value; $('v-root').textContent = st.root.toFixed(2); scheduleRender(); writeHash(); });
