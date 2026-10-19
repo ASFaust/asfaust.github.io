@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kleinian Limit Sets</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <div class="page">
+   <div class="app">
+    <div class="intro">
+      <h1>Kleinian Limit Sets</h1>
+      <p class="lede">Two Möbius maps of the plane, applied in every possible order, pile up on a fractal: the limit set of the group they generate. Choose the traces of the two maps and watch it form.</p>
+    </div>
+
+    <div class="workspace">
+    <div class="viewer">
+      <div class="stage-wrap">
+        <div class="stage" id="stage">
+          <canvas id="canvas" aria-label="Limit set. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
+          <div class="status" id="status">Starting…</div>
+          <div class="progress"><div id="progress"></div></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="fitBtn" title="Frame the whole limit set">Fit</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="saveBtn" title="Save the image as shown">Save PNG</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+
+    <div class="sidebar">
+    <p class="hint">Drag to pan, scroll or pinch to zoom, double-click to fit. Each view is computed anew, so zooming reveals finer detail. The URL holds the current settings, so you can share it.</p>
+
+    <div class="panels">
+      <details open>
+        <summary>Examples</summary>
+        <div class="params">
+          <div class="param wide">
+            <select id="p-preset" aria-label="Example"></select>
+            <p class="note" id="presetNote"></p>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Group</summary>
+        <div class="params">
+          <div class="param">
+            <label for="p-ta"><span>Trace of a</span></label>
+            <small>a complex number, e.g. 1.91+0.05i</small>
+            <input type="text" class="mono" id="p-ta" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-tb"><span>Trace of b</span></label>
+            <small>2 makes b parabolic</small>
+            <input type="text" class="mono" id="p-tb" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-comm"><span>Commutator abAB</span></label>
+            <small>parabolic gives a free group; order four needs an automaton</small>
+            <select id="p-comm">
+              <option value="free">parabolic (trace −2)</option>
+              <option value="nonfree">order four (trace 0)</option>
+            </select>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-alt"> <span>Other root for tr ab</span></label>
+            <small>tr ab solves a quadratic; this picks the second solution</small>
+          </div>
+          <div class="param wide">
+            <div class="info" id="info"></div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Parameter plane</summary>
+        <div class="params">
+          <div class="param wide">
+            <small>The Maskit slice: with tr b = 2, the values of tr a that give a discrete group fill the shaded region. Its edge is lined with cusp groups, one for every fraction p/q, and the most intricate sets live right at the edge. Double-click the map to reset it, hold Alt to place ta off a cusp.</small>
+            <canvas id="slice" aria-label="Parameter plane. Drag to choose the trace of a."></canvas>
+            <div class="readout" id="sliceReadout">Drag to pick ta · scroll to zoom</div>
+          </div>
+          <div class="param wide">
+            <label for="p-cusp"><span>Cusp group p/q</span></label>
+            <small>solves for the trace on the edge of the slice, e.g. 3/5 or 144/233</small>
+            <div class="row">
+              <input type="text" class="mono" id="p-cusp" placeholder="p/q" spellcheck="false" autocomplete="off">
+              <button id="cuspBtn" type="button">Go</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Search</summary>
+        <div class="params">
+          <div class="param">
+            <label for="p-eps"><span>Detail ε</span><span id="v-eps"></span></label>
+            <small>a branch stops once its points are this many pixels apart</small>
+            <input type="range" id="p-eps" min="-1.3" max="1" step="0.01">
+          </div>
+          <div class="param">
+            <label for="p-lev"><span>Maximum word length</span></label>
+            <small>stops branches that never converge</small>
+            <input type="number" id="p-lev" min="10" max="16000" step="1">
+          </div>
+          <div class="param check wide">
+            <label><input type="checkbox" id="p-neck"> <span>Follow narrow necks</span></label>
+            <small>also test the tip of each whorl, so fronds on thin stalks are not cut off and the gasket closes</small>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Colour</summary>
+        <div class="params">
+          <div class="param">
+            <label for="p-color"><span>Colour by</span></label>
+            <small>the word that reaches each piece</small>
+            <select id="p-color">
+              <option value="letter">n-th letter</option>
+              <option value="last">last letter</option>
+              <option value="level">word length</option>
+              <option value="mono">single colour</option>
+            </select>
+          </div>
+          <div class="param" id="depthParam">
+            <label for="p-depth"><span>Letter n</span><span id="v-depth"></span></label>
+            <small>higher n splits the set into finer pieces</small>
+            <input type="range" id="p-depth" min="1" max="8" step="1">
+          </div>
+          <div class="param">
+            <label for="p-lw"><span>Line width</span><span id="v-lw"></span></label>
+            <small>in screen pixels</small>
+            <input type="range" id="p-lw" min="0.25" max="4" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-bg"><span>Background</span></label>
+            <small>auto follows the page theme</small>
+            <select id="p-bg">
+              <option value="auto">auto</option>
+              <option value="light">light</option>
+              <option value="dark">dark</option>
+            </select>
+          </div>
+          <div class="param wide">
+            <div class="legend" id="legend"></div>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Export</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-size"><span>Image size</span></label>
+            <small>renders the current view again at this size and saves it as PNG</small>
+            <div class="row">
+              <select id="p-size">
+                <option value="1024">1024 × 1024</option>
+                <option value="2048" selected>2048 × 2048</option>
+                <option value="4096">4096 × 4096</option>
+              </select>
+              <button id="exportBtn" type="button">Render &amp; save</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+    </div>
+    </div>
+   </div>
+
+    <div class="notes after">
+      <h2>How it works</h2>
+      <p>A Möbius map sends a point <code>z</code> of the plane to <code>(pz + q) / (rz + s)</code>. It moves circles to circles, and it is determined up to scale by the matrix <code>[p q; r s]</code>. Take two such maps <code>a</code> and <code>b</code>, together with their inverses <code>A</code> and <code>B</code>, and compose them in every order: <code>a</code>, <code>ab</code>, <code>abA</code>, <code>abAb</code>, … The points that these words pile up on, however long they get, form the limit set of the group.</p>
+      <p>Most choices of maps give a chaotic mess. The beautiful ones are those where the commutator <code>abAB</code> is parabolic, a map with a single fixed point. Then the plane folds into two punctured tori glued at their cusps, the group is quasi-Fuchsian, and the limit set is a single closed fractal curve. Up to a change of coordinates such a pair of maps is fixed by two complex numbers, the traces <code>p + s</code> of <code>a</code> and <code>b</code>. “Grandma’s recipe” from <em>Indra’s Pearls</em> turns the two traces into matrices.</p>
+
+      <h3>Drawing the curve</h3>
+      <p>Every point of the limit set has an address, an infinite word in <code>a</code>, <code>b</code>, <code>A</code>, <code>B</code> in which no letter is followed by its inverse. The search walks the tree of these words depth first, always turning the same way, so it travels once around the curve in order. Below a word <code>W</code> it compares two points: <code>W</code> applied to the fixed points of the two commutators that can follow its last letter. These are the two ends of the piece of curve under <code>W</code>. Once they are less than ε apart it draws a line between them and backs up. Otherwise it goes one letter deeper.</p>
+      <p>Where the curve passes through a parabolic point the words converge slowly, so the depth is capped. With “follow narrow necks” the search also checks the fixed point of the last letter itself, the tip of the whorl, so it does not cut across a frond attached by a thin neck. For a zoomed view, a first coarse pass measures which part of the plane each pair of opening letters fills. Any branch that maps its part completely outside the view is skipped, so a deep zoom costs about as much as the full picture. The work is split over four Web Workers, one for each first letter.</p>
+
+      <h3>The Maskit slice</h3>
+      <p>Fix the trace of <code>b</code> at 2, so <code>b</code> is parabolic, and vary the trace of <code>a</code>. The values that give a discrete group form the Maskit slice, the shaded region in the parameter plane. Its edge is fractal, and on it sit the cusp groups: for each fraction <code>p/q</code> a particular word <code>W(p/q)</code> becomes parabolic too, and the limit set pinches into chains of tangent circles with period <code>q</code>. The trace of <code>W(p/q)</code> is a polynomial of degree <code>q</code> in the trace of <code>a</code>. The explorer builds it along the Farey tree with the identity <code>tr uv + tr uV = tr u · tr v</code>, then finds the right root with Newton’s method. Fractions converging to an irrational number lead to degenerate groups, whose limit sets fill whole regions.</p>
+      <p>With the commutator trace set to 0 instead of −2, <code>(abAB)²</code> is the identity, the group is no longer free, and many words name the same map. A small finite-state automaton from <em>Indra’s Pearls</em> then tells the search which words to skip.</p>
+
+      <h3>Sources</h3>
+      <p>The algorithm, the recipes and most examples follow David Mumford, Caroline Series and David Wright, <em>Indra’s Pearls: The Vision of Felix Klein</em> (Cambridge University Press, 2002), and Chris King’s open-source toolbox <a href="http://dhushara.com/DarkHeart/quasif/quasi.htm">Kleinian and Quasi-Fuchsian Limit Sets</a>, whose C and Matlab programs this page translates to JavaScript.</p>
+    </div>
+  </div>
+
+  <script>
+    var themeBtn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      themeBtn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    themeBtn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      themeBtn.textContent = isDark ? '☀' : '☾';
+      document.dispatchEvent(new Event('themechange'));
+    });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

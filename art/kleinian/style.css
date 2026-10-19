@@ -1,0 +1,153 @@
+:root {
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #555;
+  --color-border-secondary: #ccc;
+  --color-bg: #fff;
+  --stage-bg: #fff;
+  --slice-shade: rgba(36, 86, 200, 0.08);
+  --accent: #d0353f;
+  --bad: #d0353f;
+}
+[data-theme="dark"] {
+  --color-text-primary: #e2e2e2;
+  --color-text-secondary: #888;
+  --color-border-secondary: #333;
+  --color-bg: #111;
+  --stage-bg: #0f0f10;
+  --slice-shade: rgba(122, 162, 255, 0.12);
+  --accent: #ff6b6b;
+  --bad: #ff6b6b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+.site-nav {
+  max-width: 1400px;
+  height: 3.6rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.site-nav a { color: var(--color-text-secondary); text-decoration: none; }
+.site-nav a:hover { color: var(--color-text-primary); }
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  padding: 0.2rem;
+  line-height: 1;
+}
+.theme-toggle:hover { color: var(--color-text-primary); }
+
+.page { max-width: 1400px; margin: 0 auto; padding: 1rem 1rem 4rem; }
+h1 { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin-bottom: 0.4rem; line-height: 1.3; }
+.lede { font-family: var(--font-serif); font-size: 16px; line-height: 1.7; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
+
+/* App layout, as in the Buddhabrot explorer: image and controls share one screen.
+   Narrow: intro, then a full-height workspace (image above, scrolling panels below).
+   Wide: image on the left, intro and scrolling panels on the right. */
+.intro { max-width: 680px; }
+.workspace { display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding-top: 0.5rem; }
+.viewer { flex: none; display: flex; flex-direction: column; }
+.stage-wrap { container-type: size; display: flex; justify-content: center; align-items: flex-start; height: min(calc(100vw - 2rem), 52vh); height: min(calc(100vw - 2rem), 52dvh); }
+.sidebar { flex: 1; min-height: 0; overflow-y: auto; container-type: inline-size; padding-top: 0.25rem; }
+.after { max-width: 680px; margin: 3rem auto 0; }
+@media (min-width: 600px) and (orientation: landscape) {
+  .page { padding-top: 0; padding-bottom: 4rem; }
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 32vw, 420px);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "viewer intro" "viewer side";
+    column-gap: 2rem;
+    height: calc(100vh - 3.6rem);
+    height: calc(100dvh - 3.6rem);
+  }
+  .workspace { display: contents; }
+  .intro { grid-area: intro; }
+  .intro .lede { font-size: 15px; line-height: 1.6; margin-bottom: 1rem; }
+  .viewer { grid-area: viewer; min-height: 0; container: viewer / size; justify-content: center; }
+  .stage-wrap { container-type: normal; height: auto; }
+  .viewer .stage { width: min(100cqw, 100cqh - 4rem); }
+  @container viewer (max-width: 520px) { .viewer .stage { width: min(100cqw, 100cqh - 6.8rem); } }
+  .sidebar { grid-area: side; padding: 0 0.5rem 1rem 0; border-top: 1px solid var(--color-border-secondary); }
+}
+
+.stage { position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1 / 1; overflow: hidden; background: var(--stage-bg); border: 1px solid var(--color-border-secondary); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.stage.dragging { cursor: grabbing; }
+#canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+.status { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; font-size: 14px; color: var(--color-text-secondary); padding: 2rem; pointer-events: none; }
+.progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(128, 128, 128, 0.15); pointer-events: none; transition: opacity 0.4s; }
+.progress div { height: 100%; width: 0; background: var(--color-text-secondary); transition: width 0.15s; }
+
+.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5rem; margin: 0.75rem 0; }
+.stats { font-size: 12px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; text-align: center; min-height: 1.2em; }
+button {
+  font: inherit;
+  font-size: 13px;
+  background: none;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+button:hover { border-color: var(--color-text-secondary); }
+button:disabled { color: var(--color-text-secondary); cursor: default; border-color: var(--color-border-secondary); }
+.hint { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); margin: 0.75rem 0 1rem; }
+
+.panels { border-top: 1px solid var(--color-border-secondary); }
+details { border-bottom: 1px solid var(--color-border-secondary); padding: 0.8rem 0; }
+summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); cursor: pointer; }
+.params { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; margin-top: 1rem; }
+@container (min-width: 560px) { .params { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 2rem; } }
+.param label { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 13px; margin-bottom: 0.2rem; }
+.param label span + span { font-family: var(--font-mono); color: var(--color-text-secondary); white-space: nowrap; }
+.param small { display: block; font-size: 11px; line-height: 1.5; color: var(--color-text-secondary); margin-bottom: 0.25rem; }
+.param input[type="range"] { width: 100%; accent-color: var(--color-text-primary); }
+.param select, .param input[type="number"], .param input[type="text"] {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+}
+.param input[type="number"], .param input[type="text"].mono { font-family: var(--font-mono); }
+.param input.bad { border-color: var(--bad); }
+.param.check label { justify-content: flex-start; align-items: center; gap: 0.5rem; cursor: pointer; }
+.param.check input { accent-color: var(--color-text-primary); }
+.row { display: flex; gap: 0.5rem; }
+.row > * { flex: 1; min-width: 0; }
+.row > button { flex: none; }
+.wide { grid-column: 1 / -1; }
+.hidden { display: none; }
+.note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; }
+.info { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+
+#slice { display: block; width: 100%; height: 150px; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: crosshair; touch-action: none; }
+.readout { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); margin-top: 0.3rem; min-height: 1.4em; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 0.9rem; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.legend .ramp i { width: 80px; }
+
+.notes { font-family: var(--font-serif); }
+.notes h2 { font-size: 19px; font-weight: 600; margin: 0 0 1rem; }
+.notes h3 { font-size: 16px; font-weight: 600; margin: 2rem 0 0.8rem; }
+.notes p { font-size: 17px; line-height: 1.85; margin: 0 0 1.4rem; }
+.notes a { color: inherit; }
+.notes pre { font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; padding: 1rem; margin: 0 0 1.4rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
+.notes code { font-family: var(--font-mono); font-size: 0.85em; }
