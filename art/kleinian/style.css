@@ -7,7 +7,7 @@
   --color-border-secondary: #ccc;
   --color-bg: #fff;
   --stage-bg: #fff;
-  --slice-shade: rgba(36, 86, 200, 0.08);
+  --plane-tint: 36, 86, 200;
   --accent: #d0353f;
   --bad: #d0353f;
 }
@@ -17,7 +17,7 @@
   --color-border-secondary: #333;
   --color-bg: #111;
   --stage-bg: #0f0f10;
-  --slice-shade: rgba(122, 162, 255, 0.12);
+  --plane-tint: 122, 162, 255;
   --accent: #ff6b6b;
   --bad: #ff6b6b;
 }
@@ -136,8 +136,13 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; }
 .info { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
 
-#slice { display: block; width: 100%; height: 150px; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: crosshair; touch-action: none; }
-.readout { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); margin-top: 0.3rem; min-height: 1.4em; }
+.plane canvas { display: block; width: 100%; aspect-ratio: 1 / 1; margin-top: 0.4rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.plane canvas.panning { cursor: grabbing; }
+.plane canvas.on-marker { cursor: move; }
+.plane-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
+.plane-head label { font-size: 13px; margin: 0; }
+.plane-tools { display: flex; gap: 0.25rem; flex: none; }
+.plane-tools button { font-size: 12px; line-height: 1; padding: 0.2rem 0.45rem; min-width: 1.7rem; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 0.9rem; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); }
 .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }

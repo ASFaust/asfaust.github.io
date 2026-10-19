@@ -1,7 +1,7 @@
 import { parse, format, traceAB } from './group.js';
 import { cuspByPath, gcd } from './cusps.js';
 import { Renderer, palette, GEN_NAMES } from './renderer.js';
-import { SliceMap } from './slice.js';
+import { TracePlane, initProbes } from './planes.js';
 import { PRESETS } from './presets.js';
 
 const $ = id => document.getElementById(id);
@@ -254,12 +254,12 @@ function onWorkerMessage(msg) {
   }
 }
 
-// Live preview while dragging on the parameter map: coarse, and never more than one at a time.
+// Live preview while dragging on a trace plane: coarse, and never more than one at a time.
+// p: { which: 'a' | 'b', t: [re, im] }
 function preview(p) {
   if (busy) { pendingPreview = p; return; }
-  st.ta = format(p.ta, 12);
-  st.tb = '2';
-  syncInputs();
+  st[p.which === 'a' ? 'ta' : 'tb'] = format(p.t, 12);
+  syncInputs(false);
   render({ preview: true });
 }
 
@@ -374,7 +374,8 @@ function fit() {
 
 // ---------- inputs ----------
 
-function syncInputs() {
+// recomputePlanes: false while dragging on a plane, so the shading is only redone on release
+function syncInputs(recomputePlanes = true) {
   $('p-ta').value = st.ta;
   $('p-tb').value = st.tb;
   $('p-comm').value = st.nonfree ? 'nonfree' : 'free';
@@ -390,7 +391,7 @@ function syncInputs() {
   $('p-lw').value = st.lw;
   $('v-lw').textContent = st.lw.toFixed(2);
   $('p-bg').value = st.bg;
-  slice.setState({ ta: parse(st.ta) || [2, 0], tb: parse(st.tb) || [2, 0], nonfree: st.nonfree });
+  updatePlanes(recomputePlanes);
   updateLegend();
 }
 
@@ -442,8 +443,8 @@ function onGroupInput() {
 $('p-ta').addEventListener('change', onGroupInput);
 $('p-tb').addEventListener('change', onGroupInput);
 $('p-comm').addEventListener('change', function() { st.nonfree = this.value === 'nonfree'; fitView = null; syncInputs(); render({ fit: true }); });
-$('p-alt').addEventListener('change', function() { st.altroot = this.checked; fitView = null; render({ fit: true }); });
-$('p-neck').addEventListener('change', function() { st.neck = this.checked; render(); });
+$('p-alt').addEventListener('change', function() { st.altroot = this.checked; fitView = null; updatePlanes(); render({ fit: true }); });
+$('p-neck').addEventListener('change', function() { st.neck = this.checked; updatePlanes(); render(); });
 $('p-eps').addEventListener('input', function() { st.eps = +Math.pow(10, +this.value).toPrecision(2); $('v-eps').textContent = st.eps < 1 ? st.eps.toFixed(2) : st.eps.toFixed(1); });
 $('p-eps').addEventListener('change', () => render());
 $('p-lev').addEventListener('change', function() { st.levmax = sanitize({ ...st, levmax: this.value }).levmax; this.value = st.levmax; render(); });
@@ -512,27 +513,48 @@ async function exportImage() {
   }, 300);
 }
 
-// ---------- parameter map ----------
+// ---------- trace planes ----------
 
-const HOVER_HINT = 'Drag to pick ta · scroll to zoom';
-const slice = new SliceMap($('slice'), {
-  onPick(ta, cusp, final) {
-    $('p-preset').value = '';
-    $('presetNote').textContent = cusp ? `The ${cusp} cusp group: b and the word W(${cusp}) are both parabolic.` : '';
-    if (cusp) $('p-cusp').value = cusp;
-    fitView = null;
-    if (!st.view) st.view = { cx: 0, cy: 0, half: 1.1 };
-    if (final) {
-      st.ta = format(ta, 12);
-      st.tb = '2';
-      syncInputs();
-      render();
-    } else preview({ ta });
-  },
-  onHover(p) {
-    $('sliceReadout').textContent = p ? `ta = ${format(p.ta, 6)}${p.cusp ? ' · cusp ' + p.cusp : ''}` : HOVER_HINT;
-  },
-});
+initProbes(workerURL);
+
+function pickHandlers(which) {
+  const key = which === 'a' ? 'ta' : 'tb';
+  return {
+    which,
+    onPick(t, cusp, final) {
+      $('p-preset').value = '';
+      $('presetNote').textContent = cusp ? `The ${cusp} cusp group: b and the word W(${cusp}) are both parabolic.` : '';
+      if (cusp) $('p-cusp').value = cusp;
+      fitView = null;
+      if (!st.view) st.view = { cx: 0, cy: 0, half: 1.1 };
+      if (final) {
+        st[key] = format(t, 12);
+        syncInputs();
+        render();
+      } else preview({ which, t });
+    },
+    onHover() {},
+  };
+}
+
+const planeA = new TracePlane($('plane-a'), { ...pickHandlers('a'), base: { re: 1.95, im: -0.9, half: 1.45 } });
+const planeB = new TracePlane($('plane-b'), { ...pickHandlers('b'), base: { re: 2.1, im: -0.9, half: 1.6 } });
+
+const planes = { a: planeA, b: planeB };
+document.querySelectorAll('[data-zoom]').forEach(btn => btn.addEventListener('click', () => {
+  const pl = planes[btn.dataset.plane], z = btn.dataset.zoom;
+  if (z === 'reset') return pl.reset();
+  pl.zoomBy(z === 'in' ? 0.5 : 2);
+  pl.refresh();
+}));
+
+function updatePlanes(recompute = true) {
+  const ta = parse(st.ta) || [2, 0], tb = parse(st.tb) || [2, 0];
+  const group = { nonfree: st.nonfree, altroot: st.altroot, neck: st.neck };
+  // while dragging one plane, only its marker moves; the other plane waits for the release
+  planeA.set({ value: ta, other: tb, group }, recompute);
+  planeB.set({ value: tb, other: ta, group }, recompute);
+}
 
 $('cuspBtn').addEventListener('click', goCusp);
 $('p-cusp').addEventListener('keydown', e => { if (e.key === 'Enter') goCusp(); });
@@ -598,10 +620,10 @@ $('p-preset').addEventListener('change', function() { if (this.value !== '') loa
 
 // ---------- theme and resize ----------
 
-document.addEventListener('themechange', () => { restyle(); slice.draw(); });
+document.addEventListener('themechange', () => { restyle(); planeA.draw(); planeB.draw(); });
 let lastWidth = stage.clientWidth;
+new ResizeObserver(() => { planeA.refresh(); planeB.refresh(); }).observe($('plane-a'));
 new ResizeObserver(() => {
-  slice.draw();
   if (Math.abs(stage.clientWidth - lastWidth) > 2) {
     lastWidth = stage.clientWidth;
     clearTimeout(commitTimer);
