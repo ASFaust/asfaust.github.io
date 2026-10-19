@@ -18,35 +18,28 @@
 <body>
   <nav class="site-nav">
     <a href="../../index.html">&larr; Home</a>
+    <h1>Kleinian Limit Sets</h1>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
   </nav>
 
-  <div class="page">
-   <div class="app">
-    <div class="intro">
-      <h1>Kleinian Limit Sets</h1>
-      <p class="lede">Two Möbius maps of the plane, applied in every possible order, pile up on a fractal: the limit set of the group they generate. Choose the traces of the two maps and watch it form.</p>
-    </div>
-
-    <div class="workspace">
-    <div class="viewer">
-      <div class="stage-wrap">
-        <div class="stage" id="stage">
-          <canvas id="canvas" aria-label="Limit set. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
-          <div class="status" id="status">Starting…</div>
-          <div class="progress"><div id="progress"></div></div>
-        </div>
+  <main class="app">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="Limit set. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
+        <div class="status" id="status">Starting…</div>
+        <div class="progress"><div id="progress"></div></div>
       </div>
       <div class="controls">
         <button id="fitBtn" title="Frame the whole limit set">Fit</button>
         <button id="stopBtn" disabled>Stop</button>
         <button id="saveBtn" title="Save the image as shown">Save PNG</button>
+        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
       </div>
       <div class="stats" id="stats"></div>
-    </div>
+    </section>
 
     <div class="sidebar">
-    <p class="hint">Drag to pan, scroll or pinch to zoom, double-click to fit. Each view is computed anew, so zooming reveals finer detail. The URL holds the current settings, so you can share it.</p>
+    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Each view is computed anew, so zooming reveals finer detail. The URL holds the current settings, so you can share it.</p>
 
     <div class="panels">
       <details open>
@@ -63,7 +56,7 @@
         <summary>Group</summary>
         <div class="params">
           <div class="param wide">
-            <small>Type a complex trace, or pick one on its map. Each map holds the other trace fixed and shades the values that give a discrete group under the current settings, darker towards the edge, where the most intricate sets live. With tr b = 2 the map of tr a is the Maskit slice, and its exact edge of cusp groups is drawn on top. Click or tap a map to use it: then drag to pan, scroll or pinch to zoom, double-click to set the trace, or drag the red marker for a live preview. Ctrl + scroll zooms at any time. Points snap to cusps; hold Alt to avoid that.</small>
+            <small>Type a complex trace, or pick one on its map. Each map holds the other trace fixed and shades the values that give a discrete group under the current settings, darker towards the edge, where the most intricate sets live. With tr b = 2 the map of tr a is the Maskit slice, and its exact edge of cusp groups is drawn on top. On the maps, drag to pan and Alt + scroll to zoom (⌥ on a Mac); on a touch screen, use two fingers to pan and pinch. Double-click or double-tap to set the trace, or drag the red marker for a live preview. Points snap to cusps; hold Alt to avoid that.</small>
           </div>
           <div class="param plane">
             <div class="plane-head">
@@ -194,11 +187,16 @@
       </details>
     </div>
     </div>
-    </div>
-   </div>
+  </main>
 
-    <div class="notes after">
-      <h2>How it works</h2>
+  <dialog class="info" id="infoDialog" aria-labelledby="infoTitle">
+    <div class="info-head">
+      <h2 id="infoTitle">Kleinian Limit Sets</h2>
+      <button type="button" id="infoClose" aria-label="Close">✕</button>
+    </div>
+    <div class="notes">
+      <p class="lede">Two Möbius maps of the plane, applied in every possible order, pile up on a fractal: the limit set of the group they generate. Choose the traces of the two maps and watch it form.</p>
+      <h3>How it works</h3>
       <p>A Möbius map sends a point <code>z</code> of the plane to <code>(pz + q) / (rz + s)</code>. It moves circles to circles, and it is determined up to scale by the matrix <code>[p q; r s]</code>. Take two such maps <code>a</code> and <code>b</code>, together with their inverses <code>A</code> and <code>B</code>, and compose them in every order: <code>a</code>, <code>ab</code>, <code>abA</code>, <code>abAb</code>, … The points that these words pile up on, however long they get, form the limit set of the group.</p>
       <p>Most choices of maps give a chaotic mess. The beautiful ones are those where the commutator <code>abAB</code> is parabolic, a map with a single fixed point. Then the plane folds into two punctured tori glued at their cusps, the group is quasi-Fuchsian, and the limit set is a single closed fractal curve. Up to a change of coordinates such a pair of maps is fixed by two complex numbers, the traces <code>p + s</code> of <code>a</code> and <code>b</code>. “Grandma’s recipe” from <em>Indra’s Pearls</em> turns the two traces into matrices.</p>
 
@@ -214,7 +212,7 @@
       <h3>Sources</h3>
       <p>The algorithm, the recipes and most examples follow David Mumford, Caroline Series and David Wright, <em>Indra’s Pearls: The Vision of Felix Klein</em> (Cambridge University Press, 2002), and Chris King’s open-source toolbox <a href="http://dhushara.com/DarkHeart/quasif/quasi.htm">Kleinian and Quasi-Fuchsian Limit Sets</a>, whose C and Matlab programs this page translates to JavaScript.</p>
     </div>
-  </div>
+  </dialog>
 
   <script>
     var themeBtn = document.getElementById('themeToggle');
@@ -235,6 +233,11 @@
       themeBtn.textContent = isDark ? '☀' : '☾';
       document.dispatchEvent(new Event('themechange'));
     });
+    var info = document.getElementById('infoDialog');
+    document.getElementById('infoBtn').addEventListener('click', function() { info.showModal(); });
+    document.getElementById('infoClose').addEventListener('click', function() { info.close(); });
+    // a click on the backdrop closes the dialog
+    info.addEventListener('click', function(e) { if (e.target === info) info.close(); });
   </script>
   <script type="module" src="js/main.js"></script>
 </body>

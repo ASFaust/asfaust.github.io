@@ -22,21 +22,29 @@
   --bad: #ff6b6b;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+/* One screen, no page scroll: a top bar, the viewer (image and its buttons) fixed in place, and
+   one scrolling column of controls. Portrait screens stack them, the image taking the full width
+   but leaving at least a third of the height to the controls; landscape screens put the controls
+   beside the largest square that fits. */
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
 
 .site-nav {
+  flex: none;
+  width: 100%;
   max-width: 1400px;
-  height: 3.6rem;
+  height: 3rem;
   margin: 0 auto;
   padding: 0 1rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   font-size: 13px;
   color: var(--color-text-secondary);
 }
-.site-nav a { color: var(--color-text-secondary); text-decoration: none; }
+.site-nav a { color: var(--color-text-secondary); text-decoration: none; white-space: nowrap; }
 .site-nav a:hover { color: var(--color-text-primary); }
+.site-nav h1 { flex: 1; min-width: 0; text-align: center; font-family: var(--font-serif); font-size: 17px; font-weight: 500; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .theme-toggle {
   background: none;
   border: none;
@@ -47,50 +55,30 @@ body { background: var(--color-bg); color: var(--color-text-primary); font-famil
   line-height: 1;
 }
 .theme-toggle:hover { color: var(--color-text-primary); }
+.lede { font-family: var(--font-serif); font-size: 17px; line-height: 1.7; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
 
-.page { max-width: 1400px; margin: 0 auto; padding: 1rem 1rem 4rem; }
-h1 { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin-bottom: 0.4rem; line-height: 1.3; }
-.lede { font-family: var(--font-serif); font-size: 16px; line-height: 1.7; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
-
-/* App layout, as in the Buddhabrot explorer: image and controls share one screen.
-   Narrow: intro, then a full-height workspace (image above, scrolling panels below).
-   Wide: image on the left, intro and scrolling panels on the right. */
-.intro { max-width: 680px; }
-.workspace { display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding-top: 0.5rem; }
-.viewer { flex: none; display: flex; flex-direction: column; }
-.stage-wrap { container-type: size; display: flex; justify-content: center; align-items: flex-start; height: min(calc(100vw - 2rem), 52vh); height: min(calc(100vw - 2rem), 52dvh); }
-.sidebar { flex: 1; min-height: 0; overflow-y: auto; container-type: inline-size; padding-top: 0.25rem; }
-.after { max-width: 680px; margin: 3rem auto 0; }
-@media (min-width: 600px) and (orientation: landscape) {
-  .page { padding-top: 0; padding-bottom: 4rem; }
-  .app {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(300px, 32vw, 420px);
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas: "viewer intro" "viewer side";
-    column-gap: 2rem;
-    height: calc(100vh - 3.6rem);
-    height: calc(100dvh - 3.6rem);
-  }
-  .workspace { display: contents; }
-  .intro { grid-area: intro; }
-  .intro .lede { font-size: 15px; line-height: 1.6; margin-bottom: 1rem; }
-  .viewer { grid-area: viewer; min-height: 0; container: viewer / size; justify-content: center; }
-  .stage-wrap { container-type: normal; height: auto; }
-  .viewer .stage { width: min(100cqw, 100cqh - 4rem); }
-  @container viewer (max-width: 520px) { .viewer .stage { width: min(100cqw, 100cqh - 6.8rem); } }
-  .sidebar { grid-area: side; padding: 0 0.5rem 1rem 0; border-top: 1px solid var(--color-border-secondary); }
+.app { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; padding: 0 1rem; display: flex; flex-direction: column; }
+.viewer { flex: none; display: flex; flex-direction: column; align-items: center; }
+/* portrait: full width, unless that would leave the controls less than a third of the screen */
+.viewer .stage { width: min(100%, calc(100dvh - 3rem - 5rem - 33dvh)); }
+.sidebar { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; container-type: inline-size; border-top: 1px solid var(--color-border-secondary); }
+@media (orientation: landscape) {
+  .app { flex-direction: row; gap: 2rem; }
+  /* the viewer is a size container: the stage is the largest square that leaves room for the buttons */
+  .viewer { flex: 1; min-width: 0; container: viewer / size; justify-content: center; padding-bottom: 0.5rem; }
+  .viewer .stage { width: min(100cqw, 100cqh - 5rem); }
+  .sidebar { flex: none; width: clamp(280px, 34vw, 440px); border-top: none; border-left: 1px solid var(--color-border-secondary); padding: 0 0.5rem 1rem 1rem; }
 }
 
-.stage { position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1 / 1; overflow: hidden; background: var(--stage-bg); border: 1px solid var(--color-border-secondary); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.stage { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--stage-bg); border: 1px solid var(--color-border-secondary); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .stage.dragging { cursor: grabbing; }
 #canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
 .status { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; font-size: 14px; color: var(--color-text-secondary); padding: 2rem; pointer-events: none; }
 .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(128, 128, 128, 0.15); pointer-events: none; transition: opacity 0.4s; }
 .progress div { height: 100%; width: 0; background: var(--color-text-secondary); transition: width 0.15s; }
 
-.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5rem; margin: 0.75rem 0; }
-.stats { font-size: 12px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; text-align: center; min-height: 1.2em; }
+.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5rem; margin: 0.6rem 0 0.3rem; }
+.stats { font-size: 12px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; text-align: center; min-height: 1.2em; margin-bottom: 0.4rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 button {
   font: inherit;
   font-size: 13px;
@@ -136,10 +124,11 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; }
 .info { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
 
-.plane canvas { display: block; width: 100%; aspect-ratio: 1 / 1; margin-top: 0.4rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
-.plane canvas.active { touch-action: none; border-color: var(--color-text-secondary); box-shadow: 0 0 0 1px var(--color-text-secondary); }
+.plane-map { position: relative; margin-top: 0.4rem; }
+.plane canvas { display: block; width: 100%; aspect-ratio: 1 / 1; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .plane canvas.panning { cursor: grabbing; }
-.plane canvas.on-marker { cursor: move; }
+/* an invisible grip over the marker, big enough for a finger */
+.plane-handle { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; cursor: move; touch-action: none; }
 .plane-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
 .plane-head label { font-size: 13px; margin: 0; }
 .plane-tools { display: flex; gap: 0.25rem; flex: none; }
@@ -151,9 +140,17 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .legend .ramp i { width: 80px; }
 
 .notes { font-family: var(--font-serif); }
-.notes h2 { font-size: 19px; font-weight: 600; margin: 0 0 1rem; }
+.notes h3:first-of-type { margin-top: 0; }
 .notes h3 { font-size: 16px; font-weight: 600; margin: 2rem 0 0.8rem; }
 .notes p { font-size: 17px; line-height: 1.85; margin: 0 0 1.4rem; }
 .notes a { color: inherit; }
 .notes pre { font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; padding: 1rem; margin: 0 0 1.4rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
 .notes code { font-family: var(--font-mono); font-size: 0.85em; }
+
+/* the Info popup: a native dialog, scrolling on its own */
+dialog.info { margin: auto; width: min(720px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: var(--color-bg); color: var(--color-text-primary); overscroll-behavior: contain; }
+dialog.info::backdrop { background: rgba(0, 0, 0, 0.55); }
+.info-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 1.25rem; background: var(--color-bg); border-bottom: 1px solid var(--color-border-secondary); }
+.info-head h2 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; }
+.info-head button { border: none; font-size: 15px; padding: 0.2rem 0.4rem; color: var(--color-text-secondary); }
+dialog.info .notes { padding: 1.25rem 1.25rem 0.5rem; }
