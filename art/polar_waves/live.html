@@ -81,7 +81,7 @@
       'flat in vec2 vMode;\n' +
       'uniform float uQuad;\n' +
       'uniform float uRim;\n' +    // steepness of the threshold outside r = 0.5 (3 is the original curve)
-      'uniform float uSoftK;\n' +  // > 0: output exp(excess / k) for a soft union instead of coverage
+      'uniform float uMerge;\n' +  // 1: output (weight·excess, weight) so neighbouring fields blend instead of overlap
       'out vec4 outColor;\n' +
       'float field(vec4 P1, vec4 P2, float r, float ang, float c) {\n' +
       '  return sin(sin(r * P1.z + P2.y + ang * P1.x) * 3.14159 * P2.x + P2.z + ang * P1.y + c * P1.w);\n' +
@@ -98,23 +98,26 @@
       '    v = clamp(mix(v, vb, w) / sqrt((1.0 - w) * (1.0 - w) + w * w), -1.0, 1.0);\n' +
       '  }\n' +
       '  float e = (v + 1.0) * 0.5 - c - vB2.w;\n' +
-      '  if (uSoftK > 0.0) {\n' +
-      '    outColor = vec4(exp(clamp(e / uSoftK, -30.0, 10.0)));\n' +
+      '  if (uMerge > 0.5) {\n' +
+      '    float q = r / uQuad;\n' +
+      '    float w = (1.0 - q * q) * (1.0 - q * q) * (1.0 - q * q);\n' +
+      '    outColor = vec4(w * e, w, 0.0, 0.0);\n' +
       '    return;\n' +
       '  }\n' +
       '  float aw = clamp(fwidth(e), 1e-5, 0.15);\n' +
       '  outColor = vec4(vec3(smoothstep(-aw * 0.7, aw * 0.7, e)), 1.0);\n' +
       '}';
 
-    // Soft union: the summed exp(e / k) of all shapes becomes coverage at k·log(sum) = 0 (log-sum-exp smooth max)
+    // Merge: the weighted average of all shapes' fields, cut once. Where two shapes meet, one field
+    // interpolates into the other, so strokes flow across instead of crossing.
     var SOFT_FRAG = '#version 300 es\n' +
       'precision highp float;\n' +
       'in vec2 uv;\n' +
       'uniform sampler2D uSum;\n' +
-      'uniform float uK;\n' +
       'out vec4 outColor;\n' +
       'void main() {\n' +
-      '  float E = uK * log(max(texture(uSum, uv).r, 1e-12));\n' +
+      '  vec2 s = texture(uSum, uv).rg;\n' +
+      '  float E = s.y > 1e-4 ? s.x / s.y : -1.0;\n' +
       '  float aw = clamp(fwidth(E), 1e-5, 0.15);\n' +
       '  outColor = vec4(vec3(smoothstep(-aw * 0.7, aw * 0.7, E)), 1.0);\n' +
       '}';
@@ -155,7 +158,7 @@
     var tileProg = program(TILE_VERT, TILE_FRAG);
     var finalProg = program(FINAL_VERT, FINAL_FRAG);
     var softProg = program(FINAL_VERT, SOFT_FRAG);
-    // Soft union needs a float render target; without it those scenes fall back to a plain union
+    // Merging needs a float render target; without it those scenes fall back to a plain union
     var canSoft = !!gl.getExtension('EXT_color_buffer_float');
 
     // ---------- Buffers ----------
@@ -195,9 +198,8 @@
     var uZoom = gl.getUniformLocation(tileProg, 'uZoom');
     var uQuad = gl.getUniformLocation(tileProg, 'uQuad');
     var uRim = gl.getUniformLocation(tileProg, 'uRim');
-    var uSoftK = gl.getUniformLocation(tileProg, 'uSoftK');
+    var uMerge = gl.getUniformLocation(tileProg, 'uMerge');
     var uSum = gl.getUniformLocation(softProg, 'uSum');
-    var uK = gl.getUniformLocation(softProg, 'uK');
     var uTex = gl.getUniformLocation(finalProg, 'uTex');
     var uInk = gl.getUniformLocation(finalProg, 'uInk');
     var uPaper = gl.getUniformLocation(finalProg, 'uPaper');
@@ -547,9 +549,9 @@
         var tiles = layoutHyperbolic(pq[0], pq[1], pick([0.03, 0.045])).map(makeTile);
         var k = rnd(0.6, 2) * sign(), kind = Math.random() < 0.7 ? 'hdist' : 'x';
         return { tiles: tiles, groups: [sharedGroup(tiles, function(t) { return kind === 'hdist' ? k * t.info.hdist : k * 2 * t.x; })],
-                 // Neighbours exchange mass: a gentler rim lets the waves reach the shared edge, and a soft union
-                 // (smoothness k) merges shapes that come close. quad: drawn area, so spilled ink is not cut off.
-                 soft: { k: rnd(0.04, 0.09), rim: rnd(1.0, 1.6), quad: 1.5 } };
+                 // Neighbours exchange mass: a gentler rim lets the waves reach the shared edge, where the fields
+                 // of neighbouring shapes blend into each other. quad: how far each shape's weight reaches.
+                 soft: { rim: rnd(1.0, 1.6), quad: 1.5 } };
       } }
     };
     var SCENE_KEYS = Object.keys(SCENES);
@@ -742,11 +744,11 @@
       gl.uniform1f(uZoom, zoomValue(sc));
       gl.uniform1f(uQuad, sc.soft ? sc.soft.quad : 1);
       gl.uniform1f(uRim, sc.soft ? sc.soft.rim : 3);
-      gl.uniform1f(uSoftK, soft ? sc.soft.k : 0);
+      gl.uniform1f(uMerge, soft ? 1 : 0);
       gl.enable(gl.BLEND);
 
       if (soft) {
-        // Sum exp(e / k) of all shapes, then turn the sum into coverage
+        // Sum weighted fields and weights of all shapes, then turn their ratio into coverage
         gl.bindFramebuffer(gl.FRAMEBUFFER, softFbo);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -760,7 +762,6 @@
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, softTex);
         gl.uniform1i(uSum, 0);
-        gl.uniform1f(uK, sc.soft.k);
         gl.blendEquation(gl.MAX);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       } else {
