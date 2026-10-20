@@ -1,0 +1,148 @@
+:root {
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #555;
+  --color-border-secondary: #ccc;
+  --color-bg: #fff;
+  --stage-bg: #fff;
+  --bad: #d0353f;
+}
+[data-theme="dark"] {
+  --color-text-primary: #e2e2e2;
+  --color-text-secondary: #888;
+  --color-border-secondary: #333;
+  --color-bg: #111;
+  --stage-bg: #0f0f10;
+  --bad: #ff6b6b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+/* One screen, no page scroll: a top bar, the viewer (image and its buttons) fixed in place, and
+   one scrolling column of controls. Portrait screens stack them, the image taking the full width
+   but leaving at least a third of the height to the controls; landscape screens put the controls
+   beside the largest square that fits. */
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+.site-nav {
+  flex: none;
+  width: 100%;
+  max-width: 1400px;
+  height: 3rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.site-nav a { color: var(--color-text-secondary); text-decoration: none; white-space: nowrap; }
+.site-nav a:hover { color: var(--color-text-primary); }
+.site-nav h1 { flex: 1; min-width: 0; text-align: center; font-family: var(--font-serif); font-size: 17px; font-weight: 500; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  padding: 0.2rem;
+  line-height: 1;
+}
+.theme-toggle:hover { color: var(--color-text-primary); }
+.lede { font-family: var(--font-serif); font-size: 17px; line-height: 1.7; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
+
+.app { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; padding: 0 1rem; display: flex; flex-direction: column; }
+.viewer { flex: none; display: flex; flex-direction: column; align-items: center; }
+/* portrait: full width, unless that would leave the controls less than a third of the screen */
+.viewer .stage { width: min(100%, calc(100dvh - 3rem - 5rem - 33dvh)); }
+.sidebar { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; container-type: inline-size; border-top: 1px solid var(--color-border-secondary); }
+@media (orientation: landscape) {
+  .app { flex-direction: row; gap: 2rem; }
+  /* the viewer is a size container: the stage is the largest square that leaves room for the buttons */
+  .viewer { flex: 1; min-width: 0; container: viewer / size; justify-content: center; padding-bottom: 0.5rem; }
+  .viewer .stage { width: min(100cqw, 100cqh - 5rem); }
+  .sidebar { flex: none; width: clamp(280px, 34vw, 440px); border-top: none; border-left: 1px solid var(--color-border-secondary); padding: 0 0.5rem 1rem 1rem; }
+}
+
+.stage { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--stage-bg); border: 1px solid var(--color-border-secondary); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.stage.dragging { cursor: grabbing; }
+#canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+.status { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; font-size: 14px; color: var(--color-text-secondary); padding: 2rem; pointer-events: none; }
+.progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(128, 128, 128, 0.15); pointer-events: none; transition: opacity 0.4s; }
+.progress div { height: 100%; width: 0; background: var(--color-text-secondary); transition: width 0.15s; }
+
+.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5rem; margin: 0.6rem 0 0.3rem; }
+.stats { font-size: 12px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; text-align: center; min-height: 1.2em; margin-bottom: 0.4rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button {
+  font: inherit;
+  font-size: 13px;
+  background: none;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+button:hover { border-color: var(--color-text-secondary); }
+button:disabled { color: var(--color-text-secondary); cursor: default; border-color: var(--color-border-secondary); }
+.hint { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); margin: 0.75rem 0 1rem; }
+
+.panels { border-top: 1px solid var(--color-border-secondary); }
+details { border-bottom: 1px solid var(--color-border-secondary); padding: 0.8rem 0; }
+summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); cursor: pointer; }
+.params { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; margin-top: 1rem; }
+@container (min-width: 560px) { .params { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 2rem; } }
+.param label { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 13px; margin-bottom: 0.2rem; }
+.param label span + span { font-family: var(--font-mono); color: var(--color-text-secondary); white-space: nowrap; }
+.param small { display: block; font-size: 11px; line-height: 1.5; color: var(--color-text-secondary); margin-bottom: 0.25rem; }
+.param input[type="range"] { width: 100%; accent-color: var(--color-text-primary); }
+.param select, .param input[type="number"], .param input[type="text"] {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+}
+.param input[type="number"], .param input[type="text"].mono { font-family: var(--font-mono); }
+.param input.bad { border-color: var(--bad); }
+.param.check label { justify-content: flex-start; align-items: center; gap: 0.5rem; cursor: pointer; }
+.param.check input { accent-color: var(--color-text-primary); }
+.row { display: flex; gap: 0.5rem; }
+.row > * { flex: 1; min-width: 0; }
+.row > button { flex: none; }
+.wide { grid-column: 1 / -1; }
+.hidden { display: none; }
+.note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; }
+.ramp { height: 14px; margin-top: 0.3rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
+
+/* bars with one or two handles (bar.js): the near end is a filled dot, the far end a hollow one */
+.bar { position: relative; height: 22px; margin: 0.15rem 8px 0; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bar-track { position: absolute; left: -8px; right: -8px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-border-secondary); }
+.bar-fill { position: absolute; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-text-primary); }
+.bar-handle { position: absolute; top: 50%; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; background: var(--color-text-primary); border: 2px solid var(--color-text-primary); }
+.bar-handle.far { background: var(--color-bg); }
+.bar-handle:focus { outline: none; }
+.bar-handle:focus-visible { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-text-secondary); }
+#p-hue .bar-track { height: 10px; margin-top: -5px; border-radius: 4px; }
+#p-hue .bar-handle { background: var(--color-bg); }
+
+.notes { font-family: var(--font-serif); }
+.notes h3:first-of-type { margin-top: 0; }
+.notes h3 { font-size: 16px; font-weight: 600; margin: 2rem 0 0.8rem; }
+.notes p { font-size: 17px; line-height: 1.85; margin: 0 0 1.4rem; }
+.notes a { color: inherit; }
+.notes pre { font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; padding: 1rem; margin: 0 0 1.4rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
+.notes code { font-family: var(--font-mono); font-size: 0.85em; }
+
+/* the Info popup: a native dialog, scrolling on its own */
+dialog.info { margin: auto; width: min(720px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: var(--color-bg); color: var(--color-text-primary); overscroll-behavior: contain; }
+dialog.info::backdrop { background: rgba(0, 0, 0, 0.55); }
+.info-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 1.25rem; background: var(--color-bg); border-bottom: 1px solid var(--color-border-secondary); }
+.info-head h2 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; }
+.info-head button { border: none; font-size: 15px; padding: 0.2rem 0.4rem; color: var(--color-text-secondary); }
+dialog.info .notes { padding: 1.25rem 1.25rem 0.5rem; }

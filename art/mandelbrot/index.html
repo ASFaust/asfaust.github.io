@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Mandelbrot</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <h1>Minimal Mandelbrot</h1>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <main class="app">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="Mandelbrot render. Drag to pan, scroll or pinch to zoom, double-click for the whole set."></canvas>
+        <div class="status" id="status">Starting…</div>
+        <div class="progress"><div id="progress"></div></div>
+      </div>
+      <div class="controls">
+        <button id="newBtn" title="Zoom into a random place on the border of the set">New place</button>
+        <button id="colourBtn" title="A new random colour for this place">Recolour</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="saveBtn" title="Save the image as shown">Save PNG</button>
+        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <div class="sidebar">
+    <p class="hint">“New place” zooms into a random place on the border of the set, “Recolour” picks a random colour. Drag the image to pan, scroll or pinch to zoom, double-click for the whole set. Each view is computed anew. The URL holds the current settings, so you can share it.</p>
+
+    <div class="panels">
+      <details open>
+        <summary>Place</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-seed"><span>Seed</span></label>
+            <small>the same seed always leads to the same place</small>
+            <div class="row">
+              <input type="number" id="p-seed" min="0" max="4294967295" step="1">
+              <button id="seedBtn" type="button">Go</button>
+            </div>
+          </div>
+          <div class="param">
+            <label for="p-re"><span>Centre, real part</span></label>
+            <input type="text" class="mono" id="p-re" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-im"><span>Centre, imaginary part</span></label>
+            <input type="text" class="mono" id="p-im" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-r"><span>Radius</span></label>
+            <small>half the width of the view</small>
+            <input type="text" class="mono" id="p-r" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-it"><span>Iterations</span></label>
+            <small>points still bounded after this many count as inside</small>
+            <input type="number" id="p-it" min="50" max="60000" step="1">
+          </div>
+          <div class="param">
+            <label for="p-aa"><span>Samples per pixel</span></label>
+            <small>more samples, smoother lines, slower</small>
+            <select id="p-aa">
+              <option value="1">1 × 1</option>
+              <option value="2">2 × 2</option>
+              <option value="3">3 × 3</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Colour</summary>
+        <div class="params">
+          <div class="param wide">
+            <label><span>Ramp</span><span>at the set → far out</span></label>
+            <small>● marks the parts at the set, ○ the parts far from it. Cross the lightness dots to swap light and dark outside the set.</small>
+            <div class="ramp" id="ramp"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-hue"><span>Hue</span><span id="v-hue"></span></label>
+            <div id="p-hue" aria-labelledby="l-hue"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-l"><span>Lightness</span><span id="v-l"></span></label>
+            <small>OKLCh lightness, 0 black to 1 white</small>
+            <div id="p-l" aria-labelledby="l-l"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-c"><span>Chroma</span><span id="v-c"></span></label>
+            <small>how colourful; where the screen cannot show it, the colour keeps its lightness and hue and loses chroma</small>
+            <div id="p-c" aria-labelledby="l-c"></div>
+          </div>
+          <div class="param">
+            <label for="p-lw"><span>Border width</span><span id="v-lw"></span></label>
+            <small>how far from the set the distance estimate darkens, in samples</small>
+            <input type="range" id="p-lw" min="0.25" max="4" step="0.05">
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-inv"> <span>Invert</span></label>
+            <small>make the inside of the set white</small>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-circle"> <span>Circle</span></label>
+            <small>cut the image to a disk</small>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Export</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-size"><span>Image size</span></label>
+            <small>renders the current view again at this size, with 3 × 3 samples per pixel (2 × 2 at 8192), and saves it as PNG. 8192 can take a few minutes on deep views.</small>
+            <div class="row">
+              <select id="p-size">
+                <option value="1024">1024 × 1024</option>
+                <option value="2048" selected>2048 × 2048</option>
+                <option value="4096">4096 × 4096</option>
+                <option value="8192">8192 × 8192</option>
+              </select>
+              <button id="exportBtn" type="button">Render &amp; save</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+    </div>
+  </main>
+
+  <dialog class="info" id="infoDialog" aria-labelledby="infoTitle">
+    <div class="info-head">
+      <h2 id="infoTitle">Minimal Mandelbrot</h2>
+      <button type="button" id="infoClose" aria-label="Close">✕</button>
+    </div>
+    <div class="notes">
+      <p class="lede">Fractals are usually drawn in rainbow bands. These pictures use a single hue on white, with the detail coming from the border of the set alone.</p>
+      <h3>Where to look</h3>
+      <p>A point <code>c</code> of the plane belongs to the Mandelbrot set if <code>z ← z² + c</code>, started at <code>z = c</code>, stays bounded. The interesting pictures lie along its border, so “New place” searches for a place there. It starts at a random point outside the set and keeps proposing nearby points, moving whenever one takes longer to escape. Points that escape slowly lie close to the set. The proposals shrink with the estimated distance to the set, at a rate that is itself random, so the walk ends right on the border after a thousand steps. The zoom is then drawn evenly on a logarithmic scale, between a view 0.002 wide and one about four times the distance to the set. The seed fixes all of these choices.</p>
+      <h3>Two measurements</h3>
+      <p>For every sample the iteration gives two numbers. The escape time is the number of steps until <code>|z|</code> passes 20. The distance estimate is <code>2 |z| log |z| / |dz/dc|</code>, where the derivative follows the iteration as <code>dz ← 2 z dz + 1</code>. It says how far the sample is from the set, and here it is measured in samples.</p>
+      <p>The grey value starts as the escape time, rescaled so that the fastest escape is white and the inside of the set is black. Within one sample of the border it is lowered to the distance estimate itself. The thin filaments that escape-time banding hides become dark lines, while the open areas stay light, and never darker than 0.2. “Border width” stretches that band.</p>
+      <h3>One colour</h3>
+      <p>The grey value is rescaled to the range 0 to 1 and runs along a ramp in OKLCh, the polar form of Björn Ottosson’s OKLab colour space. Its lightness and chroma move in a straight line from their values at the set to their values far out, at one fixed hue. The ramp covers only the points outside the set; the inside is black, or white with “Invert”. In OKLab equal steps look equal, and unlike in the older CIELAB a hue keeps its colour as it gets lighter or darker. Where a colour lies outside what the screen can show, it gives up chroma and keeps its lightness and hue.</p>
+      <p>Each pixel averages the grey values of its samples outside the set before looking up the colour, and mixes the result, in OKLab, with the colour of the inside for the share of samples that fall inside the set. Because lightness and chroma are linear in the grey value, this is the same as averaging the colours in OKLab, so thin filaments fade evenly. Unless “Circle” is off, the image is cut to a disk.</p>
+      <p>The page computes in plain double precision, spread over several Web Workers. The samples stay in the workers, so a new colour needs no new iterations. Below a radius of about 10<sup>−11</sup> the numbers run out of digits and the picture turns blocky.</p>
+      <h3>Origin</h3>
+      <p>This is a port of Mandelbounty, an earlier Python and C++ generator. Its search and distance estimate carry over unchanged, and so does the grey value. The colouring has moved from HSV to OKLCh, and the random numbers come from a different generator, so its seeds give different pictures here.</p>
+    </div>
+  </dialog>
+
+  <script>
+    var themeBtn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      themeBtn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    themeBtn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      themeBtn.textContent = isDark ? '☀' : '☾';
+    });
+    var info = document.getElementById('infoDialog');
+    document.getElementById('infoBtn').addEventListener('click', function() { info.showModal(); });
+    document.getElementById('infoClose').addEventListener('click', function() { info.close(); });
+    // a click on the backdrop closes the dialog
+    info.addEventListener('click', function(e) { if (e.target === info) info.close(); });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
