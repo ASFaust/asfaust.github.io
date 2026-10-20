@@ -3,6 +3,7 @@ import { cuspByPath, gcd } from './cusps.js';
 import { Renderer, palette, GEN_NAMES } from './renderer.js';
 import { TracePlane, initProbes } from './planes.js';
 import { PRESETS } from './presets.js';
+import { QL } from './dfs.js';
 
 const $ = id => document.getElementById(id);
 
@@ -11,6 +12,8 @@ const $ = id => document.getElementById(id);
 const DEFAULTS = {
   ta: '1.92+0.03i', tb: '2', nonfree: false, altroot: false, neck: true,
   eps: 0.6, levmax: 1000, color: 'letter', depth: 1, lw: 1, bg: 'auto', view: null,
+  quinc: false, sphere: null, // sphere: { cx, cy, r }, the disk fitted to the limit set
+  ssize: 0, // log10 of the equator's radius relative to sphere.r
 };
 let st = { ...DEFAULTS };
 let fitView = null; // preset view override, used by "Fit"
@@ -29,6 +32,8 @@ function sanitize(s) {
     lw: NUM(s.lw, 0.25, 4, 1),
     bg: ['auto', 'light', 'dark'].includes(s.bg) ? s.bg : 'auto',
     view: s.view && [s.view.cx, s.view.cy, s.view.half].every(isFinite) && s.view.half > 0 ? s.view : null,
+    quinc: !!s.quinc, ssize: NUM(s.ssize, -1.5, 1.5, 0),
+    sphere: s.sphere && [s.sphere.cx, s.sphere.cy, s.sphere.r].every(isFinite) && s.sphere.r > 0 ? s.sphere : null,
   };
 }
 
@@ -45,6 +50,9 @@ function writeHash() {
   if (st.depth !== 1) parts.push('d=' + st.depth);
   if (st.lw !== 1) parts.push('lw=' + st.lw);
   if (st.bg !== 'auto') parts.push('bg=' + st.bg);
+  if (st.quinc) parts.push('q=1');
+  if (st.quinc && st.sphere) parts.push('sph=' + [st.sphere.cx, st.sphere.cy, st.sphere.r].map(v => +v.toPrecision(12)).join(','));
+  if (st.quinc && st.ssize) parts.push('ss=' + st.ssize);
   if (st.view) parts.push('v=' + [st.view.cx, st.view.cy, st.view.half].map(v => +v.toPrecision(12)).join(','));
   history.replaceState(null, '', '#' + parts.join('&'));
 }
@@ -58,10 +66,12 @@ function readHash() {
     if (i > 0) q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
   }
   const v = q.v ? q.v.split(',').map(Number) : null;
+  const sph = q.sph ? q.sph.split(',').map(Number) : null;
   return sanitize({
     ta: q.ta, tb: q.tb, nonfree: q.nf === '1', altroot: q.alt === '1', neck: q.neck !== '0',
     eps: q.eps, levmax: q.lev, color: q.col, depth: q.d, lw: q.lw, bg: q.bg,
     view: v && v.length === 3 ? { cx: v[0], cy: v[1], half: v[2] } : null,
+    quinc: q.q === '1', ssize: q.ss, sphere: sph && sph.length === 3 ? { cx: sph[0], cy: sph[1], r: sph[2] } : null,
   });
 }
 
@@ -136,11 +146,34 @@ function viewTransform(view, px) {
 }
 
 function frameView(m) {
+  if (st.quinc) return { cx: 0, cy: 0, half: QL };
   if (fitView) return { cx: fitView[0], cy: fitView[1], half: fitView[2] };
   if (!m) return { cx: 0, cy: 0, half: 1.1 };
   const f = m.frame;
   const half = Math.max(f.x1 - f.x0, f.y1 - f.y0, 1e-9) / 2 * 1.08;
   return { cx: (f.x0 + f.x1) / 2, cy: (f.y0 + f.y1) / 2, half };
+}
+
+// The copies of the quincuncial square that meet the view, as pixel maps for the renderer and the
+// search: tile (i, j) is centred at 2·QL·(i, j) and turned by 180° when i + j is odd.
+function tiles(vt) {
+  if (!st.quinc) return [[1, 0, 0]];
+  const { x0, y0, k, w, h } = vt, x1 = x0 + w / k, y1 = y0 - h / k, L2 = 2 * QL, cap = 12;
+  const out = [];
+  for (let i = Math.max(-cap, Math.ceil((x0 - QL) / L2)); i <= Math.min(cap, Math.floor((x1 + QL) / L2)); i++)
+    for (let j = Math.max(-cap, Math.ceil((y1 - QL) / L2)); j <= Math.min(cap, Math.floor((y0 + QL) / L2)); j++)
+      out.push((i + j) & 1 ? [-1, (L2 * i - 2 * x0) * k, (2 * y0 - L2 * j) * k] : [1, L2 * i * k, -L2 * j * k]);
+  return out;
+}
+
+// the disk that becomes the northern hemisphere, scaled by the sphere size slider
+const sphereParams = () => st.quinc ? { ...st.sphere, r: st.sphere.r * 10 ** st.ssize } : null;
+
+// Centre the sphere on the limit set: its frame becomes roughly the northern hemisphere.
+function sphereFor(m) {
+  if (!m) return st.sphere || { cx: 0, cy: 0, r: 1 };
+  const f = m.frame;
+  return { cx: (f.x0 + f.x1) / 2, cy: (f.y0 + f.y1) / 2, r: Math.max(f.x1 - f.x0, f.y1 - f.y0, 1e-9) / 2 };
 }
 
 async function getMeasure(g) {
@@ -172,17 +205,19 @@ async function render(opts = {}) {
   }
   if (gen !== renderGen) return;
   if (opts.fit || !st.view) st.view = frameView(m);
+  if (st.quinc && (opts.fit || !st.sphere)) st.sphere = sphereFor(m);
   writeHash();
 
   const { px, scale } = sizeCanvas();
-  renderer.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * scale, theme: themeName() });
+  const vt = viewTransform(st.view, px);
+  renderer.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * scale, theme: themeName(), tiles: tiles(vt) });
   if (opts.ghost) renderer.ghost(opts.ghost.s, opts.ghost.tx, opts.ghost.ty);
   else renderer.clear();
   canvas.style.transform = '';
   pan = { s: 1, tx: 0, ty: 0 };
 
   const params = {
-    ...g, view: viewTransform(st.view, px), bound: m ? m.bound : null,
+    ...g, view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt),
     eps: (opts.preview ? Math.max(st.eps, 2.5) : st.eps) * scale,
     levmax: opts.preview ? Math.min(st.levmax, 300) : st.levmax,
   };
@@ -391,6 +426,10 @@ function syncInputs(recomputePlanes = true) {
   $('p-lw').value = st.lw;
   $('v-lw').textContent = st.lw.toFixed(2);
   $('p-bg').value = st.bg;
+  $('p-quinc').checked = st.quinc;
+  $('sphereParam').classList.toggle('hidden', !st.quinc);
+  $('p-sph').value = st.ssize;
+  $('v-sph').textContent = '×' + (10 ** st.ssize).toPrecision(2);
   updatePlanes(recomputePlanes);
   updateLegend();
 }
@@ -452,6 +491,9 @@ $('p-color').addEventListener('change', function() { st.color = this.value; sync
 $('p-depth').addEventListener('input', function() { st.depth = +this.value; $('v-depth').textContent = st.depth; restyle(); });
 $('p-lw').addEventListener('input', function() { st.lw = +this.value; $('v-lw').textContent = st.lw.toFixed(2); restyle(); });
 $('p-bg').addEventListener('change', function() { st.bg = this.value; restyle(); });
+$('p-quinc').addEventListener('change', function() { st.quinc = this.checked; syncInputs(false); render({ fit: true }); });
+$('p-sph').addEventListener('input', function() { st.ssize = +this.value; $('v-sph').textContent = '×' + (10 ** st.ssize).toPrecision(2); });
+$('p-sph').addEventListener('change', () => render());
 
 $('fitBtn').addEventListener('click', fit);
 $('stopBtn').addEventListener('click', () => {
@@ -491,14 +533,15 @@ async function exportImage() {
   const r = new Renderer(out);
   const css = stage.clientWidth;
   const scale = size / css;
-  r.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * scale, theme: themeName() });
+  const vt = viewTransform(st.view, size);
+  r.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * scale, theme: themeName(), tiles: tiles(vt) });
   r.clear();
   $('exportBtn').disabled = true;
   setRunning(true);
   const btnText = $('exportBtn').textContent;
   let m = null;
   try { m = await getMeasure(g); } catch (e) { $('exportBtn').disabled = false; if (e.message !== 'cancelled') fail(e.message); return; }
-  startSearch({ ...g, view: viewTransform(st.view, size), bound: m ? m.bound : null, eps: st.eps * scale }, r, {
+  startSearch({ ...g, view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt), eps: st.eps * scale }, r, {
     onProgress: f => { setProgress(f); $('exportBtn').textContent = `Rendering… ${Math.round(100 * f)}%`; },
     onDone: () => {
       setRunning(false);
@@ -604,7 +647,7 @@ function loadPreset(i) {
   const p = PRESETS[i];
   if (!p) return;
   st = sanitize({
-    ...DEFAULTS, lw: st.lw, bg: st.bg,
+    ...DEFAULTS, lw: st.lw, bg: st.bg, quinc: st.quinc,
     ta: p.ta, tb: p.tb, nonfree: !!p.nonfree, altroot: !!p.altroot, neck: p.neck !== false,
     eps: p.eps || DEFAULTS.eps, levmax: p.levmax || DEFAULTS.levmax,
     color: p.color || DEFAULTS.color, depth: p.depth || 1,

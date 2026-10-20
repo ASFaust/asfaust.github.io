@@ -145,6 +145,12 @@
     .wide { grid-column: 1 / -1; }
     .hidden { display: none; }
     #histCanvas { display: block; width: 100%; height: 90px; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
+    .grad { position: relative; height: 34px; margin: 0.4rem 7px 0.5rem; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .grad-bar { position: absolute; left: 0; right: 0; top: 0; height: 20px; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: copy; }
+    .grad-stop { position: absolute; top: 13px; width: 12px; height: 20px; margin-left: -7px; border: 1px solid var(--color-text-secondary); border-radius: 3px; cursor: ew-resize; }
+    .grad-stop.sel { z-index: 1; border-color: var(--color-text-primary); box-shadow: 0 0 0 1px var(--color-text-primary); }
+    .grad-tools { margin-top: 0.5rem; }
+    .param input[type="color"] { flex: none; width: 3rem; height: auto; padding: 0 2px; background: var(--color-bg); border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: pointer; }
     .preset-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
     .notes { font-family: var(--font-serif); }
@@ -180,7 +186,7 @@
       <div class="controls">
         <button id="genBtn">Generate</button>
         <button id="stopBtn" disabled>Stop</button>
-        <button id="viewBtn" disabled title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
+        <button id="viewBtn" class="density-only" disabled title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
         <button id="resetBtn" disabled>Reset zoom</button>
         <button id="saveBtn" disabled>Save PNG</button>
       </div>
@@ -195,10 +201,18 @@
         <div class="params">
           <div class="param">
             <label for="p-method"><span>Method</span></label>
-            <small>Metropolis follows the orbits that cross the view, for zoomed renders</small>
+            <small>Metropolis follows the orbits that cross the view, for zoomed renders; it needs the uniform sampler</small>
             <select id="p-method">
               <option value="boundary">boundary</option>
               <option value="metropolis">metropolis</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-sampler"><span>Sampler</span></label>
+            <small>where the starting points c come from</small>
+            <select id="p-sampler">
+              <option value="boundary">boundary</option>
+              <option value="uniform">uniform</option>
             </select>
           </div>
           <div class="param">
@@ -211,12 +225,12 @@
             <small>longer orbits reach deeper into the set</small>
             <input type="number" id="p-iter" min="2" max="1000000" step="1">
           </div>
-          <div class="param boundary-only">
+          <div class="param nearby-only">
             <label for="p-nearby"><span>Nearby points / boundary</span><span id="v-nearby"></span></label>
             <small>extra Gaussian samples around each boundary point</small>
             <input type="range" id="p-nearby" min="0" max="1000" step="1">
           </div>
-          <div class="param boundary-only">
+          <div class="param nearby-only">
             <label for="p-ndist"><span>Nearby distance</span><span id="v-ndist"></span></label>
             <small>1 / standard deviation of the nearby samples</small>
             <input type="range" id="p-ndist" min="0" max="1000" step="1">
@@ -226,12 +240,25 @@
             <small>image width and height in pixels (128–4096)</small>
             <input type="number" id="p-res" min="128" max="4096" step="1">
           </div>
-          <div class="param">
-            <label for="p-mres"><span>Mandelbrot resolution</span></label>
-            <small>grid used to find the boundary of the set</small>
-            <input type="number" id="p-mres" min="6" max="4096" step="1">
+          <div class="param boundary-only">
+            <label for="p-inside"><span>Inside point</span></label>
+            <small>where each bisection starts inside the set</small>
+            <select id="p-inside">
+              <option value="fixed">fixed point on the real axis</option>
+              <option value="bulbs">random in cardioid / period-2 bulb</option>
+            </select>
           </div>
-          <div class="param">
+          <div class="param boundary-only">
+            <label for="p-inre"><span>Inside point, real part</span></label>
+            <small>0 is the body, −1 the head bulb (range −1.36 to 0.25)</small>
+            <input type="number" id="p-inre" min="-1.36" max="0.25" step="0.05">
+          </div>
+          <div class="param boundary-only">
+            <label for="p-orad"><span>Outside radius</span></label>
+            <small>outside points lie on this circle, at a uniform angle</small>
+            <input type="number" id="p-orad" min="2" max="100" step="0.5">
+          </div>
+          <div class="param boundary-only">
             <label for="p-refine"><span>Refine steps</span></label>
             <small>random bisection steps that pull samples onto the boundary</small>
             <input type="number" id="p-refine" min="0" max="10000" step="1">
@@ -267,7 +294,7 @@
               <button id="seedBtn" type="button">Random</button>
             </div>
           </div>
-          <div class="param">
+          <div class="param density-only">
             <label for="p-xmin"><span>Real min / max</span></label>
             <small>vertical axis, top to bottom</small>
             <div class="row">
@@ -275,7 +302,7 @@
               <input type="number" id="p-xmax" step="0.1" aria-label="Real max">
             </div>
           </div>
-          <div class="param">
+          <div class="param density-only">
             <label for="p-ymin"><span>Imaginary min / max</span></label>
             <small>horizontal axis, left to right</small>
             <div class="row">
@@ -299,40 +326,61 @@
             </select>
           </div>
           <div class="param">
-            <label for="p-cmap"><span>Colormap</span></label>
-            <small>from matplotlib</small>
-            <select id="p-cmap"></select>
+            <label for="p-norm"><span>Normalization</span></label>
+            <small>how scaled counts are spread over the gradient</small>
+            <select id="p-norm">
+              <option value="equalize">histogram equalization</option>
+              <option value="percentile">percentile</option>
+              <option value="max">maximum</option>
+            </select>
           </div>
           <div class="param" id="rootParam">
             <label for="p-root"><span>Root (n)</span><span id="v-root"></span></label>
             <small>higher roots lift faint orbits</small>
             <input type="range" id="p-root" min="1.1" max="20" step="0.01">
           </div>
-          <div class="param check">
-            <label><input type="checkbox" id="p-preinv"> <span>Pre-invert</span></label>
-            <small>invert the counts before scaling</small>
+          <div class="param" id="pctParam">
+            <label for="p-pct"><span>Percentile</span><span id="v-pct"></span></label>
+            <small>this level and above get the last color</small>
+            <input type="range" id="p-pct" min="0" max="1000" step="1">
           </div>
-          <div class="param check">
-            <label><input type="checkbox" id="p-postinv"> <span>Post-invert</span></label>
-            <small>invert the brightness after clipping</small>
+          <div class="param wide">
+            <label><span>Gradient</span></label>
+            <small>drag a stop to move it, click the bar to add one</small>
+            <div class="grad" id="grad"><div class="grad-bar" id="gradBar"></div></div>
+            <div class="row grad-tools">
+              <select id="p-gpreset" aria-label="Gradient preset">
+                <option value="">custom</option>
+                <option value="gray">gray</option>
+                <option value="hot">hot</option>
+                <option value="cividis">cividis</option>
+                <option value="twilight">twilight</option>
+              </select>
+              <button id="gradRevBtn" type="button">Reverse</button>
+            </div>
+            <div class="row grad-tools">
+              <input type="color" id="p-gcolor" aria-label="Stop color">
+              <input type="number" id="p-gpos" min="0" max="1" step="0.01" aria-label="Stop position">
+              <button id="gradDelBtn" type="button">Remove stop</button>
+            </div>
           </div>
           <div class="param check">
             <label><input type="checkbox" id="p-blur"> <span>Gaussian blur</span></label>
             <small>smooth the histogram before scaling</small>
           </div>
           <div class="param" id="blurParam">
-            <label for="p-blurs"><span>Blur (1 / std. dev.)</span><span id="v-blurs"></span></label>
-            <small id="blurNote">in units of the complex plane</small>
+            <label for="p-blurs"><span>Blur radius</span><span id="v-blurs"></span></label>
+            <small>standard deviation in pixels</small>
             <input type="range" id="p-blurs" min="0" max="1000" step="1">
           </div>
           <div class="param">
             <label for="p-lo"><span>Min clip</span><span id="v-lo"></span></label>
-            <small>values below become black</small>
+            <small>values below get the first color</small>
             <input type="range" id="p-lo" min="0" max="1" step="0.001">
           </div>
           <div class="param">
             <label for="p-hi"><span>Max clip</span><span id="v-hi"></span></label>
-            <small>values above become white</small>
+            <small>values above get the last color</small>
             <input type="range" id="p-hi" min="0" max="1" step="0.001">
           </div>
           <div class="param wide">
@@ -359,7 +407,7 @@
             </div>
           </div>
           <div class="param wide">
-            <small>JSON files are compatible with the presets of the desktop version.</small>
+            <small>Desktop-version JSON presets load too; their gray, hot, cividis and twilight colormaps carry over.</small>
             <div class="preset-actions">
               <button id="deletePresetBtn" type="button" disabled>Delete selected</button>
               <button id="exportBtn" type="button">Export JSON</button>
@@ -380,7 +428,7 @@
 <pre>z₀ = 0
 zₙ₊₁ = zₙ² + c</pre>
       <p>stays bounded. The usual picture colours each <code>c</code> by how quickly its orbit escapes. The Buddhabrot looks at the orbits themselves: every <code>c</code> that escapes leaves a trail of points <code>z₁, z₂, …</code>, and each of those adds one to a counter at its pixel. Millions of trails pile up into the seated figure that gives the image its name. The real axis runs from top to bottom here, so the figure sits upright.</p>
-      <p>Most random points escape after a few steps and only add noise near the centre. The interesting orbits are long, and they start right at the edge of the set. So the explorer does not sample the plane at random. It first renders a coarse Mandelbrot grid, collects every pair of neighbouring cells where one is inside and one outside, and then moves each pair closer to the boundary: a random point near the middle of the pair replaces whichever end is on the same side. After a few dozen of these steps the outside point sits a hair's breadth from the set, where orbits take the longest to escape.</p>
+      <p>Most random points escape after a few steps and only add noise near the centre. The interesting orbits are long, and they start right at the edge of the set. So the boundary sampler does not sample the plane at random. Each sample starts as a pair: a point on a circle far outside the set, at a random angle, and a point inside it, either a chosen point on the real axis or a random point of the main cardioid or the period-2 bulb. Then the pair moves closer to the boundary: a random point near the middle of the pair replaces whichever end is on the same side. After a few dozen of these steps the outside point sits a hair's breadth from the set, where orbits take the longest to escape. The uniform sampler draws plain random points from the disk <code>|c| ≤ 2</code> instead; it is slow but has no bias.</p>
       <p>Optional nearby points scatter a Gaussian cloud around each boundary sample; some of them land inside the set and add their full, never escaping orbits, which fills in the body. Everything after the histogram, from scaling and clipping to blur and colour, runs instantly in your browser without recomputing the orbits. The heavy part is spread over Web Workers, one per CPU core.</p>
       <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the plain Buddhabrot of the window, only with far less noise. The walks start from boundary points of the whole set whose orbits reach the view.</p>
     </div>
@@ -438,6 +486,7 @@ zₙ₊₁ = zₙ² + c</pre>
       return false;
     }
 
+    // Counts every point of the orbit, also of orbits that never escape (the nearby clouds rely on that).
     function trace(cr, ci) {
       var zr = 0, zi = 0;
       for (var k = 0; k < histIter; k++) {
@@ -472,21 +521,19 @@ zₙ₊₁ = zₙ² + c</pre>
     onmessage = function(e) {
       var d = e.data;
       try {
-        if (d.cmd === 'mandel') {
-          var n = d.n, b = d.b, out = new Uint8Array((d.x1 - d.x0) * n);
-          for (var x = d.x0; x < d.x1; x++) {
-            var cr = b.xmin + (x / n) * (b.xmax - b.xmin);
-            for (var y = 0; y < n; y++) {
-              var ci = b.ymin + (y / n) * (b.ymax - b.ymin);
-              out[(x - d.x0) * n + y] = escapes(cr, ci, d.maxIter) ? 0 : 1;
-            }
-          }
-          postMessage({ cmd: 'done', img: out }, [out.buffer]);
-        } else if (d.cmd === 'refine') {
-          var p = d.pts, m = p.length / 4, steps = d.steps, maxIter = d.maxIter, rand = rng(d.seed);
+        if (d.cmd === 'refine') {
+          // Each sample starts as a pair: an outside point on a circle of radius d.radius at a uniform angle, and an inside point.
+          var m = d.count, steps = d.steps, maxIter = d.maxIter, rand = rng(d.seed);
           var outPts = new Float64Array(2 * m), pending = 0;
           for (var j = 0; j < m; j++) {
-            var inR = p[4 * j], inI = p[4 * j + 1], oR = p[4 * j + 2], oI = p[4 * j + 3];
+            var th = 2 * Math.PI * rand(), oR = d.radius * Math.cos(th), oI = d.radius * Math.sin(th), inR = d.insideReal, inI = 0;
+            if (d.inside === 'bulbs') {
+              // μ uniform in the unit disk; the main cardioid is c = μ/2 − μ²/4, the period-2 bulb c = −1 + μ/4.
+              // Pick between them by area (3π/8 against π/16, so 6 : 1).
+              var mrad = Math.sqrt(rand()), mth = 2 * Math.PI * rand(), mr = mrad * Math.cos(mth), mi = mrad * Math.sin(mth);
+              if (rand() < 6 / 7) { inR = mr / 2 - (mr * mr - mi * mi) / 4; inI = mi / 2 - mr * mi / 2; }
+              else { inR = -1 + mr / 4; inI = mi / 4; }
+            }
             for (var s = 0; s < steps; s++) {
               var dx = Math.abs(oR - inR), dy = Math.abs(oI - inI), size = dx > dy ? dx : dy;
               var cR = 0.5 * (inR + oR) + (rand() - 0.5) * size;
@@ -509,9 +556,11 @@ zₙ₊₁ = zₙ² + c</pre>
           postMessage({ cmd: 'done' });
         } else if (d.cmd === 'trace') {
           var pts = d.pts, count = pts.length / 2, nearby = d.nearby, sigma = d.sigma, r = rng(d.seed), done = 0;
+          var tbuf = new Int32Array(histIter);
           for (var i = 0; i < count; i++) {
             var pr = pts[2 * i], pi = pts[2 * i + 1];
-            trace(pr, pi);
+            if (d.escapingOnly) { var tn = hits(pr, pi, tbuf); for (var k = 0; k < tn; k++) hist[tbuf[k]]++; }
+            else trace(pr, pi);
             for (var k = 0; k < nearby; k++) {
               // Box-Muller: two independent normals for the real and imaginary offset
               var rad = Math.sqrt(-2 * Math.log(1 - r())) * sigma, th = 2 * Math.PI * r();
@@ -574,32 +623,25 @@ zₙ₊₁ = zₙ² + c</pre>
 
   <script>
     (function() {
-      // 64-stop colormaps sampled from matplotlib, interpolated to a 1024-entry table on use.
-      var CMAPS = {
-        gray: '0000000404040808080c0c0c1010101414141818181c1c1c2020202424242828282c2c2c3030303434343838383c3c3c4141414545454949494d4d4d5151515555555959595d5d5d6161616565656969696d6d6d7171717575757979797d7d7d8282828686868a8a8a8e8e8e9292929696969a9a9a9e9e9ea2a2a2a6a6a6aaaaaaaeaeaeb2b2b2b6b6b6babababebebec3c3c3c7c7c7cbcbcbcfcfcfd3d3d3d7d7d7dbdbdbdfdfdfe3e3e3e7e7e7ebebebefefeff3f3f3f7f7f7fbfbfbffffff',
-        hot: '0b00001500002000002a00003500003f00004a00005400005f00006900007400007e00008900009300009e0000a80000b50000c00000ca0000d50000df0000ea0000f40000ff0000ff0a00ff1500ff1f00ff2a00ff3400ff3f00ff4900ff5400ff6100ff6b00ff7600ff8000ff8b00ff9500ffa000ffaa00ffb500ffbf00ffca00ffd400ffdf00ffe900fff400fffe00ffff13ffff22ffff32ffff42ffff52ffff61ffff71ffff81ffff91ffffa0ffffb0ffffc0ffffd0ffffdfffffefffffff',
-        magma: '00000402010903031206051a0a08220e0b2b130d34180f3d1d114722115029115a2f116336106b3d0f71440f764a107952137c59157e5f187f651a806b1d81721f817822817e24828426818b2981912b81982d809e2f7fa5317eab337cb2357bba3878c03a76c73d73cd4071d3436ed9466bdf4a68e44f64e95462ed5a5ff1605df4675cf66e5cf8765cfa7d5efb8560fc8e64fd9668fe9d6cfea571feac76feb47bfebb81fec287feca8dfed194fed89afde0a1fde7a9fceeb0fcf6b8fcfdbf',
-        viridis: '44015446075a470d6047136548186a481d6f482374482878472d7b46327e453781443b844240864045883e49893d4e8a3a538b38588c365c8d34608d32648e31688e2f6c8e2d708e2c738e2a778e297b8e277f8e26828e24868e238a8d218e8d20928c1f968b1f9a8a1f9e891fa18721a58523a98326ad812ab07f2fb47c35b7793bbb7542be714ac16d52c5695ac86465cb5e6ece5877d15381d34d8bd64695d840a0da39aadc32b5de2bc0df25cae11fd5e21adfe318eae51af4e61efde725',
-        plasma: '0d088719068c2206902a059331059738049a3f049c46039f4c02a15302a35901a56001a66600a76c00a87201a87801a88004a88606a68b0aa5910ea39613a19c179ea11b9ba62098ab2494b02991b42e8db83289bd3786c13b82c5407ec9447acd4a76d14e72d5536fd8576bdb5c68de6164e26561e56a5de76f5aea7457ed7953ef7e50f1834cf48849f68d45f79342f99a3efb9f3afca537fdab33fdb130feb72dfebd2afdc328fdca26fcd025fbd724f9dd25f7e425f5eb27f2f227f0f921',
-        inferno: '00000402010a04031207051b0b072410092d150b371b0c41210c4a280b532f0a5b3609613d0965440a684a0c6b510e6c59106e5f136e65156e6c186e721a6e781c6d7f1e6c85216b8c23699225689827669f2a63a52c60ab2f5eb1325ab73557bf3952c43c4eca404acf4446d44842d94d3dde5238e25734e65d2fea632aed6925f06f20f3761bf57d15f78410f98b0bfa9407fb9b06fca309fcaa0ffcb216fbba1ffac228f9c932f7d13df5d949f4e156f2e865f1ef75f3f586f6fa96fcffa4',
-        cividis: '00224e00255400285b002b62002e6a0030700533711235701a386f213b6e273e6e2d416d32436d36466c3b496c3f4c6c444f6c48526c4c556c50576c545a6d575d6d5b606e5e636f62656f656870696b716c6e727071737374757777767a7a787e7d788280798683798a86788e8978928c78958f779992779d9576a19975a59c74a99f73ada272b1a570b6a96fbaac6dbfb06bc3b369c7b767ccba64d0be62d4c15fd9c55cddc858e1cc55e6d051ead34cefd748f3db42f8df3cfde334fee838',
-        turbo: '30123b351e58392a733d358b4040a2424bb54456c74661d6466be34776ee4680f6458afc4294ff3d9efe37a8fa2fb2f427bee920c7df1bd0d518d7ca18dec01ae4b620eaac2aefa135f39443f78752fa7a61fc6c71fe5f80ff538fff499cfe40a9fb39b4f836bef434c8ef34d2e935dbe236e3db38ebd339f1cb3af6c33afaba39fcb136fea732fe9b2dfe9029fc8423f9751df56918f15d13ec530fe7490ce14109da3907d23105ca2a04c12302b71d02ac1701a11201950d018808027a0403',
-        twilight: 'e2d9e2ddd9e0d6d7ddcdd3d8c2ced4b6c8cfaac2cc9ebbc993b4c689adc580a5c3779dc27195c06b8dbf6785be647cbc6173ba606ab75f61b45f58b05e4eab5e43a55d3a9e5b309558278b551f7f4f19724915644212573c114b36114232123a3212373711393e113c4713405014445b164865194c701c4e7a20508425508e2c509633509e3b50a54350ab4b50b15452b65d54ba6657be705bc27a61c58468c78f72ca997ccca287ceac94d1b5a1d4beafd8c6bddccdcaded3d4e1d7dce2d9e2',
-        cubehelix: '0000000702060c050e110815150b1d180f2519132d1a18351b1e3b1a2441192a4618314a17374d163f4e15464e154d4e16554b185b481b61451f6741256b3d2b6f393373353c763246783051792f5d7a2f697b30757b33817a378d7a3d997944a7794fb17959b97964c17a70c87b7ccd7d89d17f96d382a3d486afd48abbd490c6d295d0d09cd9cda2e0caa9e7c8b1ecc5baf0c3c1f2c2c8f3c1cff3c2d6f3c4dcf2c6e1f1cae7f0cfebefd4efefdbf3efe2f6f0e9f8f2f0fbf5f8fdfaffffff',
-        Spectral: '9e0142a70b44af1446b81e48c1274ac9314cd23a4ed8434edd4a4ce2514ae75948eb6046f06744f47044f67a49f7844ef99153fa9b58fca55dfdaf62fdb768fdbf6ffdc776fece7cfed683fede89fee491fee999feeda1fff2aafff7b2fffcbafdfebbf9fcb5f5fbaff1f9a9edf8a3e9f69de4f498daf09ad1ed9cc8e99ebfe5a0b5e1a2acdda4a2d9a497d5a48cd1a47ecca574c7a569c3a560bba858b2ac50a9af47a0b33f97b7378ebb3585bb3b7cb74273b3496aaf5061aa5758a65e4fa2',
-        coolwarm: '3b4cc03f53c6445acc4961d24e68d8536edd5875e15d7ce66282ea6788ee6c8ff17295f4779af77da0f982a6fb88abfd8fb1fe94b6ff9abbff9fbfffa5c3feaac7fdafcafcb5cdfabad0f8bfd3f6c4d5f3c9d7f0cdd9ecd2dbe8d6dce4dadce0dfdbd9e3d9d3e7d7ceead4c8edd1c2f0cdbbf2cab5f4c6aff5c1a9f6bda2f7b89cf7b396f7ad90f7a889f6a283f59c7df39475f18d6fee8669ec7f63e9785de57058e26952de614dd95847d55042d0473dcb3e38c53334c0282fba162bb40426',
-        RdYlBu: 'a50026ad0826b50f26bd1726c41e27cc2627d42d27da362ade402ee34933e75337ec5c3bf16640f47044f67a49f7844ef99153fa9b58fca55dfdaf62fdb769fdbf71fdc778fece7ffed687fede8efee496fee99dfeeda4fff2acfff7b3fffcbafcfec5f7fccef2fad6edf8dfe9f6e8e4f4f1def2f7d6eef5cdeaf3c5e6f0bde2eeb4deecacdae9a3d3e69bcce292c5de87bdd97fb6d676afd26ea6ce679ec96095c4588cc05183bb4a7ab74471b24167ad3e5ea83a54a4374a9f34409a313695',
-        YlGnBu: 'ffffd9fdfed4fafdcff8fccaf6fbc5f4fbc0f1fabbeff9b6edf8b1e8f6b1e3f4b2dff2b2daf0b3d5efb3d0edb3cbebb4c4e8b4bbe4b5b2e1b6a9ddb7a0dab897d6b98ed3ba85cfba7cccbb75c9bd6dc6be65c3bf5dc0c055bec14ebbc246b8c33eb3c43aaec335aac331a5c22ca1c2289cc12397c11f93c01d8dbe1e86bb1f80b81f7ab52073b2216daf2166ac2260a92259a62354a3234fa123499e24449c243f9925399725349421318d1e2e851a2b7e17297613266f0f23670c2060081d58'
+      // Gradients are "rrggbb@position" stops. cividis stops at 0.75 of the matplotlib map, before it turns yellow.
+      var GRADIENTS = {
+        gray: '000000@0,ffffff@1',
+        hot: '000000@0,ff0000@0.365,ffff00@0.746,ffffff@1',
+        cividis: '00224e@0,19386f@0.167,434e6c@0.333,61646f@0.5,7c7c78@0.667,9b9377@0.833,bbad6d@1',
+        twilight: 'e2d9e2@0,b3c7ce@0.083,7ca1c3@0.167,6275bb@0.25,5e43a5@0.333,4e186f@0.417,321239@0.5,581647@0.583,8e2c50@0.667,b25653@0.75,c68a6d@0.833,d3bcac@0.917,e2d9e2@1'
       };
 
       var DEFAULTS = {
         method: 'boundary',
+        sampler: 'boundary',
         samples: 50000,
         nearby_points: 0,
         nearby_distance: 1000,
         max_iter: 1000,
         resolution: 800,
-        mandelbrot_resolution: 400,
+        inside_point: 'fixed',
+        inside_real: 0,
+        outer_radius: 4,
         refine_steps: 80,
         chain_length: 100,
         burn_in: 20,
@@ -613,13 +655,13 @@ zₙ₊₁ = zₙ² + c</pre>
         ymax: 1.5,
         scale_mode: 'nth root',
         root: 2.5,
-        cmap: 'gray',
-        pre_invert: false,
-        post_invert: false,
+        normalize: 'equalize',
+        norm_percentile: 99.9,
+        gradient: GRADIENTS.gray,
         min_clip: 0,
         max_clip: 1,
         soft_points: false,
-        soft_strength: 200
+        blur_px: 1
       };
 
       // Built-in presets only list what differs from the defaults.
@@ -627,7 +669,7 @@ zₙ₊₁ = zₙ² + c</pre>
         'Default': {}
       };
 
-      var GEN_KEYS = ['method', 'samples', 'nearby_points', 'nearby_distance', 'max_iter', 'resolution', 'mandelbrot_resolution', 'refine_steps', 'chain_length', 'burn_in', 'large_step', 'mutation_min', 'mutation_max', 'seed', 'xmin', 'xmax', 'ymin', 'ymax'];
+      var GEN_KEYS = ['method', 'samples', 'nearby_points', 'nearby_distance', 'max_iter', 'resolution', 'sampler', 'inside_point', 'inside_real', 'outer_radius', 'refine_steps', 'chain_length', 'burn_in', 'large_step', 'mutation_min', 'mutation_max', 'seed', 'xmin', 'xmax', 'ymin', 'ymax'];
       var KEYS = Object.keys(DEFAULTS);
 
       var st = Object.assign({}, DEFAULTS);
@@ -652,23 +694,33 @@ zₙ₊₁ = zₙ² + c</pre>
           to: function(v) { return logTo(Math.max(10, Math.min(1e4, v)), 10, 1e4); },
           fmt: function(v) { return String(Math.round(v)); }
         },
-        // soft_strength is 100 × (1 / std. dev.), as in the desktop presets
-        soft_strength: {
-          from: function(t) { return Math.round(logFrom(t, 10, 200000)); },
-          to: function(v) { return logTo(Math.max(10, Math.min(200000, v)), 10, 200000); },
-          fmt: function(v) { return (v / 100).toFixed(2); }
+        // std. dev. in pixels, log scale from 5 px on the left down to 0.1 px on the right
+        blur_px: {
+          from: function(t) { return +logFrom(1 - t, 0.1, 5).toFixed(2); },
+          to: function(v) { return 1 - logTo(Math.max(0.1, Math.min(5, v)), 0.1, 5); },
+          fmt: function(v) { return v.toFixed(2) + ' px'; }
+        },
+        // log scale on the tail above the percentile, 10% down to 0.001%
+        norm_percentile: {
+          from: function(t) { return +(100 - logFrom(1 - t, 0.001, 10)).toFixed(4); },
+          to: function(v) { return 1 - logTo(Math.max(0.001, Math.min(10, 100 - v)), 0.001, 10); },
+          fmt: function(v) { return +v.toFixed(3) + '%'; }
         }
       };
-      var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_distance: 'ndist', soft_strength: 'blurs' };
-      var NUMBER_IDS = { max_iter: 'iter', resolution: 'res', mandelbrot_resolution: 'mres', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
-      var INT_KEYS = { max_iter: 1, resolution: 1, mandelbrot_resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1 };
+      var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_distance: 'ndist', blur_px: 'blurs', norm_percentile: 'pct' };
+      var NUMBER_IDS = { max_iter: 'iter', resolution: 'res', inside_real: 'inre', outer_radius: 'orad', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
+      var INT_KEYS = { max_iter: 1, resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1 };
 
-      var cmapSel = $('p-cmap');
-      Object.keys(CMAPS).forEach(function(name) {
-        var o = document.createElement('option');
-        o.value = o.textContent = name;
-        cmapSel.appendChild(o);
-      });
+      function parseGradient(str) {
+        var stops = String(str).split(',').map(function(part) {
+          var m = /^#?([0-9a-f]{6})@([0-9.e-]+)$/i.exec(part.trim());
+          return m && isFinite(+m[2]) ? { c: '#' + m[1].toLowerCase(), p: clamp(+m[2], 0, 1) } : null;
+        });
+        return stops.length >= 2 && stops.every(Boolean) ? stops : null;
+      }
+      function gradientString(stops) {
+        return stops.slice().sort(function(a, b) { return a.p - b.p; }).map(function(s) { return s.c.slice(1) + '@' + +s.p.toFixed(4); }).join(',');
+      }
 
       function syncInputs() {
         Object.keys(SLIDER_IDS).forEach(function(k) {
@@ -678,16 +730,24 @@ zₙ₊₁ = zₙ² + c</pre>
         });
         Object.keys(NUMBER_IDS).forEach(function(k) { $('p-' + NUMBER_IDS[k]).value = st[k]; });
         $('p-method').value = st.method;
-        var metro = st.method === 'metropolis';
+        $('p-sampler').value = st.sampler;
+        $('p-inside').value = st.inside_point;
+        var metro = st.method === 'metropolis', boundary = st.sampler === 'boundary';
         document.querySelectorAll('.metro-only').forEach(function(el) { el.classList.toggle('hidden', !metro); });
-        document.querySelectorAll('.boundary-only').forEach(function(el) { el.classList.toggle('hidden', metro); });
-        $('samplesNote').textContent = metro ? 'Metropolis chains, each started at a boundary point whose orbit crosses the view' : 'boundary points whose orbits are traced';
+        document.querySelectorAll('.boundary-only').forEach(function(el) { el.classList.toggle('hidden', !boundary); });
+        document.querySelectorAll('.density-only').forEach(function(el) { el.classList.toggle('hidden', boundary); });
+        $('p-method').querySelector('[value="metropolis"]').disabled = boundary;
+        $('p-inre').parentNode.classList.toggle('hidden', !boundary || st.inside_point !== 'fixed');
+        document.querySelectorAll('.nearby-only').forEach(function(el) { el.classList.toggle('hidden', metro || !boundary); });
+        $('samplesNote').textContent = metro ? 'Metropolis chains, each started at a sampled point whose orbit crosses the view'
+          : boundary ? 'boundary points whose orbits are traced' : 'uniform points in the disk |c| ≤ 2; only escaping orbits are drawn';
         $('p-scale').value = st.scale_mode;
         $('p-root').value = st.root;
         $('v-root').textContent = (+st.root).toFixed(2);
-        cmapSel.value = CMAPS[st.cmap] ? st.cmap : 'gray';
-        $('p-preinv').checked = st.pre_invert;
-        $('p-postinv').checked = st.post_invert;
+        $('p-norm').value = st.normalize;
+        $('pctParam').classList.toggle('hidden', st.normalize !== 'percentile');
+        if (!gDrag && gradientString(gStops) !== st.gradient) { gStops = parseGradient(st.gradient); gSel = 0; }
+        drawGradient();
         $('p-blur').checked = st.soft_points;
         $('p-lo').value = st.min_clip;
         $('p-hi').value = st.max_clip;
@@ -695,7 +755,6 @@ zₙ₊₁ = zₙ² + c</pre>
         $('v-hi').textContent = (+st.max_clip).toFixed(3);
         $('rootParam').classList.toggle('hidden', st.scale_mode !== 'nth root');
         $('blurParam').classList.toggle('hidden', !st.soft_points);
-        updateBlurNote();
         applyView();
       }
 
@@ -713,7 +772,10 @@ zₙ₊₁ = zₙ² + c</pre>
         out.nearby_distance = clamp(out.nearby_distance, 10, 1e4);
         out.max_iter = clamp(out.max_iter, 2, 1e6);
         out.resolution = clamp(out.resolution, 128, 4096);
-        out.mandelbrot_resolution = clamp(out.mandelbrot_resolution, 6, 4096);
+        out.outer_radius = clamp(out.outer_radius, 2, 100);
+        // Only bulb interiors work as the inside end: below the period-4 bulb (−1.368) the real axis is the thin antenna,
+        // every point next to it escapes, and the bisection collapses all samples onto the axis.
+        out.inside_real = clamp(out.inside_real, -1.36, 0.25);
         out.refine_steps = clamp(out.refine_steps, 0, 10000);
         out.chain_length = clamp(out.chain_length, 1, 1e6);
         out.burn_in = clamp(out.burn_in, 0, 1e6);
@@ -724,10 +786,26 @@ zₙ₊₁ = zₙ² + c</pre>
         out.root = clamp(out.root, 1.1, 20);
         out.min_clip = clamp(out.min_clip, 0, 1);
         out.max_clip = clamp(out.max_clip, 0, 1);
-        out.soft_strength = clamp(out.soft_strength, 10, 200000);
+        out.blur_px = clamp(out.blur_px, 0.1, 5);
         if (['boundary', 'metropolis'].indexOf(out.method) < 0) out.method = DEFAULTS.method;
+        if (['boundary', 'uniform'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
+        if (['fixed', 'bulbs'].indexOf(out.inside_point) < 0) out.inside_point = DEFAULTS.inside_point;
+        // Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed render is mostly noise:
+        // the boundary sampler always draws the whole set.
+        if (out.sampler === 'boundary') {
+          out.method = 'boundary';
+          ['xmin', 'xmax', 'ymin', 'ymax'].forEach(function(k) { out[k] = DEFAULTS[k]; });
+        }
         if (['linear', 'nth root', 'log'].indexOf(out.scale_mode) < 0) out.scale_mode = DEFAULTS.scale_mode;
-        if (!CMAPS[out.cmap]) out.cmap = 'gray';
+        out.norm_percentile = clamp(out.norm_percentile, 90, 99.999);
+        if (['equalize', 'percentile', 'max'].indexOf(out.normalize) < 0) out.normalize = DEFAULTS.normalize;
+        // desktop presets name a matplotlib colormap and were normalized by the maximum
+        if ('cmap' in data && !('gradient' in data)) {
+          if (GRADIENTS[data.cmap]) out.gradient = GRADIENTS[data.cmap];
+          if (!('normalize' in data)) out.normalize = 'max';
+        }
+        var g = parseGradient(out.gradient);
+        out.gradient = g ? gradientString(g) : DEFAULTS.gradient;
         return out;
       }
       function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
@@ -824,47 +902,6 @@ zₙ₊₁ = zₙ² + c</pre>
       }
       function tick() { return new Promise(function(r) { setTimeout(r, 0); }); }
 
-      function boundaryPairs(img, n, b) {
-        var dx = (b.xmax - b.xmin) / n, dy = (b.ymax - b.ymin) / n, x, y, i, j, m = 0;
-        for (x = 1; x < n - 1; x++) for (y = 1; y < n - 1; y++) {
-          if (!img[x * n + y]) continue;
-          for (i = -1; i <= 1; i++) for (j = -1; j <= 1; j++) if ((i || j) && !img[(x + i) * n + y + j]) m++;
-        }
-        var pairs = new Float64Array(4 * m), k = 0;
-        for (x = 1; x < n - 1; x++) for (y = 1; y < n - 1; y++) {
-          if (!img[x * n + y]) continue;
-          for (i = -1; i <= 1; i++) for (j = -1; j <= 1; j++) {
-            if ((i || j) && !img[(x + i) * n + y + j]) {
-              pairs[k++] = b.xmin + x * dx; pairs[k++] = b.ymin + y * dy;
-              pairs[k++] = b.xmin + (x + i) * dx; pairs[k++] = b.ymin + (y + j) * dy;
-            }
-          }
-        }
-        return { pairs: pairs, m: m };
-      }
-
-      // Draw `samples` pairs: without repetition if there are enough, otherwise every pair repeated plus a random rest.
-      function resample(pairs, m, samples, rand) {
-        var out = new Float64Array(4 * samples), p = 0, i;
-        function put(idx) { out.set(pairs.subarray(4 * idx, 4 * idx + 4), 4 * p++); }
-        function choose(k) {
-          var perm = new Int32Array(m);
-          for (i = 0; i < m; i++) perm[i] = i;
-          for (i = 0; i < k; i++) {
-            var j = i + Math.floor(rand() * (m - i)), t = perm[i];
-            perm[i] = perm[j]; perm[j] = t;
-            put(perm[i]);
-          }
-        }
-        if (m >= samples) choose(samples);
-        else {
-          var reps = Math.floor(samples / m);
-          for (var r = 0; r < reps; r++) for (i = 0; i < m; i++) put(i);
-          choose(samples % m);
-        }
-        return out;
-      }
-
       function chunks(total, nWorkers, perWorker, minSize) {
         var size = Math.max(minSize, Math.ceil(total / (nWorkers * perWorker))), list = [];
         for (var s = 0; s < total; s += size) list.push([s, Math.min(total, s + size)]);
@@ -882,46 +919,30 @@ zₙ₊₁ = zₙ² + c</pre>
         setStatus(result ? '' : 'Generating…');
         var t0 = performance.now();
         // Orbits that cross a zoomed view mostly start outside it, so starting points always come from the whole set.
-        var metro = p.method === 'metropolis';
-        var sb = { xmin: DEFAULTS.xmin, xmax: DEFAULTS.xmax, ymin: DEFAULTS.ymin, ymax: DEFAULTS.ymax };
+        var metro = p.method === 'metropolis', uniform = p.sampler === 'uniform';
         try {
-          // 1. coarse Mandelbrot grid: which cells are inside the set
-          var n = Math.min(p.mandelbrot_resolution, p.resolution);
-          setStage('Mandelbrot', 0, 10, n * n);
-          var img = new Uint8Array(n * n);
-          await runJobs(chunks(n, nCores, 4, 1).map(function(c) {
-            return { start: c[0], msg: { cmd: 'mandel', x0: c[0], x1: c[1], n: n, b: sb, maxIter: p.max_iter } };
-          }), nCores, function(job, d) {
-            img.set(d.img, job.start * n);
-            addProgress(d.img.length);
-          });
-          if (id !== genId) return;
-
-          // 2. inside/outside neighbour pairs, resampled to the sample count
-          setStage('Sampling', 10, 15);
-          await tick();
-          var bp = boundaryPairs(img, n, sb);
-          if (bp.m === 0) throw new Error('No boundary of the Mandelbrot set found. Raise the Mandelbrot resolution.');
-          var pts = resample(bp.pairs, bp.m, p.samples, rng(mixSeed(p.seed, 0, 0)));
-          if (id !== genId) return;
-
-          // 3. random bisection toward the boundary; only the escaping end is kept
-          var outside;
-          if (p.refine_steps > 0) {
-            setStage('Refining', 15, 45, p.samples * p.refine_steps);
-            outside = new Float64Array(2 * p.samples);
-            await runJobs(chunks(p.samples, nCores, 8, 64).map(function(c, i) {
-              var slice = pts.slice(4 * c[0], 4 * c[1]);
-              return { start: c[0], msg: { cmd: 'refine', pts: slice, steps: p.refine_steps, maxIter: p.max_iter, seed: mixSeed(p.seed, 1, i) }, transfer: [slice.buffer] };
-            }), nCores, function(job, d) { outside.set(d.pts, 2 * job.start); }, addProgress);
+          // 1. starting points c, two numbers per sample
+          var outside = new Float64Array(2 * p.samples);
+          if (uniform) {
+            // uniform in the disk |c| ≤ 2, which holds every c whose orbit leaves a point on the plane
+            setStage('Sampling', 0, 5);
+            await tick();
+            var urand = rng(mixSeed(p.seed, 0, 0));
+            for (var i = 0; i < p.samples; i++) {
+              var ur = 2 * Math.sqrt(urand()), uth = 2 * Math.PI * urand();
+              outside[2 * i] = ur * Math.cos(uth); outside[2 * i + 1] = ur * Math.sin(uth);
+            }
           } else {
-            outside = new Float64Array(2 * p.samples);
-            for (var i = 0; i < p.samples; i++) { outside[2 * i] = pts[4 * i + 2]; outside[2 * i + 1] = pts[4 * i + 3]; }
+            // random bisection between an inside and an outside point; only the escaping end is kept
+            setStage('Refining', 0, 45, p.samples * p.refine_steps);
+            await runJobs(chunks(p.samples, nCores, 8, 64).map(function(c, i) {
+              return { start: c[0], msg: { cmd: 'refine', count: c[1] - c[0], steps: p.refine_steps, maxIter: p.max_iter, radius: p.outer_radius, inside: p.inside_point, insideReal: p.inside_real, seed: mixSeed(p.seed, 1, i) } };
+            }), nCores, function(job, d) { outside.set(d.pts, 2 * job.start); }, addProgress);
           }
-          pts = null;
           if (id !== genId) return;
+          var lo = uniform ? 5 : 45;
 
-          // 4. trace orbits into one histogram per worker; cap workers so the histograms fit in memory.
+          // 2. trace orbits into one histogram per worker; cap workers so the histograms fit in memory.
           // Metropolis splats fractional weights, which need doubles.
           var res = p.resolution, bytes = res * res * (metro ? 8 : 4);
           var nTrace = Math.max(1, Math.min(nCores, Math.floor(768e6 / bytes)));
@@ -930,16 +951,16 @@ zₙ₊₁ = zₙ² + c</pre>
           await runJobs(inits, nTrace);
           var total;
           if (!metro) {
-            total = p.samples * (1 + p.nearby_points);
-            setStage('Buddhabrot', 45, 95, total);
+            total = p.samples * (1 + (uniform ? 0 : p.nearby_points));
+            setStage('Buddhabrot', lo, 95, total);
             var perWorker = p.nearby_points > 0 ? 64 : 16;
             await runJobs(chunks(p.samples, nTrace, perWorker, 1).map(function(c, i) {
               var slice = outside.slice(2 * c[0], 2 * c[1]);
-              return { msg: { cmd: 'trace', pts: slice, nearby: p.nearby_points, sigma: 1 / p.nearby_distance, seed: mixSeed(p.seed, 2, i) }, transfer: [slice.buffer] };
+              return { msg: { cmd: 'trace', pts: slice, escapingOnly: uniform, nearby: uniform ? 0 : p.nearby_points, sigma: 1 / p.nearby_distance, seed: mixSeed(p.seed, 2, i) }, transfer: [slice.buffer] };
             }), nTrace, null, addProgress);
           } else {
-            // 4a. keep the boundary points whose orbits cross the view
-            setStage('Seeding', 45, 50, p.samples);
+            // 2a. keep the starting points whose orbits cross the view
+            setStage('Seeding', lo, lo + 5, p.samples);
             var found = [];
             await runJobs(chunks(p.samples, nTrace, 4, 64).map(function(c, i) {
               var slice = outside.slice(2 * c[0], 2 * c[1]);
@@ -951,14 +972,14 @@ zₙ₊₁ = zₙ² + c</pre>
             var seeds = new Float64Array(2 * nFound), o = 0;
             found.forEach(function(f) { seeds.set(f, o); o += f.length; });
 
-            // 4b. one chain per sample, started at a random seed; burn-in carries the chains away from the boundary bias
+            // 2b. one chain per sample, started at a random seed; burn-in carries the chains away from the boundary bias
             var starts = new Float64Array(2 * p.samples), rand = rng(mixSeed(p.seed, 3, 0));
             for (var j = 0; j < p.samples; j++) {
               var q = Math.floor(rand() * nFound);
               starts[2 * j] = seeds[2 * q]; starts[2 * j + 1] = seeds[2 * q + 1];
             }
             total = p.samples * (p.burn_in + p.chain_length);
-            setStage('Metropolis', 50, 95, total);
+            setStage('Metropolis', lo + 5, 95, total);
             await runJobs(chunks(p.samples, nTrace, 16, 1).map(function(c, i) {
               var slice = starts.slice(2 * c[0], 2 * c[1]);
               return { msg: { cmd: 'metro', pts: slice, steps: p.chain_length, burn: p.burn_in, large: p.large_step, rmin: p.mutation_min, rmax: p.mutation_max, seed: mixSeed(p.seed, 4, i) }, transfer: [slice.buffer] };
@@ -966,7 +987,7 @@ zₙ₊₁ = zₙ² + c</pre>
           }
           if (id !== genId) return;
 
-          // 5. combine
+          // 3. combine
           setStage('Combining', 95, 100);
           var sum = new Float32Array(res * res), gets = [];
           for (w = 0; w < nTrace; w++) gets.push({ msg: { cmd: 'histGet' } });
@@ -1024,32 +1045,23 @@ zₙ₊₁ = zₙ² + c</pre>
 
       // ---------- display ----------
       var canvas = $('canvas'), ctx = canvas.getContext('2d');
-      var blurCache = null, scaledBuf = null, lutCache = {};
+      var blurCache = null, scaledBuf = null, lutCache = { key: null, table: null };
 
-      function lut(name) {
-        if (lutCache[name]) return lutCache[name];
-        var hex = CMAPS[name], stops = hex.length / 6, table = new Uint32Array(1024);
-        var rgb = [];
-        for (var i = 0; i < stops; i++) rgb.push([0, 2, 4].map(function(o) { return parseInt(hex.substr(i * 6 + o, 2), 16); }));
+      // 1024-entry table for the current gradient; flat beyond the first and last stop
+      function lut() {
+        if (lutCache.key === st.gradient) return lutCache.table;
+        var stops = parseGradient(st.gradient), table = new Uint32Array(1024), k = 0;
+        var rgb = stops.map(function(s) { return [1, 3, 5].map(function(o) { return parseInt(s.c.substr(o, 2), 16); }); });
         for (var j = 0; j < 1024; j++) {
-          var f = j / 1023 * (stops - 1), a = Math.floor(f), t = f - a, c0 = rgb[a], c1 = rgb[Math.min(stops - 1, a + 1)];
+          var f = j / 1023;
+          while (k < stops.length - 2 && f > stops[k + 1].p) k++;
+          var span = stops[k + 1].p - stops[k].p, t = span > 0 ? clamp((f - stops[k].p) / span, 0, 1) : f < stops[k].p ? 0 : 1;
+          var c0 = rgb[k], c1 = rgb[k + 1];
           var r = Math.round(c0[0] + (c1[0] - c0[0]) * t), g = Math.round(c0[1] + (c1[1] - c0[1]) * t), bl = Math.round(c0[2] + (c1[2] - c0[2]) * t);
           table[j] = (255 << 24 | bl << 16 | g << 8 | r) >>> 0;   // little-endian RGBA
         }
-        return (lutCache[name] = table);
-      }
-
-      function blurSigmas() {
-        var std = 100 / st.soft_strength;
-        return { v: std * result.res / (result.b.xmax - result.b.xmin), h: std * result.res / (result.b.ymax - result.b.ymin) };
-      }
-      function updateBlurNote() {
-        var note = 'in units of the complex plane';
-        if (result) {
-          var s = blurSigmas();
-          note += ' (σ ≈ ' + (s.v < 10 ? s.v.toFixed(1) : Math.round(s.v)) + ' px)';
-        }
-        $('blurNote').textContent = note;
+        lutCache = { key: st.gradient, table: table };
+        return table;
       }
 
       // Separable blur: exact Gaussian for small σ, three box passes for large σ (constant time per pixel). Edges are clamped.
@@ -1097,11 +1109,11 @@ zₙ₊₁ = zₙ² + c</pre>
         }
       }
       function blurred() {
-        var s = blurSigmas(), key = s.v + ':' + s.h;
+        var key = st.blur_px;
         if (blurCache && blurCache.key === key) return blurCache.data;
         var data = new Float32Array(result.data);
-        blurAxis(data, result.res, s.v, true);
-        blurAxis(data, result.res, s.h, false);
+        blurAxis(data, result.res, key, true);
+        blurAxis(data, result.res, key, false);
         blurCache = { key: key, data: data };
         return data;
       }
@@ -1114,9 +1126,9 @@ zₙ₊₁ = zₙ² + c</pre>
         if (!scaledBuf || scaledBuf.length !== N) scaledBuf = new Float32Array(N);
         var scaled = scaledBuf, max = 0;
         for (i = 0; i < N; i++) if (src[i] > max) max = src[i];
-        var pre = st.pre_invert && max > 0, mode = st.scale_mode, inv = 1 / Math.max(1.1, st.root), smax = 0;
+        var mode = st.scale_mode, inv = 1 / Math.max(1.1, st.root), smax = 0;
         for (i = 0; i < N; i++) {
-          v = pre ? max - src[i] : src[i];
+          v = src[i];
           if (mode === 'nth root') v = Math.pow(v, inv);
           else if (mode === 'log') v = Math.log1p(v);
           scaled[i] = v;
@@ -1125,14 +1137,30 @@ zₙ₊₁ = zₙ² + c</pre>
         if (smax <= 0) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, n, n); return; }
         var lo = st.min_clip, hi = st.max_clip;
         if (hi <= lo) hi = lo + 1e-6;
-        var table = lut(st.cmap), post = st.post_invert, k1 = 1 / smax, k2 = 1 / (hi - lo);
+        // Normalize to [0, 1]. Percentile and equalization look at the distribution of the non-empty pixels;
+        // equalization maps each value to its rank, interpolated within a fine histogram.
+        var k1 = 1 / smax, NB = 65536, cdf = null;
+        if (st.normalize !== 'max') {
+          var hist = new Float64Array(NB), nz = 0;
+          for (i = 0; i < N; i++) if (scaled[i] > 0) { v = scaled[i] * k1 * NB; hist[v >= NB ? NB - 1 : v | 0]++; nz++; }
+          if (st.normalize === 'percentile') {
+            var want = nz * st.norm_percentile / 100, acc = 0, b = 0;
+            while (b < NB - 1 && acc + hist[b] < want) acc += hist[b++];
+            k1 = NB / ((b + 1) * smax);
+          } else {
+            cdf = new Float64Array(NB + 1);
+            for (var b2 = 0; b2 < NB; b2++) cdf[b2 + 1] = cdf[b2] + hist[b2] / nz;
+          }
+        }
+        var table = lut(), k2 = 1 / (hi - lo);
         var bins = new Float64Array(256), im = ctx.createImageData(n, n), px = new Uint32Array(im.data.buffer);
         for (i = 0; i < N; i++) {
           var u = scaled[i] * k1;
+          if (cdf) { var x = u * NB, xb = x >= NB ? NB - 1 : x | 0; u = cdf[xb] + (cdf[xb + 1] - cdf[xb]) * (x - xb); }
+          if (u > 1) u = 1;
           bins[u >= 1 ? 255 : (u * 256) | 0]++;
           var t = (u - lo) * k2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          if (post) t = 1 - t;
           px[i] = table[(t * 1023 + 0.5) | 0];
         }
         ctx.putImageData(im, 0, 0);
@@ -1281,7 +1309,8 @@ zₙ₊₁ = zₙ² + c</pre>
         $('p-' + id).addEventListener('input', function() {
           st[k] = SLIDERS[k].from(this.value / 1000);
           $('v-' + id).textContent = SLIDERS[k].fmt(st[k]);
-          if (k === 'soft_strength') { updateBlurNote(); scheduleRender(); }
+          if (k === 'blur_px') scheduleRender();
+          if (k === 'norm_percentile') scheduleRender();
           writeHash();
         });
       });
@@ -1294,16 +1323,72 @@ zₙ₊₁ = zₙ² + c</pre>
           writeHash();
         });
       });
-      $('p-method').addEventListener('change', function() { st.method = this.value; syncInputs(); writeHash(); });
+      $('p-method').addEventListener('change', function() { st = sanitize(Object.assign({}, st, { method: this.value })); syncInputs(); writeHash(); });
+      $('p-sampler').addEventListener('change', function() { st = sanitize(Object.assign({}, st, { sampler: this.value })); syncInputs(); writeHash(); });
+      $('p-inside').addEventListener('change', function() { st.inside_point = this.value; syncInputs(); writeHash(); });
       $('p-scale').addEventListener('change', function() { st.scale_mode = this.value; syncInputs(); scheduleRender(); writeHash(); });
-      cmapSel.addEventListener('change', function() { st.cmap = this.value; scheduleRender(); writeHash(); });
+      $('p-norm').addEventListener('change', function() { st.normalize = this.value; syncInputs(); scheduleRender(); writeHash(); });
       $('p-root').addEventListener('input', function() { st.root = +this.value; $('v-root').textContent = st.root.toFixed(2); scheduleRender(); writeHash(); });
-      $('p-preinv').addEventListener('change', function() { st.pre_invert = this.checked; scheduleRender(); writeHash(); });
-      $('p-postinv').addEventListener('change', function() { st.post_invert = this.checked; scheduleRender(); writeHash(); });
       $('p-blur').addEventListener('change', function() { st.soft_points = this.checked; syncInputs(); scheduleRender(); writeHash(); });
       // the clip sliders push each other so that min ≤ max
       $('p-lo').addEventListener('input', function() { st.min_clip = +this.value; if (st.max_clip < st.min_clip) st.max_clip = st.min_clip; syncInputs(); scheduleRender(); writeHash(); });
       $('p-hi').addEventListener('input', function() { st.max_clip = +this.value; if (st.min_clip > st.max_clip) st.min_clip = st.max_clip; syncInputs(); scheduleRender(); writeHash(); });
+
+      // ---------- gradient editor ----------
+      // gStops keeps the user's order while dragging so the selection stays put; st.gradient is the sorted form.
+      var gStops = [], gSel = 0, gDrag = false, grad = $('grad');
+      function drawGradient() {
+        var sorted = parseGradient(st.gradient), els = grad.getElementsByClassName('grad-stop');
+        $('gradBar').style.background = 'linear-gradient(to right, ' + sorted.map(function(s) { return s.c + ' ' + s.p * 100 + '%'; }).join(', ') + ')';
+        while (els.length > gStops.length) els[els.length - 1].remove();
+        while (els.length < gStops.length) { var el = document.createElement('div'); el.className = 'grad-stop'; grad.appendChild(el); }
+        gStops.forEach(function(s, i) {
+          els[i].dataset.i = i;
+          els[i].classList.toggle('sel', i === gSel);
+          els[i].style.left = s.p * 100 + '%';
+          els[i].style.background = s.c;
+        });
+        $('p-gcolor').value = gStops[gSel].c;
+        $('p-gpos').value = +gStops[gSel].p.toFixed(3);
+        $('gradDelBtn').disabled = gStops.length <= 2;
+        $('p-gpreset').value = Object.keys(GRADIENTS).filter(function(k) { return GRADIENTS[k] === st.gradient; })[0] || '';
+      }
+      function gradChanged() {
+        var g = gradientString(gStops);
+        if (g !== st.gradient) { st.gradient = g; scheduleRender(); writeHash(); }
+        drawGradient();
+      }
+      function gradPos(e) { var r = grad.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); }
+      grad.addEventListener('pointerdown', function(e) {
+        if (e.button !== 0) return;
+        e.preventDefault();   // otherwise the browser may start a native drag of the bar
+        var i = e.target.classList.contains('grad-stop') ? +e.target.dataset.i : -1;
+        if (i < 0) {
+          // a new stop takes the color the gradient already has there
+          var p = gradPos(e), c = lut()[(p * 1023 + 0.5) | 0];
+          gStops.push({ c: '#' + [c & 255, c >> 8 & 255, c >> 16 & 255].map(function(v) { return v.toString(16).padStart(2, '0'); }).join(''), p: p });
+          i = gStops.length - 1;
+        }
+        gSel = i;
+        gDrag = true;
+        grad.setPointerCapture(e.pointerId);
+        gradChanged();
+      });
+      grad.addEventListener('pointermove', function(e) { if (gDrag) { gStops[gSel].p = gradPos(e); gradChanged(); } });
+      grad.addEventListener('pointerup', function() { gDrag = false; });
+      grad.addEventListener('dragstart', function(e) { e.preventDefault(); });
+      grad.addEventListener('pointercancel', function() { gDrag = false; });
+      $('p-gcolor').addEventListener('input', function() { gStops[gSel].c = this.value; gradChanged(); });
+      $('p-gpos').addEventListener('change', function() { var p = +this.value; if (isFinite(p)) gStops[gSel].p = clamp(p, 0, 1); gradChanged(); });
+      $('gradDelBtn').addEventListener('click', function() { if (gStops.length > 2) { gStops.splice(gSel, 1); gSel = Math.max(0, gSel - 1); gradChanged(); } });
+      $('gradRevBtn').addEventListener('click', function() { gStops.forEach(function(s) { s.p = 1 - s.p; }); gradChanged(); });
+      $('p-gpreset').addEventListener('change', function() {
+        if (!GRADIENTS[this.value]) return;
+        st.gradient = GRADIENTS[this.value];
+        syncInputs();
+        scheduleRender();
+        writeHash();
+      });
 
       $('seedBtn').addEventListener('click', function() { st.seed = Math.floor(Math.random() * 2147483647); syncInputs(); writeHash(); });
       $('genBtn').addEventListener('click', generate);

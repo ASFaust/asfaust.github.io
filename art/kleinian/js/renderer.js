@@ -33,7 +33,8 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.chunks = [];
     this.maxLen = 1;
-    this.style = { mode: 'letter', depth: 1, lineWidth: 1, theme: 'light' };
+    // tiles: pixel maps [s, ox, oy] of the copies drawn, (px, py) ↦ (s·px + ox, s·py + oy)
+    this.style = { mode: 'letter', depth: 1, lineWidth: 1, theme: 'light', tiles: [[1, 0, 0]] };
   }
 
   setStyle(style) { Object.assign(this.style, style); }
@@ -115,19 +116,24 @@ export class Renderer {
     ctx.lineJoin = 'round';
     for (let c = 0; c < k; c++) {
       ctx.strokeStyle = colors[c];
-      ctx.beginPath();
+      const path = new Path2D();
       let cx = NaN, cy = NaN, any = false;
       for (let i = 0; i < n; i++) {
         if (idx[i] !== c) continue;
         const o = 4 * i;
         const ax = seg[o], ay = seg[o + 1];
         // consecutive segments usually share an end point: continue the polyline
-        if (Math.abs(ax - cx) > 0.01 || Math.abs(ay - cy) > 0.01) ctx.moveTo(ax, ay);
+        if (Math.abs(ax - cx) > 0.01 || Math.abs(ay - cy) > 0.01) path.moveTo(ax, ay);
         cx = seg[o + 2]; cy = seg[o + 3];
-        ctx.lineTo(cx, cy);
+        path.lineTo(cx, cy);
         any = true;
       }
-      if (any) ctx.stroke();
+      if (!any) continue;
+      for (const [s, ox, oy] of this.style.tiles) {
+        ctx.setTransform(s, 0, 0, s, ox, oy);
+        ctx.stroke(path);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
   }
 

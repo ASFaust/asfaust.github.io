@@ -11,6 +11,69 @@ import { grandma, fixedPoints, FSA } from './group.js';
 
 export const MAX_LEVEL = 16383;
 
+// Peirce's quincuncial projection of the Riemann sphere onto the square [−QL, QL]². The unit disk
+// goes conformally onto the inscribed diamond |x| + |y| ≤ QL by g(w) = ∫₀ʷ dt/√(1 − t⁴), which is
+// w·R_F(1 − w², 1 + w², 1) with Carlson's elliptic integral. The outside of the disk goes onto the
+// four corner triangles: w ↦ g(1/w̄) mirrored in the edge of the diamond in its quadrant. The square
+// tiles the plane, each neighbour turned by 180° about the midpoint of the shared edge, and the
+// cuts between the triangles are seams where a curve jumps to the far side of the square.
+// Result in QO: x, y, and the quadrant 0–3 of a southern point (−1 in the north).
+export const QL = 1.3110287771460599; // lemniscate constant ϖ/2 = g(1)
+const QO = new Float64Array(3);
+let sr = 0, si = 0;
+function csqrt(x, y) {
+  const r = Math.sqrt(x * x + y * y);
+  sr = Math.sqrt((r + x) / 2);
+  const im = Math.sqrt(Math.max(0, (r - x) / 2));
+  si = y < 0 ? -im : im;
+}
+export function quincuncial(zr, zi, tol = 0.002) {
+  let wr = zr, wi = zi;
+  const m2 = zr * zr + zi * zi;
+  const south = !(m2 <= 1);
+  if (south) {
+    if (m2 === Infinity || m2 !== m2) { wr = 0; wi = 0; } // ∞: the four corners
+    else { wr = zr / m2; wi = zi / m2; } // 1/z̄
+  }
+  // Carlson's duplication for R_F(x, y, z), all three complex
+  const w2r = wr * wr - wi * wi, w2i = 2 * wr * wi;
+  let xr = 1 - w2r, xi = -w2i, yr = 1 + w2r, yi = w2i, zr_ = 1, zi_ = 0, ar = 1, ai = 0;
+  for (let it = 0; it < 40; it++) {
+    ar = (xr + yr + zr_) / 3; ai = (xi + yi + zi_) / 3;
+    const t2 = tol * tol * (ar * ar + ai * ai);
+    if ((xr - ar) ** 2 + (xi - ai) ** 2 < t2 && (yr - ar) ** 2 + (yi - ai) ** 2 < t2 && (zr_ - ar) ** 2 + (zi_ - ai) ** 2 < t2) break;
+    csqrt(xr, xi); const pr = sr, pi = si;
+    csqrt(yr, yi); const qr = sr, qi = si;
+    csqrt(zr_, zi_);
+    const lr = pr * qr - pi * qi + pr * sr - pi * si + qr * sr - qi * si;
+    const li = pr * qi + pi * qr + pr * si + pi * sr + qr * si + qi * sr;
+    xr = (xr + lr) / 4; xi = (xi + li) / 4;
+    yr = (yr + lr) / 4; yi = (yi + li) / 4;
+    zr_ = (zr_ + lr) / 4; zi_ = (zi_ + li) / 4;
+  }
+  // X = 1 − x/A etc., then the fifth-order series
+  const a2 = ar * ar + ai * ai;
+  const dX = (u, v) => [((ar - u) * ar + (ai - v) * ai) / a2, ((ai - v) * ar - (ar - u) * ai) / a2];
+  const [Xr, Xi] = dX(xr, xi), [Yr, Yi] = dX(yr, yi);
+  const Zr = -Xr - Yr, Zi = -Xi - Yi;
+  const e2r = Xr * Yr - Xi * Yi - (Zr * Zr - Zi * Zi), e2i = Xr * Yi + Xi * Yr - 2 * Zr * Zi;
+  const xyr = Xr * Yr - Xi * Yi, xyi = Xr * Yi + Xi * Yr;
+  const e3r = xyr * Zr - xyi * Zi, e3i = xyr * Zi + xyi * Zr;
+  const sR = 1 - e2r / 10 + e3r / 14 + (e2r * e2r - e2i * e2i) / 24 - 3 * (e2r * e3r - e2i * e3i) / 44;
+  const sI = -e2i / 10 + e3i / 14 + 2 * e2r * e2i / 24 - 3 * (e2r * e3i + e2i * e3r) / 44;
+  // R_F = series / √A, and g = w·R_F
+  csqrt(ar, ai);
+  const d = sr * sr + si * si;
+  const rr = (sR * sr + sI * si) / d, ri = (sI * sr - sR * si) / d;
+  const ux = wr * rr - wi * ri, uy = wr * ri + wi * rr;
+  if (!south) { QO[0] = ux; QO[1] = uy; QO[2] = -1; return QO; }
+  const sx = ux >= 0 ? 1 : -1, sy = uy >= 0 ? 1 : -1;
+  QO[0] = sx * (QL - sy * uy);
+  QO[1] = sy * (QL - sx * ux);
+  QO[2] = (sx < 0 ? 1 : 0) + (sy < 0 ? 2 : 0);
+  return QO;
+}
+
 // p: { ta, tb, nonfree, altroot, levmax, eps (pixels), neck, view: {x0, y0, k, w, h}, bound, all }
 //   view maps the plane to pixels: px = (re − x0)·k, py = (y0 − im)·k on a w × h canvas.
 //   bound: { m, disks } from measure(). disks[s] = [x, y, r] bounds the part of the limit set whose
@@ -18,6 +81,10 @@ export const MAX_LEVEL = 16383;
 //   if that disk misses the view the branch is skipped, which makes zoomed renders fast. Optional.
 //   all: keep segments outside the view as well (used to measure the limit set).
 //   root: 0–3 to search only the words starting with a, b, A or B.
+//   sphere: { cx, cy, r } to draw in the quincuncial projection of (z − c)/r instead of the plane;
+//     view is then in the coordinates of the tiled square. No culling in that case.
+//   tiles: [[s, ox, oy], …] pixel maps (px, py) ↦ (s·px + ox, s·py + oy) of the copies the renderer
+//     draws; a segment is kept if any copy lands in the view. Default: the identity.
 // sink(seg: Float32Array, code: Uint32Array, n, progress) is called with batches.
 // Returns { segments, done, ms, levmaxHits }.
 export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infinity, checkTime = null } = {}) {
@@ -55,7 +122,8 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
 
   // Culling only pays when the view shows part of the limit set.
   const B = p.bound;
-  const cull = !all && !!B && !(B.x0 >= vx0 && B.x1 <= vx1 && B.y0 >= vy0 && B.y1 <= vy1);
+  const sphere = p.sphere || null;
+  const cull = !all && !!B && !sphere && !(B.x0 >= vx0 && B.x1 <= vx1 && B.y0 >= vy0 && B.y1 <= vy1);
   const cm = cull ? B.m : 0, CD = cull ? Float64Array.from(B.disks.flat()) : null;
 
   function progress() {
@@ -118,13 +186,47 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
     ii = (ni * dr - nr * di) / d;
   }
 
-  // image of fixed point (table t, generator of the current level), in pixels
-  let px = 0, py = 0;
-  function image(t) {
-    const f = (t * 4 + tags[lev]) * 2;
+  // image of fixed point (table t, generator of the current level) into slot s of P:
+  // pixel x, y, quadrant of a southern point in the projection (−1 otherwise), point on the sphere
+  const P = new Float64Array(20);
+  function image(t, s) {
+    const f = (t * 4 + tags[lev]) * 2, o = 5 * s;
     apply(F[f], F[f + 1]);
-    px = (ir - x0) * k;
-    py = (y0 - ii) * k;
+    let x = ir, y = ii;
+    P[o + 2] = -1;
+    if (sphere) {
+      const zr = (ir - sphere.cx) / sphere.r, zi = (ii - sphere.cy) / sphere.r;
+      P[o + 3] = zr; P[o + 4] = zi;
+      const q = quincuncial(zr, zi);
+      x = q[0]; y = q[1]; P[o + 2] = q[2];
+    }
+    P[o] = (x - x0) * k;
+    P[o + 1] = (y0 - y) * k;
+  }
+  // Two southern points in different quadrants lie on either side of a seam. Such a pair counts as
+  // close once it is close on the sphere, and no line joins it.
+  const seam = (a, b) => P[5 * a + 2] >= 0 && P[5 * b + 2] >= 0 && P[5 * a + 2] !== P[5 * b + 2];
+  const chordTol = Math.max(1e-26, 0.01 * (p.eps / k) ** 4);
+  function close(a, b) {
+    const i = 5 * a, j = 5 * b;
+    if (seam(a, b)) {
+      const ar = P[i + 3], ai = P[i + 4], br = P[j + 3], bi = P[j + 4];
+      const chord2 = 4 * ((ar - br) ** 2 + (ai - bi) ** 2) / ((1 + ar * ar + ai * ai) * (1 + br * br + bi * bi));
+      return !(chord2 >= chordTol); // NaN at ∞ counts as close
+    }
+    return (P[i] - P[j]) ** 2 + (P[i + 1] - P[j + 1]) ** 2 < eps2;
+  }
+  function line(a, b) {
+    if (!seam(a, b)) emit(P[5 * a], P[5 * a + 1], P[5 * b], P[5 * b + 1]);
+  }
+  const tiles = p.tiles || [[1, 0, 0]];
+  function visible(s) {
+    const x = P[5 * s], y = P[5 * s + 1];
+    for (const [sg, ox, oy] of tiles) {
+      const tx = sg * x + ox, ty = sg * y + oy;
+      if (tx >= left && tx <= right && ty >= top && ty <= bottom) return true;
+    }
+    return false;
   }
 
   // Does word[lev − m] map the disk around the last m letters' part of the limit set to a disk
@@ -170,33 +272,31 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
   let lev = 0;
   tags[0] = single ? p.root : 0; state[0] = 0;
   compose();
-  let haveLast = false, lastX = 0, lastY = 0; // previous "new" point, to close gaps in the non-free case
+  let haveLast = false; // P slot 3 holds the previous "new" point, to close gaps in the non-free case
   const eps2 = p.eps * p.eps;
 
   for (;;) {
     let fl = nonfree && state[lev] === -1;
     while (!fl) {
       if (cull && outside()) { haveLast = false; break; }
-      image(0); const nx = px, ny = py;
-      image(2); const ox = px, oy = py;
-      let mx = 0, my = 0;
-      if (neck) { image(1); mx = px; my = py; }
+      // slots: 0 new point, 1 old point, 2 whorl tip
+      image(0, 0);
+      image(2, 1);
+      if (neck) image(1, 2);
       const atMax = lev === levmax;
-      const close = neck
-        ? (nx - mx) * (nx - mx) + (ny - my) * (ny - my) < eps2 && (mx - ox) * (mx - ox) + (my - oy) * (my - oy) < eps2
-        : (nx - ox) * (nx - ox) + (ny - oy) * (ny - oy) < eps2;
-      if (atMax || close) {
+      if (atMax || (neck ? close(0, 2) && close(2, 1) : close(0, 1))) {
         if (atMax) levmaxHits++;
-        if (all || !(nx < left || nx > right || ny < top || ny > bottom)) {
+        if (all || visible(0)) {
           // with the neck test the whorl tip lies between: draw through it (closes the gasket's gaps)
-          if (neck) { emit(ox, oy, mx, my); emit(mx, my, nx, ny); }
-          else emit(ox, oy, nx, ny);
+          if (neck) { line(1, 2); line(2, 0); }
+          else line(1, 0);
           if (nonfree && haveLast) {
-            const dx = ox - lastX, dy = oy - lastY;
-            if (dx * dx + dy * dy < 100 * eps2) emit(lastX, lastY, ox, oy);
+            const dx = P[5] - P[15], dy = P[6] - P[16];
+            if (dx * dx + dy * dy < 100 * eps2) line(3, 1);
           }
         }
-        lastX = nx; lastY = ny; haveLast = true;
+        P.copyWithin(15, 0, 5);
+        haveLast = true;
         break;
       }
       // go forward

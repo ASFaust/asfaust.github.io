@@ -162,6 +162,15 @@
               <option value="dark">dark</option>
             </select>
           </div>
+          <div class="param check wide">
+            <label><input type="checkbox" id="p-quinc"> <span>Quincuncial view</span></label>
+            <small>shows the whole Riemann sphere, ∞ included, as a square that tiles the plane (Peirce’s projection). Fit centres the sphere on the limit set</small>
+          </div>
+          <div class="param wide" id="sphereParam">
+            <label for="p-sph"><span>Sphere size</span><span id="v-sph"></span></label>
+            <small>radius of the circle that becomes the equator, relative to the limit set: smaller pushes the set out into the corners, around ∞</small>
+            <input type="range" id="p-sph" min="-1.5" max="1.5" step="0.01">
+          </div>
           <div class="param wide">
             <div class="legend" id="legend"></div>
           </div>
@@ -209,6 +218,8 @@
       <p>For other values of tr b no such formula is known, so the trace planes test each point numerically. They run the same search, coarsely and without drawing, and measure distances on the Riemann sphere rather than in the plane, so the size and position of the limit set do not matter. Each point is searched twice, the second time with half the tolerance. For a discrete group that multiplies the work by about 2<sup>D</sup>, where D ≤ 2 is the dimension of its limit set. A group that is not discrete may look tidy at the coarse scale, but its words stop contracting below it, and the second search runs out of its budget. The number of steps rises towards the edge of the discrete region, which gives the shading. It is a numerical test, not a proof, but with tr b = 2 its edge lies on the exact curve of cusps.</p>
       <p>With the commutator trace set to 0 instead of −2, <code>(abAB)²</code> is the identity, the group is no longer free, and many words name the same map. A small finite-state automaton from <em>Indra’s Pearls</em> then tells the search which words to skip.</p>
 
+      <h3>The quincuncial view</h3>
+      <p>A Möbius map acts on the whole Riemann sphere, and a limit set often runs off to infinity, so the plane only ever shows part of it. Charles Peirce’s quincuncial projection maps the entire sphere conformally onto a square. The disk around the limit set becomes the northern hemisphere and goes onto the inscribed diamond, by the elliptic integral <code>∫ dt / √(1 − t⁴)</code>. The rest of the sphere, ∞ included, fills the four corners, and ∞ itself sits at the corners of the square. The search runs as usual, but each point is projected before ε is measured, so the detail stays even across the square. The squares tile the plane, each neighbour turned by 180°, so a curve that leaves through one edge returns through the mirror point of the same edge. Being conformal, the projection keeps small circles round, but it cannot be a Möbius map itself: it bends the large ones.</p>
       <h3>Sources</h3>
       <p>The algorithm, the recipes and most examples follow David Mumford, Caroline Series and David Wright, <em>Indra’s Pearls: The Vision of Felix Klein</em> (Cambridge University Press, 2002), and Chris King’s open-source toolbox <a href="http://dhushara.com/DarkHeart/quasif/quasi.htm">Kleinian and Quasi-Fuchsian Limit Sets</a>, whose C and Matlab programs this page translates to JavaScript.</p>
     </div>
