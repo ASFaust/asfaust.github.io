@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Links – Andreas Faust</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      --font-serif: Georgia, 'Times New Roman', serif;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #555;
+      --color-border-secondary: #ccc;
+      --color-bg: #fff;
+    }
+    [data-theme="dark"] {
+      --color-text-primary: #e2e2e2;
+      --color-text-secondary: #888;
+      --color-border-secondary: #333;
+      --color-bg: #111;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+    .site-nav {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.2rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .site-nav a { color: var(--color-text-secondary); text-decoration: none; }
+    .site-nav a:hover { color: var(--color-text-primary); }
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      color: var(--color-text-secondary);
+      padding: 0.2rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--color-text-primary); }
+
+    .page { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+    h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.3rem; }
+    .tagline { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 3rem; }
+
+    h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); margin-bottom: 1rem; }
+    .section-gap { margin-top: 3rem; }
+
+    .link-list { list-style: none; }
+    .link-list li { padding: 1rem 0; border-top: 1px solid var(--color-border-secondary); }
+    .link-list li:last-child { border-bottom: 1px solid var(--color-border-secondary); }
+
+    .link-title { font-size: 16px; font-family: var(--font-serif); margin-bottom: 0.25rem; }
+    .link-title a { color: var(--color-text-primary); text-decoration: none; }
+    .link-title a:hover { text-decoration: underline; }
+
+    .link-meta { font-size: 13px; color: var(--color-text-secondary); display: flex; gap: 1rem; justify-content: space-between; }
+    .link-meta .domain { font-size: 12px; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../index.html">&larr; Home</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <div class="page">
+    <h1>Links</h1>
+    <p class="tagline">A random collection of interesting things</p>
+
+    <h2>Math and graphics</h2>
+    <ul class="link-list">
+      <li>
+        <div class="link-title">
+          <a href="https://iquilezles.org/">Inigo Quilez</a>
+        </div>
+        <div class="link-meta">
+          <span>Articles on signed distance functions, raymarching and procedural graphics</span>
+          <span class="domain">iquilezles.org</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://znah.net/">Alexander Mordvintsev</a>
+        </div>
+        <div class="link-meta">
+          <span>Artificial life research: neural cellular automata, DeepDream and more</span>
+          <span class="domain">znah.net</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://paradigms-of-intelligence.github.io/morpho/">MorphoHDL</a>
+        </div>
+        <div class="link-meta">
+          <span>A minimalistic language for growing circuits</span>
+          <span class="domain">paradigms-of-intelligence.github.io</span>
+        </div>
+      </li>
+    </ul>
+
+    <h2 class="section-gap">The web as a medium</h2>
+    <ul class="link-list">
+      <li>
+        <div class="link-title">
+          <a href="https://www.sbnation.com/a/17776-football">17776</a>
+        </div>
+        <div class="link-meta">
+          <span>Jon Bois’s serial about American football in the far future</span>
+          <span class="domain">sbnation.com</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="1990-1997.html">1990-1997.com</a>
+        </div>
+        <div class="link-meta">
+          <span>Zak Loyd’s artsy, broken mess of HTML art, collected on one page</span>
+          <span class="domain">subpage</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="http://wwwwwwwww.jodi.org/">JODI</a>
+        </div>
+        <div class="link-meta">
+          <span>The net-art duo whose pages look deliberately broken</span>
+          <span class="domain">jodi.org</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://www.cameronsworld.net/">Cameron’s World</a>
+        </div>
+        <div class="link-meta">
+          <span>A collage made from archived GeoCities pages</span>
+          <span class="domain">cameronsworld.net</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://anthology.rhizome.org/">Net Art Anthology</a>
+        </div>
+        <div class="link-meta">
+          <span>Rhizome’s curated history of net art, with the works preserved</span>
+          <span class="domain">rhizome.org</span>
+        </div>
+      </li>
+    </ul>
+
+    <h2 class="section-gap">Archives and oddities</h2>
+    <ul class="link-list">
+      <li>
+        <div class="link-title">
+          <a href="https://www.darkroastedblend.com/">Dark Roasted Blend</a>
+        </div>
+        <div class="link-meta">
+          <span>A long-running collection of weird and wonderful things</span>
+          <span class="domain">darkroastedblend.com</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://wholeearth.info/">Whole Earth Index</a>
+        </div>
+        <div class="link-meta">
+          <span>The complete archive of the Whole Earth Catalog and its successors</span>
+          <span class="domain">wholeearth.info</span>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <script>
+    var btn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    btn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = isDark ? '☀' : '☾';
+    });
+  </script>
+</body>
+</html>

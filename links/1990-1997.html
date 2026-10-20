@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1990-1997.com – Andreas Faust</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      --font-serif: Georgia, 'Times New Roman', serif;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #555;
+      --color-border-secondary: #ccc;
+      --color-bg: #fff;
+    }
+    [data-theme="dark"] {
+      --color-text-primary: #e2e2e2;
+      --color-text-secondary: #888;
+      --color-border-secondary: #333;
+      --color-bg: #111;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+    .site-nav {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.2rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .site-nav a { color: var(--color-text-secondary); text-decoration: none; }
+    .site-nav a:hover { color: var(--color-text-primary); }
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      color: var(--color-text-secondary);
+      padding: 0.2rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--color-text-primary); }
+
+    .page { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+    h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.3rem; }
+    .tagline { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
+    .intro { font-size: 14px; line-height: 1.6; color: var(--color-text-secondary); margin-bottom: 3rem; }
+    .intro a { color: var(--color-text-secondary); }
+    .intro a:hover { color: var(--color-text-primary); }
+
+    h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); margin: 3rem 0 1rem; }
+    .note { font-size: 13px; color: var(--color-text-secondary); margin: -0.5rem 0 1rem; }
+
+    .works {
+      list-style: none;
+      columns: 3;
+      column-gap: 1.5rem;
+      border-top: 1px solid var(--color-border-secondary);
+      border-bottom: 1px solid var(--color-border-secondary);
+      padding: 0.8rem 0;
+    }
+    .works li { font-family: var(--font-serif); font-size: 15px; line-height: 1.9; break-inside: avoid; }
+    .works a { color: var(--color-text-primary); text-decoration: none; }
+    .works a:hover { text-decoration: underline; }
+    .works .extra { font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); }
+    .works .extra a { color: var(--color-text-secondary); }
+    .works .extra a:hover { color: var(--color-text-primary); }
+    .works.wide { columns: 2; }
+
+    @media (max-width: 520px) {
+      .works { columns: 2; }
+      .works.wide { columns: 1; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="index.html">&larr; Links</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <div class="page">
+    <h1>1990-1997.com</h1>
+    <p class="tagline">HTML and net art by Zak Loyd, 2008&ndash;2013</p>
+    <p class="intro">
+      The current homepage no longer links to the old work, but most of the pages are still online
+      (checked October 2026). Images hosted elsewhere, on UT ACTLab, Flickr or gifex, may be broken.
+      If a page looks wrong, try the <a href="https://web.archive.org/web/*/1990-1997.com/*">Wayback Machine index</a>.
+    </p>
+
+    <h2>Info</h2>
+    <ul class="works">
+      <li><a href="http://www.1990-1997.com/">homepage</a></li>
+      <li><a href="http://www.1990-1997.com/about.html">about</a></li>
+      <li><a href="http://1990-1997.com/statements.html">statements about art</a></li>
+      <li><a href="http://1990-1997.com/index.html">old index</a></li>
+    </ul>
+
+    <h2>Works, 2008&ndash;2009</h2>
+    <ul class="works">
+      <li><a href="http://www.1990-1997.com/001.html">001 &ndash; marqueeperz</a></li>
+      <li><a href="http://www.1990-1997.com/002.html">002</a></li>
+      <li><a href="http://www.1990-1997.com/003.html">003</a></li>
+      <li><a href="http://www.1990-1997.com/and_on.html">and_on</a></li>
+      <li><a href="http://www.1990-1997.com/boom.html">boom</a></li>
+      <li><a href="http://www.1990-1997.com/facebooked.html">facebooked</a></li>
+      <li><a href="http://www.1990-1997.com/gifdays.html">gifdays</a></li>
+      <li><a href="http://www.1990-1997.com/gifdump.html">gifdump</a></li>
+      <li><a href="http://www.1990-1997.com/googlemirageview.html">googlemirageview</a></li>
+      <li><a href="http://www.1990-1997.com/lilbreezy.html">lilbreezy</a></li>
+      <li><a href="http://www.1990-1997.com/livnroom.html">livn room love the war</a></li>
+      <li><a href="http://www.1990-1997.com/lordpronz.html">lord pronz</a></li>
+      <li><a href="http://www.1990-1997.com/money.html">money</a></li>
+      <li><a href="http://www.1990-1997.com/phaise.html">phaise</a></li>
+      <li><a href="http://www.1990-1997.com/tablez.html">tablez</a></li>
+      <li><a href="http://www.1990-1997.com/terrz.html">terrz</a></li>
+      <li><a href="http://www.1990-1997.com/uniporn.html">uniporn</a></li>
+    </ul>
+
+    <h2>Works, 2008&ndash;2013</h2>
+    <ul class="works">
+      <li><a href="http://1990-1997.com/cosbyparty.html">cosby party</a></li>
+      <li><a href="http://1990-1997.com/googletrash.html">googletrash</a></li>
+      <li><a href="http://1990-1997.com/gradientmagic.html">gradient magic</a></li>
+      <li><a href="http://1990-1997.com/magicdvdz.html">magicdvdz</a></li>
+      <li><a href="http://1990-1997.com/mediaz.html">mediaz</a></li>
+      <li><a href="http://1990-1997.com/melz.html">melz</a></li>
+      <li><a href="http://1990-1997.com/moneywasterz.html">moneywasterz</a></li>
+      <li><a href="http://1990-1997.com/nugz2010.html">nugz 2010</a></li>
+      <li><a href="http://1990-1997.com/pyramidskape.html">pyramidskape</a></li>
+      <li><a href="http://1990-1997.com/stage4.html">stage 4</a></li>
+      <li><a href="http://1990-1997.com/VHS2.html">VHS2 speling test</a></li>
+      <li><a href="http://1990-1997.com/winter2013.html">Winter 2013</a></li>
+      <li><a href="http://1990-1997.com/crtmpi.html">Cathode Ray Temple</a></li>
+      <li><a href="http://1990-1997.com/1997_files/counter.html">counter</a></li>
+    </ul>
+
+    <h2>Klub Sephirot</h2>
+    <p class="note">The ten sephirot of the Kabbalah tree of life. The pages link to each other.</p>
+    <ul class="works">
+      <li><a href="http://1990-1997.com/klubsephirot/K373R.html">K373R</a> <span class="extra">Keter</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/CH0KMAH.html">CH0KMAH</a> <span class="extra">Chokmah</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/B1NAH.html">B1NAH</a> <span class="extra">Binah</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/H35AD.html">H35AD</a> <span class="extra">Chesed</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/G3VURAH.html">G3VURAH</a> <span class="extra">Gevurah</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/71F3R37.html">71F3R37</a> <span class="extra">Tiferet</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/N37ZAH.html">N37ZAH</a> <span class="extra">Netzach</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/H0D.html">H0D</a> <span class="extra">Hod</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/Y350D.html">Y350D</a> <span class="extra">Yesod</span></li>
+      <li><a href="http://1990-1997.com/klubsephirot/MALKU7H.html">MALKU7H</a> <span class="extra">Malkuth</span></li>
+    </ul>
+
+    <h2>Wallpaper</h2>
+    <ul class="works wide">
+      <li><a href="http://1990-1997.com/wallpaper/wallpaper.html">wallpaper</a></li>
+      <li><a href="http://1990-1997.com/wallpaper/leftwall.html">leftwall</a> <span class="extra"><a href="http://1990-1997.com/wallpaper/leftwall2.html">2</a> <a href="http://1990-1997.com/wallpaper/leftwall3.html">3</a> <a href="http://1990-1997.com/wallpaper/leftwall4.html">4</a></span></li>
+      <li><a href="http://1990-1997.com/wallpaper/rightwall.html">rightwall</a> <span class="extra"><a href="http://1990-1997.com/wallpaper/rightwall2.html">2</a> <a href="http://1990-1997.com/wallpaper/rightwall3.html">3</a> <a href="http://1990-1997.com/wallpaper/rightwall4.html">4</a></span></li>
+      <li><a href="http://1990-1997.com/wallpaper/rainbowwashleft.html">rainbowwashleft</a> <span class="extra"><a href="http://1990-1997.com/wallpaper/rainbowwashleft2.html">2</a></span></li>
+      <li><a href="http://1990-1997.com/wallpaper/rainbowwashright.html">rainbowwashright</a> <span class="extra"><a href="http://1990-1997.com/wallpaper/rainbowwashright2.html">2</a></span></li>
+    </ul>
+
+    <h2>Zak Loyd elsewhere</h2>
+    <ul class="works">
+      <li><a href="http://www.1990-1997.tumblr.com">Tumblr</a></li>
+      <li><a href="http://www.youtube.com/zakloyd">YouTube</a></li>
+      <li><a href="http://twitter.com/zakloyd">Twitter</a></li>
+      <li><a href="http://vidkidz.info">VIDKIDZ</a></li>
+      <li><a href="http://home.actlab.utexas.edu/~zloyd/">ACTLab page</a></li>
+    </ul>
+  </div>
+
+  <script>
+    var btn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    btn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = isDark ? '☀' : '☾';
+    });
+  </script>
+</body>
+</html>
