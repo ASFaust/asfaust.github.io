@@ -696,6 +696,7 @@ zₙ₊₁ = zₙ² + c</pre>
         $('rootParam').classList.toggle('hidden', st.scale_mode !== 'nth root');
         $('blurParam').classList.toggle('hidden', !st.soft_points);
         updateBlurNote();
+        applyView();
       }
 
       function sanitize(data) {
@@ -880,9 +881,9 @@ zₙ₊₁ = zₙ² + c</pre>
         setRunning(true);
         setStatus(result ? '' : 'Generating…');
         var t0 = performance.now();
-        // Orbits that cross a zoomed view mostly start outside it, so Metropolis looks for starting points on the whole set.
+        // Orbits that cross a zoomed view mostly start outside it, so starting points always come from the whole set.
         var metro = p.method === 'metropolis';
-        var sb = metro ? { xmin: DEFAULTS.xmin, xmax: DEFAULTS.xmax, ymin: DEFAULTS.ymin, ymax: DEFAULTS.ymax } : b;
+        var sb = { xmin: DEFAULTS.xmin, xmax: DEFAULTS.xmax, ymin: DEFAULTS.ymin, ymax: DEFAULTS.ymax };
         try {
           // 1. coarse Mandelbrot grid: which cells are inside the set
           var n = Math.min(p.mandelbrot_resolution, p.resolution);
@@ -900,7 +901,7 @@ zₙ₊₁ = zₙ² + c</pre>
           setStage('Sampling', 10, 15);
           await tick();
           var bp = boundaryPairs(img, n, sb);
-          if (bp.m === 0) throw new Error('No boundary of the Mandelbrot set in view. Widen the bounds or raise the Mandelbrot resolution.');
+          if (bp.m === 0) throw new Error('No boundary of the Mandelbrot set found. Raise the Mandelbrot resolution.');
           var pts = resample(bp.pairs, bp.m, p.samples, rng(mixSeed(p.seed, 0, 0)));
           if (id !== genId) return;
 
@@ -1010,6 +1011,7 @@ zₙ₊₁ = zₙ² + c</pre>
         $('viewBtn').disabled = on || !result;
         $('saveBtn').disabled = !result;
         if (!on) $('genBtn').textContent = 'Generate';
+        applyView();
       }
       function setStatus(text) {
         var s = $('status');
@@ -1173,7 +1175,16 @@ zₙ₊₁ = zₙ² + c</pre>
         canvas.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.z + ')';
         var dpr = window.devicePixelRatio || 1;
         canvas.classList.toggle('pixelated', result && stage.clientWidth * view.z * dpr > result.res * 1.5);
-        $('resetBtn').disabled = view.z === 1 && view.x === 0 && view.y === 0;
+        $('resetBtn').disabled = running || (view.z === 1 && view.x === 0 && view.y === 0 && fullBounds());
+      }
+      function fullBounds() { return ['xmin', 'xmax', 'ymin', 'ymax'].every(function(k) { return st[k] === DEFAULTS[k]; }); }
+      // First undo the magnification; once there is none, go back to the whole set and render it.
+      function resetZoom() {
+        if (view.z !== 1 || view.x !== 0 || view.y !== 0) { resetView(); return; }
+        ['xmin', 'xmax', 'ymin', 'ymax'].forEach(function(k) { st[k] = DEFAULTS[k]; });
+        syncInputs();
+        writeHash();
+        generate();
       }
       function resetView() { view = { z: 1, x: 0, y: 0 }; applyView(); }
       function zoomAt(px, py, factor) {
@@ -1298,7 +1309,7 @@ zₙ₊₁ = zₙ² + c</pre>
       $('genBtn').addEventListener('click', generate);
       $('stopBtn').addEventListener('click', stop);
       $('viewBtn').addEventListener('click', renderView);
-      $('resetBtn').addEventListener('click', resetView);
+      $('resetBtn').addEventListener('click', resetZoom);
       $('saveBtn').addEventListener('click', function() {
         if (!result) return;
         canvas.toBlob(function(blob) { download(blob, 'buddhabrot_' + stamp() + '.png'); }, 'image/png');
