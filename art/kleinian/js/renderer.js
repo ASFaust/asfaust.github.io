@@ -1,5 +1,6 @@
 // Keeps the segments of the current render and draws them on a canvas. Every segment carries the
 // code of its word (see dfs.js), so colouring, line width and background change without a new search.
+// A random walk (walk.js) sends points instead, drawn as square dots as wide as the lines.
 
 const THEMES = {
   light: {
@@ -69,9 +70,10 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  add(seg, code, n) {
+  // seg holds x0, y0, x1, y1 per segment, or x, y per point
+  add(seg, code, n, points = false) {
     if (!n) return;
-    const chunk = { seg, code, n };
+    const chunk = { seg, code, n, points };
     this.chunks.push(chunk);
     let grew = false;
     for (let i = 0; i < n; i++) {
@@ -105,12 +107,13 @@ export class Renderer {
     return { colors: pal.gens, index: c => ((c >>> 18) >= d ? (c >>> shift) & 3 : (c >>> 16) & 3) };
   }
 
-  drawChunk({ seg, code, n }) {
+  drawChunk({ seg, code, n, points }) {
     const { ctx } = this;
     const { colors, index } = this.colouring();
     const k = colors.length;
     const idx = new Uint8Array(n);
     for (let i = 0; i < n; i++) idx[i] = index(code[i]);
+    if (points) return this.drawPoints(seg, idx, n, colors);
     ctx.lineWidth = this.style.lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -132,6 +135,27 @@ export class Renderer {
       for (const [s, ox, oy] of this.style.tiles) {
         ctx.setTransform(s, 0, 0, s, ox, oy);
         ctx.stroke(path);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+  }
+
+  drawPoints(seg, idx, n, colors) {
+    const { ctx } = this;
+    const r = Math.max(1, this.style.lineWidth), h = r / 2;
+    for (let c = 0; c < colors.length; c++) {
+      ctx.fillStyle = colors[c];
+      const path = new Path2D();
+      let any = false;
+      for (let i = 0; i < n; i++) {
+        if (idx[i] !== c) continue;
+        path.rect(seg[2 * i] - h, seg[2 * i + 1] - h, r, r);
+        any = true;
+      }
+      if (!any) continue;
+      for (const [s, ox, oy] of this.style.tiles) {
+        ctx.setTransform(s, 0, 0, s, ox, oy);
+        ctx.fill(path);
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }

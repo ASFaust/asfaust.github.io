@@ -3,6 +3,13 @@
 // sweeps once around the limit set. A branch ends when the images under the current word of the
 // fixed points of its two neighbouring commutators are ε-close, and a line joins them.
 //
+// With method 'descent' the tree is sampled instead of searched: each sample walks down one random
+// branch, choosing among the three children of a word in proportion to the size of the piece of
+// the limit set below each, and draws the segment where the branch ends. It never waits for the
+// whole tree, so it also ends for groups the search cannot finish. The sizes of the children add
+// up to more than the size of their parent, so branches that need long words, into cusps and
+// spirals, are still reached less often than short ones.
+//
 // Segments are emitted in pixel coordinates of the target view together with a 32-bit code:
 //   bits 0–15  the first 8 letters of the word (2 bits each), bits 16–17 the last letter,
 //   bits 18–31 the word length. The renderer can then recolour without running the search again.
@@ -85,8 +92,9 @@ export function quincuncial(zr, zi, tol = 0.002) {
 //     view is then in the coordinates of the tiled square. No culling in that case.
 //   tiles: [[s, ox, oy], …] pixel maps (px, py) ↦ (s·px + ox, s·py + oy) of the copies the renderer
 //     draws; a segment is kept if any copy lands in the view. Default: the identity.
+//   method: 'descent' for random descents instead of the search, budget: the number of descents.
 // sink(seg: Float32Array, code: Uint32Array, n, progress) is called with batches.
-// Returns { segments, done, ms, levmaxHits }.
+// Returns { segments, done, ms, levmaxHits }, and samples, the number of descents.
 export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infinity, checkTime = null } = {}) {
   const t0 = performance.now();
   const gens = grandma(p.ta, p.tb, { nonfree: p.nonfree, altroot: p.altroot });
@@ -127,6 +135,8 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
   const cm = cull ? B.m : 0, CD = cull ? Float64Array.from(B.disks.flat()) : null;
 
   function progress() {
+    // a descent reports its share of the budget, in the same quarter as the search of its root
+    if (descent) return (((4 - tags[0]) % 4) + samples / budget) / 4;
     // position in the tree from the first few turns: top level goes a, B, A, b; each node has 3 children
     let f = ((4 - tags[0]) % 4) / 4, unit = 0.25;
     for (let j = 1; j <= Math.min(lev, 6); j++) {
@@ -275,6 +285,15 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
   let haveLast = false; // P slot 3 holds the previous "new" point, to close gaps in the non-free case
   const eps2 = p.eps * p.eps;
 
+  const descent = p.method === 'descent';
+  const budget = Math.max(1, Math.floor(p.budget) || 0);
+  let samples = 0;
+  if (descent) {
+    descend();
+    flush();
+    return { segments: total, done: true, ms: performance.now() - t0, levmaxHits, samples };
+  }
+
   for (;;) {
     let fl = nonfree && state[lev] === -1;
     while (!fl) {
@@ -324,6 +343,82 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
   }
   flush();
   return { segments: total, done: !aborted, ms: performance.now() - t0, levmaxHits };
+
+  // Size of the piece below word[lev] in pixels: the extent of the images of the fixed points that
+  // can follow its last letter t. fix[0][j], fix[1][j], fix[2][j] have addresses starting with
+  // j − 1, j and j + 1, so all but those starting with t's inverse lie in the piece, spread over it.
+  // Its two ends and the whorl tip alone badly underrate a frond that hangs off a narrow neck.
+  function size() {
+    const inv = (tags[lev] + 2) % 4;
+    let x0_ = Infinity, x1_ = -Infinity, y0_ = Infinity, y1_ = -Infinity;
+    for (let t = 0; t < 3; t++) for (let j = 0; j < 4; j++) {
+      if ((j + t + 3) % 4 === inv) continue;
+      apply(F[(t * 4 + j) * 2], F[(t * 4 + j) * 2 + 1]);
+      if (ir < x0_) x0_ = ir; if (ir > x1_) x1_ = ir;
+      if (ii < y0_) y0_ = ii; if (ii > y1_) y1_ = ii;
+    }
+    const r = Math.hypot(x1_ - x0_, y1_ - y0_) * k;
+    return r === r ? Math.min(r, 1e12) : 1e12; // NaN: a point at ∞
+  }
+
+  function descend() {
+    // pixels the descents have drawn in, one bit each: a branch that ends on them all again is skipped
+    const W2 = Math.ceil(w), H2 = Math.ceil(h);
+    const seen = new Uint8Array(Math.ceil(W2 * H2 / 8));
+    const mark = s => {
+      const x = Math.floor(P[5 * s]), y = Math.floor(P[5 * s + 1]);
+      if (!(x >= 0 && x < W2 && y >= 0 && y < H2)) return false;
+      const i = y * W2 + x, had = (seen[i >> 3] >> (i & 7)) & 1;
+      seen[i >> 3] |= 1 << (i & 7);
+      return had === 1;
+    };
+    const wt = new Float64Array(3), kids = new Int8Array(3);
+    for (samples = 0; samples < budget; samples++) {
+      lev = 0;
+      tags[0] = single ? p.root : Math.floor(Math.random() * 4);
+      state[0] = 0;
+      compose();
+      for (;;) {
+        if (cull && outside()) break;
+        image(0, 0);
+        image(2, 1);
+        if (neck) image(1, 2);
+        const atMax = lev === levmax;
+        if (atMax || (neck ? close(0, 2) && close(2, 1) : close(0, 1))) {
+          if (atMax) levmaxHits++;
+          if (visible(0)) {
+            const old = mark(0) & mark(1) & (!neck || mark(2));
+            if (!old) {
+              if (neck) { line(1, 2); line(2, 0); }
+              else line(1, 0);
+            }
+          }
+          break;
+        }
+        // the children: the next letter is anything but the inverse of this one
+        const t = tags[lev];
+        let sum = 0, nk = 0;
+        lev++;
+        for (const c of [(t + 1) % 4, t, (t + 3) % 4]) {
+          if (nonfree && FSA[state[lev - 1]][c] === -1) continue;
+          tags[lev] = c;
+          compose();
+          const s = cull && outside() ? 0 : size();
+          kids[nk] = c; wt[nk] = s; sum += s; nk++;
+        }
+        if (!(sum > 0)) { lev--; break; } // nothing below is in view
+        let r = Math.random() * sum, j = 0;
+        while (j < nk - 1 && r >= wt[j]) r -= wt[j++];
+        tags[lev] = kids[j];
+        compose();
+        if (nonfree) state[lev] = FSA[state[lev - 1]][kids[j]];
+      }
+      if ((samples & 255) === 255) {
+        const now = performance.now();
+        if (now - lastFlush > flushMs) { flush(); lastFlush = now; }
+      }
+    }
+  }
 }
 
 // Coarse pass over the whole limit set: its extent, for framing the view, and bounding disks of

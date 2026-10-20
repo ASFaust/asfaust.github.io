@@ -14,7 +14,13 @@ const DEFAULTS = {
   eps: 0.6, levmax: 1000, color: 'letter', depth: 1, lw: 1, bg: 'auto', view: null,
   quinc: false, sphere: null, // sphere: { cx, cy, r }, the disk fitted to the limit set
   ssize: 0, // log10 of the equator's radius relative to sphere.r
+  method: 'dfs', // or 'walk', 'descent'
+  points: 64, stay: 0.45, // random walk: millions of steps, probability of repeating a letter
+  descents: 1, // random descent: millions of descents
 };
+const METHODS = ['dfs', 'walk', 'descent'];
+const POINTS = [4, 16, 64, 256];
+const DESCENTS = [0.25, 1, 4, 16];
 let st = { ...DEFAULTS };
 let fitView = null; // preset view override, used by "Fit"
 
@@ -34,6 +40,10 @@ function sanitize(s) {
     view: s.view && [s.view.cx, s.view.cy, s.view.half].every(isFinite) && s.view.half > 0 ? s.view : null,
     quinc: !!s.quinc, ssize: NUM(s.ssize, -1.5, 1.5, 0),
     sphere: s.sphere && [s.sphere.cx, s.sphere.cy, s.sphere.r].every(isFinite) && s.sphere.r > 0 ? s.sphere : null,
+    method: METHODS.includes(s.method) ? s.method : 'dfs',
+    points: POINTS.includes(+s.points) ? +s.points : DEFAULTS.points,
+    stay: NUM(s.stay, 0, 0.95, DEFAULTS.stay),
+    descents: DESCENTS.includes(+s.descents) ? +s.descents : DEFAULTS.descents,
   };
 }
 
@@ -53,6 +63,10 @@ function writeHash() {
   if (st.quinc) parts.push('q=1');
   if (st.quinc && st.sphere) parts.push('sph=' + [st.sphere.cx, st.sphere.cy, st.sphere.r].map(v => +v.toPrecision(12)).join(','));
   if (st.quinc && st.ssize) parts.push('ss=' + st.ssize);
+  if (st.method !== 'dfs') parts.push('m=' + st.method);
+  if (st.points !== DEFAULTS.points) parts.push('pts=' + st.points);
+  if (st.stay !== DEFAULTS.stay) parts.push('stay=' + st.stay);
+  if (st.descents !== DEFAULTS.descents) parts.push('ds=' + st.descents);
   if (st.view) parts.push('v=' + [st.view.cx, st.view.cy, st.view.half].map(v => +v.toPrecision(12)).join(','));
   history.replaceState(null, '', '#' + parts.join('&'));
 }
@@ -72,6 +86,7 @@ function readHash() {
     eps: q.eps, levmax: q.lev, color: q.col, depth: q.d, lw: q.lw, bg: q.bg,
     view: v && v.length === 3 ? { cx: v[0], cy: v[1], half: v[2] } : null,
     quinc: q.q === '1', ssize: q.ss, sphere: sph && sph.length === 3 ? { cx: sph[0], cy: sph[1], r: sph[2] } : null,
+    method: q.m, points: q.pts, stay: q.stay, descents: q.ds,
   });
 }
 
@@ -166,6 +181,15 @@ function tiles(vt) {
   return out;
 }
 
+// The method and its settings for the search params. The steps of a walk or the descents are
+// shared out over the workers.
+function methodParams(preview) {
+  const millions = st.method === 'walk' ? (preview ? Math.min(st.points, 2) : st.points)
+    : (preview ? Math.min(st.descents, 0.05) : st.descents);
+  return { method: st.method, stay: st.stay, budget: Math.round(millions * 1e6 / NWORK) };
+}
+const unit = () => st.method === 'walk' ? 'points' : 'segments';
+
 // the disk that becomes the northern hemisphere, scaled by the sphere size slider
 const sphereParams = () => st.quinc ? { ...st.sphere, r: st.sphere.r * 10 ** st.ssize } : null;
 
@@ -217,7 +241,7 @@ async function render(opts = {}) {
   pan = { s: 1, tx: 0, ty: 0 };
 
   const params = {
-    ...g, view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt),
+    ...g, ...methodParams(opts.preview), view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt),
     eps: (opts.preview ? Math.max(st.eps, 2.5) : st.eps) * scale,
     levmax: opts.preview ? Math.min(st.levmax, 300) : st.levmax,
   };
@@ -228,7 +252,8 @@ async function render(opts = {}) {
       const t = stats.ms < 1000 ? Math.round(stats.ms) + ' ms' : (stats.ms / 1000).toFixed(1) + ' s';
       setStatus(renderer.segments ? '' : 'Nothing in view. Double-click or press Fit to frame the limit set.');
       $('stats').textContent = opts.preview ? 'Preview' :
-        `${renderer.segments.toLocaleString('en')} segments in ${t}` +
+        `${renderer.segments.toLocaleString('en')} ${unit()}` +
+        (stats.samples ? ` from ${stats.samples.toLocaleString('en')} ${st.method === 'walk' ? 'steps' : 'descents'}` : '') + ` in ${t}` +
         (stats.levmaxHits ? ` · ${stats.levmaxHits.toLocaleString('en')} branches stopped at the depth limit` : '');
       if (pendingPreview) { const p = pendingPreview; pendingPreview = null; preview(p); }
     },
@@ -241,7 +266,8 @@ function startSearch(params, target, { onDone, onProgress = setProgress }) {
   busy = true;
   const progress = new Float64Array(NWORK);
   const t0 = performance.now();
-  job = { id, target, progress, left: NWORK, levmaxHits: 0, onDone, onProgress, t0 };
+  const points = params.method === 'walk';
+  job = { id, target, points, progress, left: NWORK, levmaxHits: 0, samples: 0, onDone, onProgress, t0 };
   setStatus('');
   onProgress(0);
   if (target === renderer) {
@@ -251,8 +277,9 @@ function startSearch(params, target, { onDone, onProgress = setProgress }) {
       if (!job || job.id !== id) return clearInterval(tick);
       const sec = (performance.now() - t0) / 1000;
       const pct = Math.round(100 * progress.reduce((a, b) => a + b, 0) / NWORK);
-      $('stats').textContent = `Searching… ${pct}% · ${sec.toFixed(0)} s` +
-        (sec > 5 ? ' · if this group is not discrete the search will not end: press Stop, or raise ε' : '');
+      const verb = { dfs: 'Searching', walk: 'Walking', descent: 'Sampling' }[params.method];
+      $('stats').textContent = `${verb}… ${pct}% · ${sec.toFixed(0)} s` +
+        (sec > 5 && params.method === 'dfs' ? ' · if this group is not discrete the search will not end: press Stop, or raise ε' : '');
     }, 500);
   }
   for (let r = 0; r < NWORK; r++) workers[r].postMessage({ type: 'search', id, params: { ...params, root: r } });
@@ -269,19 +296,20 @@ function onWorkerMessage(msg) {
   }
   if (!job || msg.id !== job.id) return;
   if (msg.type === 'batch') {
-    job.target.add(msg.seg, msg.code, msg.n);
+    job.target.add(msg.seg, msg.code, msg.n, job.points);
     // the search reports its place in the whole tree; each subtree is one quarter of it
     const k0 = Math.min(3, Math.floor(msg.progress * 4));
     job.progress[k0] = Math.min(1, msg.progress * 4 - k0);
     job.onProgress(job.progress.reduce((a, b) => a + b, 0) / NWORK);
   } else if (msg.type === 'done') {
     job.levmaxHits += msg.stats.levmaxHits;
+    job.samples += msg.stats.samples || 0;
     if (--job.left === 0) {
       const j = job;
       job = null;
       busy = false;
       j.onProgress(1);
-      j.onDone({ ms: performance.now() - j.t0, levmaxHits: j.levmaxHits });
+      j.onDone({ ms: performance.now() - j.t0, levmaxHits: j.levmaxHits, samples: j.samples });
     }
   } else if (msg.type === 'error') {
     cancel();
@@ -416,6 +444,12 @@ function syncInputs(recomputePlanes = true) {
   $('p-comm').value = st.nonfree ? 'nonfree' : 'free';
   $('p-alt').checked = st.altroot;
   $('p-neck').checked = st.neck;
+  $('p-method').value = st.method;
+  document.querySelectorAll('[data-methods]').forEach(el => el.classList.toggle('hidden', !el.dataset.methods.split(' ').includes(st.method)));
+  $('p-descents').value = st.descents;
+  $('p-points').value = st.points;
+  $('p-stay').value = st.stay;
+  $('v-stay').textContent = st.stay.toFixed(2);
   $('p-eps').value = Math.log10(st.eps);
   $('v-eps').textContent = st.eps < 1 ? st.eps.toFixed(2) : st.eps.toFixed(1);
   $('p-lev').value = st.levmax;
@@ -487,6 +521,11 @@ $('p-neck').addEventListener('change', function() { st.neck = this.checked; upda
 $('p-eps').addEventListener('input', function() { st.eps = +Math.pow(10, +this.value).toPrecision(2); $('v-eps').textContent = st.eps < 1 ? st.eps.toFixed(2) : st.eps.toFixed(1); });
 $('p-eps').addEventListener('change', () => render());
 $('p-lev').addEventListener('change', function() { st.levmax = sanitize({ ...st, levmax: this.value }).levmax; this.value = st.levmax; render(); });
+$('p-method').addEventListener('change', function() { st.method = this.value; syncInputs(false); render(); });
+$('p-points').addEventListener('change', function() { st.points = +this.value; render(); });
+$('p-descents').addEventListener('change', function() { st.descents = +this.value; render(); });
+$('p-stay').addEventListener('input', function() { st.stay = +this.value; $('v-stay').textContent = st.stay.toFixed(2); });
+$('p-stay').addEventListener('change', () => render());
 $('p-color').addEventListener('change', function() { st.color = this.value; syncInputs(); restyle(); });
 $('p-depth').addEventListener('input', function() { st.depth = +this.value; $('v-depth').textContent = st.depth; restyle(); });
 $('p-lw').addEventListener('input', function() { st.lw = +this.value; $('v-lw').textContent = st.lw.toFixed(2); restyle(); });
@@ -500,7 +539,7 @@ $('stopBtn').addEventListener('click', () => {
   cancel();
   setRunning(false);
   setProgress(1);
-  $('stats').textContent = `Stopped · ${renderer.segments.toLocaleString('en')} segments`;
+  $('stats').textContent = `Stopped · ${renderer.segments.toLocaleString('en')} ${unit()}`;
 });
 $('saveBtn').addEventListener('click', () => {
   canvas.toBlob(b => download(b, fileName()), 'image/png');
@@ -541,7 +580,7 @@ async function exportImage() {
   const btnText = $('exportBtn').textContent;
   let m = null;
   try { m = await getMeasure(g); } catch (e) { $('exportBtn').disabled = false; if (e.message !== 'cancelled') fail(e.message); return; }
-  startSearch({ ...g, view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt), eps: st.eps * scale }, r, {
+  startSearch({ ...g, ...methodParams(), view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt), eps: st.eps * scale }, r, {
     onProgress: f => { setProgress(f); $('exportBtn').textContent = `Rendering… ${Math.round(100 * f)}%`; },
     onDone: () => {
       setRunning(false);
@@ -647,7 +686,8 @@ function loadPreset(i) {
   const p = PRESETS[i];
   if (!p) return;
   st = sanitize({
-    ...DEFAULTS, lw: st.lw, bg: st.bg, quinc: st.quinc,
+    ...DEFAULTS, lw: st.lw, bg: st.bg, quinc: st.quinc, points: st.points, stay: st.stay, descents: st.descents,
+    method: p.method || st.method,
     ta: p.ta, tb: p.tb, nonfree: !!p.nonfree, altroot: !!p.altroot, neck: p.neck !== false,
     eps: p.eps || DEFAULTS.eps, levmax: p.levmax || DEFAULTS.levmax,
     color: p.color || DEFAULTS.color, depth: p.depth || 1,

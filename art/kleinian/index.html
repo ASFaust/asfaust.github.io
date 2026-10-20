@@ -113,19 +113,53 @@
       <details open>
         <summary>Search</summary>
         <div class="params">
-          <div class="param">
+          <div class="param wide">
+            <label for="p-method"><span>Method</span></label>
+            <small>the search draws the whole curve in order; the random walk and the random descent sample it, so they also give a picture of groups the search cannot finish</small>
+            <select id="p-method">
+              <option value="dfs">depth-first search</option>
+              <option value="walk">random walk</option>
+              <option value="descent">random descent</option>
+            </select>
+          </div>
+          <div class="param" data-methods="dfs descent">
             <label for="p-eps"><span>Detail ε</span><span id="v-eps"></span></label>
             <small>a branch stops once its points are this many pixels apart</small>
             <input type="range" id="p-eps" min="-1.3" max="1" step="0.01">
           </div>
-          <div class="param">
+          <div class="param" data-methods="dfs descent">
             <label for="p-lev"><span>Maximum word length</span></label>
             <small>stops branches that never converge</small>
             <input type="number" id="p-lev" min="10" max="16000" step="1">
           </div>
-          <div class="param check wide">
+          <div class="param check wide" data-methods="dfs descent">
             <label><input type="checkbox" id="p-neck"> <span>Follow narrow necks</span></label>
             <small>also test the tip of each whorl, so fronds on thin stalks are not cut off and the gasket closes</small>
+          </div>
+          <div class="param" data-methods="descent">
+            <label for="p-descents"><span>Descents</span></label>
+            <small>random branches followed down to ε, each drawing one segment</small>
+            <select id="p-descents">
+              <option value="0.25">250 thousand</option>
+              <option value="1">1 million</option>
+              <option value="4">4 million</option>
+              <option value="16">16 million</option>
+            </select>
+          </div>
+          <div class="param" data-methods="walk">
+            <label for="p-points"><span>Steps</span></label>
+            <small>points computed; each pixel keeps the first that lands in it</small>
+            <select id="p-points">
+              <option value="4">4 million</option>
+              <option value="16">16 million</option>
+              <option value="64">64 million</option>
+              <option value="256">256 million</option>
+            </select>
+          </div>
+          <div class="param" data-methods="walk">
+            <label for="p-stay"><span>Repeat a letter</span><span id="v-stay"></span></label>
+            <small>chance that the walk applies the same generator again: higher reaches deeper into the whorls</small>
+            <input type="range" id="p-stay" min="0" max="0.95" step="0.01">
           </div>
         </div>
       </details>
@@ -213,6 +247,14 @@
       <h3>Drawing the curve</h3>
       <p>Every point of the limit set has an address, an infinite word in <code>a</code>, <code>b</code>, <code>A</code>, <code>B</code> in which no letter is followed by its inverse. The search walks the tree of these words depth first, always turning the same way, so it travels once around the curve in order. Below a word <code>W</code> it compares two points: <code>W</code> applied to the fixed points of the two commutators that can follow its last letter. These are the two ends of the piece of curve under <code>W</code>. Once they are less than ε apart it draws a line between them and backs up. Otherwise it goes one letter deeper.</p>
       <p>Where the curve passes through a parabolic point the words converge slowly, so the depth is capped. With “follow narrow necks” the search also checks the fixed point of the last letter itself, the tip of the whorl, so it does not cut across a frond attached by a thin neck. For a zoomed view, a first coarse pass measures which part of the plane each pair of opening letters fills. Any branch that maps its part completely outside the view is skipped, so a deep zoom costs about as much as the full picture. The work is split over four Web Workers, one for each first letter.</p>
+
+      <h3>The random walk</h3>
+      <p>The second method, after the stochastic program in Chris King’s toolbox, needs no tree at all. It starts from a few points known to lie on the limit set, the fixed points of the generators and of the commutators, and moves them all together by one generator after another, chosen at random. The next letter is never the inverse of the last, which would only undo it, and with the chance set by “repeat a letter” it is the same letter again, so the walk spirals far into the whorls around the generators’ fixed points. Every image of a point of the limit set lies on the limit set again, so every step plots a few more of its points. Each point is coloured by the word that carried it there, read from the letter applied last, just like a segment of the search.</p>
+      <p>The walk never knows when it is done, and it fills the dense parts of the set long before it reaches the thin ones, so the curve comes out speckled rather than drawn, and more steps fill in the thin parts only slowly. In return it works for any group: it does not care whether the words contract, so it also gives a picture where the search would never end, for groups near the edge of the discrete region, and even beyond it, where the orbits no longer settle on a fractal and smear into a cloud. It also gains nothing from zooming, since most of its points then fall outside the view.</p>
+
+      <h3>The random descent</h3>
+      <p>The third method sits between the two. Like the search, it builds each word one letter at a time from the left and stops once the piece of the curve below it is shorter than ε, drawing the same segment the search would. But instead of trying every branch it follows a single random one, then starts again from the top. Of the three letters that may come next, it picks each with a chance proportional to the size of the piece of limit set below it, measured by where the word sends the fixed points that can follow. So big pieces get many samples and small ones few, and the picture fills in all over at once. Because no descent goes deeper than the maximum word length, it always ends, even for a group that is not discrete.</p>
+      <p>The sampling is not quite even. The pieces below a word together measure more than the word’s own piece, and that surplus compounds with every letter, so branches that need long words, the narrow necks into cusps and the turns of a spiral, are still visited less often than they should be.</p>
 
       <h3>The Maskit slice</h3>
       <p>Fix the trace of <code>b</code> at 2, so <code>b</code> is parabolic, and vary the trace of <code>a</code>. The values that give a discrete group form the Maskit slice, the shaded region of the first trace plane. Its edge is fractal, and on it sit the cusp groups: for each fraction <code>p/q</code> a particular word <code>W(p/q)</code> becomes parabolic too, and the limit set pinches into chains of tangent circles with period <code>q</code>. The trace of <code>W(p/q)</code> is a polynomial of degree <code>q</code> in the trace of <code>a</code>. The explorer builds it along the Farey tree with the identity <code>tr uv + tr uV = tr u · tr v</code>, then finds the right root with Newton’s method. Fractions converging to an irrational number lead to degenerate groups, whose limit sets fill whole regions.</p>
