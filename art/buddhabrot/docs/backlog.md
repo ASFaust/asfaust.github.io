@@ -8,10 +8,7 @@ This is only the task list; [README.md](README.md) explains the code. When you f
 
 Label each experiment **type A** (artsy) or **type B** (classical), or both.
 
-- **Make the zoom work, look good and run efficiently** (B; later, owner). Zoomed renders already use Metropolis automatically (the Method setting is gone since 2026-10-21). Still open: the Metropolis controls (mutations per chain, burn-in, large step, mutation radii), shown only for zoomed views, should disappear too, with settings chosen by the page. Part of this:
-  - measure time per noise level against brute force, in deep zooms,
-  - choose chain length, burn-in (probably 0, now that chains start in their stationary distribution) and step sizes automatically,
-  → [sampling.md](sampling.md#metropolis)
+- **Make zooms look good** (B). Zooms use Metropolis automatically, with measured settings (done 2026-10-21). Open: at the default 2 million orbits a zoom is grey and noisy (whole-set brightness flattens it; few hits per pixel). Ideas: more orbits by default in zooms, or a zoom-aware clip; measure before choosing. → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
 
 ## Colouring and normalization
 
@@ -25,6 +22,12 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-21, samples, defaults, Metropolis.**
+  - Samples up to 10⁸, processed in batches of 5 million (renders up to 5 million unchanged).
+  - Defaults: a standard type B in grey (grid, 2 million, 2000 iterations, equalized, clip 0.5). The old type A defaults are the preset "Embers (type A)".
+  - Metropolis settings measured and fixed (no burn-in, large step 0.02, chains of 30 / view width steps); their four controls removed; Samples counts orbits in zooms too. Adaptive seeding fixed a lopsided, seed-dependent minibrot (owner's report).
+  - Tests: the regression cases pin the settings they rely on; `compute()` accepts `p.method` from tests; `tests/metro-tuning.js` added.
 
 - **2026-10-21.** The Method setting removed: zoomed views use Metropolis, the whole set the direct method (owner). The grid sampler is labelled "near the boundary (zoomable)".
 

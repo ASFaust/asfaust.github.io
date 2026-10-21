@@ -22,9 +22,9 @@
   const u2 = norm(await run({ method: 'direct', samples: 20e6, seed: 2 }));
   const ref = u1.map((v, i) => (v + u2[i]) / 2), refTotal = (totals[0] + totals[1]) / 2;
   const out = { sampler, ref_noise: l1(u1, u2) };
-  for (const [name, o] of [['chains1000', { chain_length: 1000, burn_in: 0 }], ['nolarge', { chain_length: 1000, burn_in: 0, large_step: 0 }], ['defaults', { samples: 200000 }]]) {
-    const a = norm(await run(Object.assign({ method: 'metropolis', samples: 20000, seed: 3 }, o)));
-    const b = norm(await run(Object.assign({ method: 'metropolis', samples: 20000, seed: 4 }, o)));
+  for (const [name, o] of [['chains1000', { chain_length: 1000, burn_in: 0 }], ['nolarge', { chain_length: 1000, burn_in: 0, large_step: 0 }], ['defaults', {}]]) {
+    const a = norm(await run(Object.assign({ method: 'metropolis', samples: 2e7, seed: 3 }, o)));
+    const b = norm(await run(Object.assign({ method: 'metropolis', samples: 2e7, seed: 4 }, o)));
     out[name] = { m_vs_m: l1(a, b), m_vs_ref: l1(a, ref), scale: +(totals[totals.length - 1] / refTotal).toFixed(3) };
   }
   out.secs = Math.round((performance.now() - t0) / 1000);

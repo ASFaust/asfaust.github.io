@@ -128,6 +128,29 @@ function familyWeights(grid, t) {
   return cum;
 }
 
+// Samples are processed in batches of BATCH.size, all into the same per-worker histograms, so that the starting points of
+// one batch at a time are in memory (16 bytes each, 32 for bisection pairs): up to 10⁸ samples would not fit at once.
+// The first batch is exactly what a single run used to be, so renders up to BATCH samples did not change; later batches
+// take their random streams from indices offset by BATCH_SEEDS. BATCH.size is exported so that tests can lower it.
+export var BATCH = { size: 5e6 };
+// Metropolis seeds its chains from at least SEEDING.min starting points per batch, however few the chains: with few long
+// chains, as many seeding points as chains found no orbit into a deep view at all.
+export var SEEDING = { min: 2e5 };
+// Metropolis settings, chosen by measurement (tests/metro-tuning.js, docs/sampling.md#choosing-the-metropolis-settings):
+// no burn-in (chains start in their stationary distribution), a large step (a fresh point from the sampler) with
+// probability 0.02, and small steps of log-uniform radius from 1e-7 to 1 times the view's size. Chains are longer the
+// smaller the view: METRO.chain / view width steps, between chainMin and chainMax (60 steps for a view 0.5 wide, 1000
+// from 0.03 down). They are no settings; tests may override them with p.chain_length, p.burn_in, p.large_step,
+// p.mutation_min and p.mutation_max.
+export var METRO = { chain: 30, chainMin: 30, chainMax: 1000, burn: 0, large: 0.02, rmin: 1e-7, rmax: 1 };
+function metroSettings(p) {
+  function or(v, d) { return v === undefined ? d : v; }
+  var width = Math.max(p.xmax - p.xmin, p.ymax - p.ymin);
+  return { chain: or(p.chain_length, Math.round(Math.min(METRO.chainMax, Math.max(METRO.chainMin, METRO.chain / width)))), burn: or(p.burn_in, METRO.burn), large: or(p.large_step, METRO.large),
+    rmin: or(p.mutation_min, METRO.rmin), rmax: or(p.mutation_max, METRO.rmax) };
+}
+var BATCH_SEEDS = 1048576;
+
 // Computes the histogram for the settings p. The callbacks report progress:
 //   ui.stage(name, lo, hi, total)  a new stage, covering lo–hi % of the bar, with total units of work
 //   ui.progress(n)                 n more units done
@@ -140,18 +163,75 @@ export async function compute(p, ui) {
   // Both samplers start from the border grid. The grid sampler has a known density, and only escaping orbits count
   // with it; the bisection sampler's points are far closer to the set, with an unknown density.
   // The whole set is traced directly. A zoomed view uses Metropolis, which follows the orbits that cross it: traced
-  // directly, most samples would miss it. The bisection sampler never zooms (state.js).
-  var metro = !fullBounds(p), bisection = p.sampler === 'bisection', known = !bisection;
+  // directly, most samples would miss it. The bisection sampler never zooms (state.js). Tests may force a method with
+  // p.method ('direct' or 'metropolis'), as tests/distribution.js does for its brute-force reference; it is no setting.
+  var metro = p.method ? p.method === 'metropolis' : !fullBounds(p), bisection = p.sampler === 'bisection', known = !bisection;
   var grid = await borderGrid(p.max_iter, ui);
   if (!grid) return null;
 
-  // 1. starting points c, two numbers per sample
-  var outside = new Float64Array(2 * p.samples);
+  // One histogram per tracing worker; cap workers so the histograms fit in memory.
+  // Metropolis splats fractional weights, which need doubles, and needs the grid's density in every worker.
+  // Colouring by orbit length keeps one histogram per band (short, mid, long), one after another.
+  var bands = p.colour_mode === 'length' ? [p.band_short, p.band_mid] : null, nb = bands ? 3 : 1;
+  var res = p.resolution, bytes = res * res * nb * (metro ? 8 : 4);
+  var nTrace = Math.max(1, Math.min(nCores, Math.floor(768e6 / bytes)));
+  var inits = [];
+  // Orbits are recorded until they leave the circle around 0 that holds the whole view, not only until |z| > 2, so
+  // that the view's corners beyond radius 2 get the escaping orbits' last points too and do not stay black.
+  var bail = Math.max(2, Math.hypot(Math.max(-b.xmin, b.xmax), Math.max(-b.ymin, b.ymax)));
+  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands } });
+  await runJobs(inits, nTrace);
+
+  // Samples count orbits in both methods: a zoom runs samples / chain length chains.
+  var ms = metro ? metroSettings(p) : null, units = metro ? Math.max(1, Math.round(p.samples / ms.chain)) : p.samples;
+  var nBatch = Math.ceil(units / BATCH.size), fsum = 0, seeded = 0;
+  for (var bi = 0; bi < nBatch; bi++) {
+    var n = Math.min(BATCH.size, units - bi * BATCH.size), base = bi * BATCH_SEEDS;
+    // this batch's stages share its slice of the bar between 10 and 95 %
+    var stage = function(name, lo, hi, total) {
+      ui.stage(name + (nBatch > 1 ? ' ' + (bi + 1) + '/' + nBatch : ''), 10 + (85 * bi + lo - 10) / nBatch, 10 + (85 * bi + hi - 10) / nBatch, total);
+    };
+    var r = await batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui);
+    if (r === null) return null;
+    fsum += r.fsum; seeded += r.seeded;
+  }
+
+  // norm turns the histogram into hits per starting sample per unit area of the plane, which does not depend on the
+  // number of samples, the resolution or the zoom (docs/sampling.md, normalization).
+  var total, norm, pixelArea = (b.xmax - b.xmin) * (b.ymax - b.ymin) / (res * res);
+  if (!metro) {
+    total = p.samples * (1 + (known ? 0 : p.nearby_points));
+    norm = 1 / (total * pixelArea);
+  } else {
+    total = units * (ms.burn + ms.chain);
+    // Each chain step spreads weight 1 over the view, so the histogram estimates E_π[hits / f] per step, with π ∝ p·f.
+    // Hits per p-sample are E_p[hits] = E_π[hits / f] · E_p[f], and E_p[f] is the mean f over all seeding samples.
+    norm = (fsum / seeded) / (units * ms.chain * pixelArea);
+  }
+
+  // combine, in worker order: Metropolis's fractional weights have sums that depend on their order
+  ui.stage('Combining', 95, 100);
+  var sum = new Float32Array(res * res * nb), gets = [], hists = [];
+  for (w = 0; w < nTrace; w++) gets.push({ w: w, msg: { cmd: 'histGet' } });
+  await runJobs(gets, nTrace, function(job, d) { hists[job.w] = d.hist; });
+  hists.forEach(function(h) { for (var k = 0; k < h.length; k++) sum[k] += h[k]; });
+  if (!ui.live()) return null;
+  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb };
+}
+
+// One batch of n samples (for Metropolis, n chains, with the settings ms; ms is null for the direct method) into the
+// workers' histograms. Random streams are indexed from base.
+// Returns { fsum, seeded }: for Metropolis, the sum of f over the batch's seeding points and their number (0 otherwise),
+// or null once the run was stopped.
+async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) {
+  var metro = !!ms;
+  // 1. starting points c, two numbers per sample; Metropolis tests at least SEEDING.min of them for seeds
+  var ns = metro ? Math.max(n, SEEDING.min) : n, outside = new Float64Array(2 * ns);
   if (!bisection) {
-    ui.stage('Sampling', 10, 12);
+    stage('Sampling', 10, 12);
     await tick();
-    var grand = rng(mixSeed(p.seed, 5, 0)), gp = [0, 0];
-    for (var i = 0; i < p.samples; i++) {
+    var grand = rng(mixSeed(p.seed, 5, base)), gp = [0, 0];
+    for (var i = 0; i < ns; i++) {
       pick(grid, grand, gp);
       outside[2 * i] = gp[0]; outside[2 * i + 1] = gp[1];
     }
@@ -160,9 +240,9 @@ export async function compute(p, ui) {
     // outside corners, a cell apart. Mixed cells are spread evenly along the boundary, minibrots included. The workers
     // then bisect each pair randomly and keep the outside end, which ends up far closer to the set than a cell.
     var ne = grid.edges.length, ecum = p.balance > 0 ? familyWeights(grid, p.balance) : null;
-    ui.stage('Refining', 10, 45, p.samples * p.refine_steps);
-    var brand = rng(mixSeed(p.seed, 1, 0)), pairs = new Float64Array(4 * p.samples), ins = [], outs = [];
-    for (var i = 0; i < p.samples; i++) {
+    stage('Refining', 10, 45, n * p.refine_steps);
+    var brand = rng(mixSeed(p.seed, 1, base)), pairs = new Float64Array(4 * n), ins = [], outs = [];
+    for (var i = 0; i < n; i++) {
       var e = Math.floor(brand() * ne);
       if (ecum) {
         var x = brand() * ecum[ne - 1], q0 = 0, q1 = ne - 1;
@@ -176,83 +256,71 @@ export async function compute(p, ui) {
       pairs[4 * i] = grid.x0 + (ci + (a >> 1)) * grid.h; pairs[4 * i + 1] = grid.y0 + (cj + (a & 1)) * grid.h;
       pairs[4 * i + 2] = grid.x0 + (ci + (o >> 1)) * grid.h; pairs[4 * i + 3] = grid.y0 + (cj + (o & 1)) * grid.h;
     }
-    await runJobs(chunks(p.samples, nCores, 8, 64).map(function(c, i) {
+    await runJobs(chunks(n, nCores, 8, 64).map(function(c, i) {
       var slice = pairs.slice(4 * c[0], 4 * c[1]);
-      return { start: c[0], msg: { cmd: 'refine', pairs: slice, steps: p.refine_steps, maxIter: p.max_iter, seed: mixSeed(p.seed, 1, i + 1) }, transfer: [slice.buffer] };
+      return { start: c[0], msg: { cmd: 'refine', pairs: slice, steps: p.refine_steps, maxIter: p.max_iter, seed: mixSeed(p.seed, 1, base + i + 1) }, transfer: [slice.buffer] };
     }), nCores, function(job, d) { outside.set(d.pts, 2 * job.start); }, ui.progress);
+    pairs = null;
   }
   if (!ui.live()) return null;
   var lo = bisection ? 45 : 12;
 
-  // 2. trace orbits into one histogram per worker; cap workers so the histograms fit in memory.
-  // Metropolis splats fractional weights, which need doubles, and needs the grid's density in every worker.
-  // Colouring by orbit length keeps one histogram per band (short, mid, long), one after another.
-  var bands = p.colour_mode === 'length' ? [p.band_short, p.band_mid] : null, nb = bands ? 3 : 1;
-  var res = p.resolution, bytes = res * res * nb * (metro ? 8 : 4);
-  var nTrace = Math.max(1, Math.min(nCores, Math.floor(768e6 / bytes)));
-  var inits = [];
-  // Orbits are recorded until they leave the circle around 0 that holds the whole view, not only until |z| > 2, so
-  // that the view's corners beyond radius 2 get the escaping orbits' last points too and do not stay black.
-  var bail = Math.max(2, Math.hypot(Math.max(-b.xmin, b.xmax), Math.max(-b.ymin, b.ymax)));
-  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands } });
-  await runJobs(inits, nTrace);
-  // norm turns the histogram into hits per starting sample per unit area of the plane, which does not depend on the
-  // number of samples, the resolution or the zoom (docs/sampling.md, normalization).
-  var total, norm, pixelArea = (b.xmax - b.xmin) * (b.ymax - b.ymin) / (res * res);
+  // 2. trace the orbits
   if (!metro) {
-    total = p.samples * (1 + (known ? 0 : p.nearby_points));
-    norm = 1 / (total * pixelArea);
-    ui.stage('Buddhabrot', lo, 95, total);
+    stage('Buddhabrot', lo, 95, n * (1 + (known ? 0 : p.nearby_points)));
     var perWorker = p.nearby_points > 0 ? 64 : 16;
-    await runJobs(chunks(p.samples, nTrace, perWorker, 1).map(function(c, i) {
+    await runJobs(chunks(n, nTrace, perWorker, 1).map(function(c, i) {
       var slice = outside.slice(2 * c[0], 2 * c[1]);
-      return { msg: { cmd: 'trace', pts: slice, escapingOnly: known, nearby: known ? 0 : p.nearby_points, sigma: p.nearby_spread, seed: mixSeed(p.seed, 2, i) }, transfer: [slice.buffer] };
+      return { msg: { cmd: 'trace', pts: slice, escapingOnly: known, nearby: known ? 0 : p.nearby_points, sigma: p.nearby_spread, seed: mixSeed(p.seed, 2, base + i) }, transfer: [slice.buffer] };
     }), nTrace, null, ui.progress);
-  } else {
-    // 2a. keep the starting points whose orbits cross the view
-    ui.stage('Seeding', lo, lo + 5, p.samples);
-    var found = [], foundF = [];
-    await runJobs(chunks(p.samples, nTrace, 4, 64).map(function(c, i) {
-      var slice = outside.slice(2 * c[0], 2 * c[1]);
+    return ui.live() ? { fsum: 0, seeded: 0 } : null;
+  }
+  // 2a. keep the starting points whose orbits cross the view
+  var found = [], foundF = [], nFound = 0, seeded = 0;
+  async function seedFrom(pts, count) {
+    stage('Seeding', lo, lo + 5, count);
+    var got = [], gotF = [];
+    await runJobs(chunks(count, nTrace, 4, 64).map(function(c, i) {
+      var slice = pts.slice(2 * c[0], 2 * c[1]);
       return { idx: i, msg: { cmd: 'seed', pts: slice }, transfer: [slice.buffer] };
-    }), nTrace, function(job, d) { found[job.idx] = d.pts; foundF[job.idx] = d.f; }, ui.progress);
-    if (!ui.live()) return null;
-    var nFound = found.reduce(function(s, f) { return s + f.length / 2; }, 0);
-    if (nFound === 0) throw new Error('No starting orbit reaches this view. Raise the samples or max iterations.');
-    var seeds = new Float64Array(2 * nFound), cum = new Float64Array(nFound), o = 0, fsum = 0;
-    found.forEach(function(f, i) {
-      seeds.set(f, 2 * o);
-      foundF[i].forEach(function(v) { cum[o++] = fsum += v; });
-    });
-
-    // 2b. one chain per sample. The chains' target is proportional to f, so each start is drawn from the seeds with
-    // probability proportional to f: the chains then start in their stationary distribution and need no burn-in.
-    // Drawing starts uniformly from the seeds instead over-weights orbits with few hits until the chains have mixed,
-    // which took thousands of steps (docs/sampling.md).
-    var starts = new Float64Array(2 * p.samples), rand = rng(mixSeed(p.seed, 3, 0));
-    for (var j = 0; j < p.samples; j++) {
-      var x = rand() * fsum, q0 = 0, q1 = nFound - 1;
-      while (q0 < q1) { var mid = (q0 + q1) >> 1; if (cum[mid] > x) q1 = mid; else q0 = mid + 1; }
-      starts[2 * j] = seeds[2 * q0]; starts[2 * j + 1] = seeds[2 * q0 + 1];
-    }
-    total = p.samples * (p.burn_in + p.chain_length);
-    // Each chain step spreads weight 1 over the view, so the histogram estimates E_π[hits / f] per step, with π ∝ p·f.
-    // Hits per p-sample are E_p[hits] = E_π[hits / f] · E_p[f], and E_p[f] is the mean f over all seeding samples.
-    norm = (fsum / p.samples) / (p.samples * p.chain_length * pixelArea);
-    ui.stage('Metropolis', lo + 5, 95, total);
-    await runJobs(chunks(p.samples, nTrace, 16, 1).map(function(c, i) {
-      var slice = starts.slice(2 * c[0], 2 * c[1]);
-      return { msg: { cmd: 'metro', pts: slice, steps: p.chain_length, burn: p.burn_in, large: p.large_step, rmin: p.mutation_min, rmax: p.mutation_max, seed: mixSeed(p.seed, 4, i) }, transfer: [slice.buffer] };
-    }), nTrace, null, ui.progress, true);   // pinned: fractional weights, whose sums depend on their order
+    }), nTrace, function(job, d) { got[job.idx] = d.pts; gotF[job.idx] = d.f; }, ui.progress);
+    got.forEach(function(f, i) { found.push(f); foundF.push(gotF[i]); nFound += f.length / 2; });
+    seeded += count;
+  }
+  await seedFrom(outside, ns);
+  outside = null;
+  // Adaptive seeding. A small or deep view yields few seeds, and chains that share few starts stay near them: the image
+  // then shows the seeds rather than the distribution, lopsided and different with every seed (a minibrot on the real
+  // axis, owner, 2026-10-21). So the seeding points keep doubling until there is a seed per chain, up to as many
+  // seeding points as the batch traces orbits. Views with seeds enough cost nothing extra (docs/sampling.md).
+  var cap = Math.max(ns, n * ms.chain);
+  while (!bisection && nFound < n && seeded < cap && ui.live()) {
+    var more = Math.min(seeded, cap - seeded), extra = new Float64Array(2 * more);
+    for (var k = 0; k < more; k++) { pick(grid, grand, gp); extra[2 * k] = gp[0]; extra[2 * k + 1] = gp[1]; }
+    await seedFrom(extra, more);
   }
   if (!ui.live()) return null;
+  if (nFound === 0) throw new Error('No starting orbit reaches this view. Raise the samples or max iterations.');
+  var seeds = new Float64Array(2 * nFound), cum = new Float64Array(nFound), o = 0, fsum = 0;
+  found.forEach(function(f, i) {
+    seeds.set(f, 2 * o);
+    foundF[i].forEach(function(v) { cum[o++] = fsum += v; });
+  });
 
-  // 3. combine, in worker order, for the same reason
-  ui.stage('Combining', 95, 100);
-  var sum = new Float32Array(res * res * nb), gets = [], hists = [];
-  for (w = 0; w < nTrace; w++) gets.push({ w: w, msg: { cmd: 'histGet' } });
-  await runJobs(gets, nTrace, function(job, d) { hists[job.w] = d.hist; });
-  hists.forEach(function(h) { for (var k = 0; k < h.length; k++) sum[k] += h[k]; });
-  if (!ui.live()) return null;
-  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb };
+  // 2b. one chain per sample. The chains' target is proportional to f, so each start is drawn from the seeds with
+  // probability proportional to f: the chains then start in their stationary distribution and need no burn-in.
+  // Drawing starts uniformly from the seeds instead over-weights orbits with few hits until the chains have mixed,
+  // which took thousands of steps (docs/sampling.md).
+  var starts = new Float64Array(2 * n), rand = rng(mixSeed(p.seed, 3, base));
+  for (var j = 0; j < n; j++) {
+    var x = rand() * fsum, q0 = 0, q1 = nFound - 1;
+    while (q0 < q1) { var mid = (q0 + q1) >> 1; if (cum[mid] > x) q1 = mid; else q0 = mid + 1; }
+    starts[2 * j] = seeds[2 * q0]; starts[2 * j + 1] = seeds[2 * q0 + 1];
+  }
+  stage('Metropolis', lo + 5, 95, n * (ms.burn + ms.chain));
+  await runJobs(chunks(n, nTrace, 16, 1).map(function(c, i) {
+    var slice = starts.slice(2 * c[0], 2 * c[1]);
+    return { msg: { cmd: 'metro', pts: slice, steps: ms.chain, burn: ms.burn, large: ms.large, rmin: ms.rmin, rmax: ms.rmax, seed: mixSeed(p.seed, 4, base + i) }, transfer: [slice.buffer] };
+  }), nTrace, null, ui.progress, true);   // pinned: fractional weights, whose sums depend on their order
+  return ui.live() ? { fsum: fsum, seeded: seeded } : null;
 }

@@ -22,30 +22,27 @@ export var GRADIENTS = {
   'ember-ice': '000000@0,3a0d05@0.3,c0502a@0.55,8fd0e8@0.85,ffffff@1'
 };
 
+// The defaults are a standard type B Buddhabrot in grey (owner, 2026-10-21). The bisection settings (refine steps, nearby
+// points) are the owner's type A picks, used once the sampler is switched; the type A presets set the rest.
 export var DEFAULTS = {
-  sampler: 'bisection',
-  samples: 600,
+  sampler: 'grid',
+  samples: 2000000,
   nearby_points: 20,
   nearby_spread: 1e-3,
-  max_iter: 100000,
+  max_iter: 2000,
   resolution: 2000,
   refine_steps: 10,
   balance: 0.5,
-  chain_length: 100,
-  burn_in: 20,
-  large_step: 0.05,
-  mutation_min: 1e-7,
-  mutation_max: 1,
   seed: 0,
   xmin: -2.0,
   xmax: 1.0,
   ymin: -1.5,
   ymax: 1.5,
-  scale_mode: 'log',
+  scale_mode: 'equalize',
   root: 2.5,
-  gradient: GRADIENTS.hot,
-  min_clip: 0.143,
-  max_clip: 0.778,
+  gradient: GRADIENTS.gray,
+  min_clip: 0.5,
+  max_clip: 1,
   // the levels midpoint: where between the clips mid-grey falls, as a fraction of the clipped range (0.5: no change)
   midtone: 0.5,
   soft_points: true,
@@ -62,19 +59,22 @@ export var DEFAULTS = {
 };
 export var KEYS = Object.keys(DEFAULTS);
 
-// Built-in presets only list what differs from the defaults. Type A first (bisection, few samples, long orbits), then
+// Built-in presets list what differs from the defaults; the type A ones start from TYPE_A, the former defaults. Type A first (bisection, few samples, long orbits), then
 // type B (grid sampler, many samples; equalized with an aggressive min clip, which carves the figure out of its glow),
 // colouring by orbit length, and a zoom.
+var TYPE_A = { sampler: 'bisection', samples: 600, max_iter: 100000, scale_mode: 'log', min_clip: 0.143, max_clip: 0.778, gradient: GRADIENTS.hot };
 var GRID_B = { sampler: 'grid', samples: 2000000, scale_mode: 'equalize', max_clip: 1 };
+function typeA(o) { return Object.assign({}, TYPE_A, o); }
 var NEBULA = { sampler: 'grid', samples: 3000000, max_iter: 5000, colour_mode: 'length', scale_mode: 'nth root', root: 3, min_clip: 0.1, max_clip: 0.8 };
 export var BUILTIN = {
   'Default': {},
-  'Gold head': { balance: 1, samples: 900, gradient: GRADIENTS.gold },
-  'Lapis filigree': { refine_steps: 20, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.lapis },
-  'Sodium lamp': { nearby_points: 5, nearby_spread: 1e-5, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.sodium },
-  'Coral': { samples: 300, nearby_points: 40, nearby_spread: 0.01, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.reef },
-  'Amethyst bubbles': { samples: 60, nearby_points: 200, nearby_spread: 1e-4, max_iter: 200000, gradient: GRADIENTS.amethyst },
-  'Twelve orbits': { samples: 12, nearby_points: 2000, nearby_spread: 3e-5, max_iter: 200000, max_clip: 0.7, gradient: GRADIENTS.sunset },
+  'Embers (type A)': typeA({}),
+  'Gold head': typeA({ balance: 1, samples: 900, gradient: GRADIENTS.gold }),
+  'Lapis filigree': typeA({ refine_steps: 20, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.lapis }),
+  'Sodium lamp': typeA({ nearby_points: 5, nearby_spread: 1e-5, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.sodium }),
+  'Coral': typeA({ samples: 300, nearby_points: 40, nearby_spread: 0.01, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.reef }),
+  'Amethyst bubbles': typeA({ samples: 60, nearby_points: 200, nearby_spread: 1e-4, max_iter: 200000, gradient: GRADIENTS.amethyst }),
+  'Twelve orbits': typeA({ samples: 12, nearby_points: 2000, nearby_spread: 3e-5, max_iter: 200000, max_clip: 0.7, gradient: GRADIENTS.sunset }),
   'Patina': Object.assign({}, GRID_B, { max_iter: 1000, min_clip: 0.55, gradient: GRADIENTS.patina }),
   'Ember and ice': Object.assign({}, GRID_B, { max_iter: 2000, min_clip: 0.65, midtone: 0.6, gradient: GRADIENTS['ember-ice'] }),
   'Lapis': Object.assign({}, GRID_B, { max_iter: 3000, min_clip: 0.65, gradient: GRADIENTS.lapis }),
@@ -87,7 +87,7 @@ export var BUILTIN = {
   'Nebulabrot': NEBULA,
   'Deep Nebulabrot': Object.assign({}, NEBULA, { samples: 2000000, max_iter: 20000, band_short: 200, band_mid: 2000, min_clip: 0.05, max_clip: 0.75 }),
   'Warm Nebulabrot': Object.assign({}, NEBULA, { colour_short: '7a1fd0', colour_mid: 'e04a2a', colour_long: 'ffd060' }),
-  'Head (zoom)': Object.assign({}, GRID_B, { samples: 100000, chain_length: 200, max_iter: 5000, min_clip: 0.3,
+  'Head (zoom)': Object.assign({}, GRID_B, { samples: 20000000, max_iter: 5000, min_clip: 0.3,
     xmin: -1.9, xmax: -1.0, ymin: -0.45, ymax: 0.45, gradient: GRADIENTS.dusk })
 };
 
@@ -101,8 +101,9 @@ function logFrom(t, lo, hi) { return Math.pow(10, Math.log10(lo) + t * (Math.log
 function logTo(v, lo, hi) { return (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)); }
 export var SLIDERS = {
   samples: {
-    from: function(t) { return Math.round(Math.min(5e6, Math.max(1, logFrom(t, 1, 5e6)))); },
-    to: function(v) { return logTo(Math.max(1, Math.min(5e6, v)), 1, 5e6); },
+    // up to 10⁸: clean renders take minutes, for those willing to wait (compute.js works through them in batches)
+    from: function(t) { return Math.round(Math.min(1e8, Math.max(1, logFrom(t, 1, 1e8)))); },
+    to: function(v) { return logTo(Math.max(1, Math.min(1e8, v)), 1, 1e8); },
     fmt: function(v) { return v.toLocaleString('en-US'); }
   },
   nearby_points: {
@@ -128,8 +129,8 @@ export var SLIDERS = {
 };
 // setting → element id suffix: p-… is the input, v-… the value shown next to a slider
 export var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs' };
-export var NUMBER_IDS = { band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', resolution: 'res', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
-var INT_KEYS = { max_iter: 1, resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1, band_short: 1, band_mid: 1 };
+export var NUMBER_IDS = { band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', resolution: 'res', refine_steps: 'refine', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
+var INT_KEYS = { max_iter: 1, resolution: 1, refine_steps: 1, seed: 1, band_short: 1, band_mid: 1 };
 
 export function parseGradient(str) {
   var stops = String(str).split(',').map(function(part) {
@@ -152,18 +153,13 @@ export function sanitize(data) {
     else if (typeof d === 'number') { v = Number(v); if (isFinite(v)) out[k] = INT_KEYS[k] ? Math.round(v) : v; }
     else out[k] = String(v);
   });
-  out.samples = clamp(out.samples, 1, 5e6);
+  out.samples = clamp(out.samples, 1, 1e8);
   out.nearby_points = clamp(out.nearby_points, 0, 1e5);
   out.nearby_spread = clamp(out.nearby_spread, 1e-6, 0.1);
   out.max_iter = clamp(out.max_iter, 2, 1e6);
   out.resolution = clamp(out.resolution, 128, 4096);
   out.refine_steps = clamp(out.refine_steps, 0, 10000);
   out.balance = clamp(out.balance, 0, 1);
-  out.chain_length = clamp(out.chain_length, 1, 1e6);
-  out.burn_in = clamp(out.burn_in, 0, 1e6);
-  out.large_step = clamp(out.large_step, 0, 1);
-  out.mutation_min = clamp(out.mutation_min, 1e-15, 1);
-  out.mutation_max = clamp(out.mutation_max, out.mutation_min, 10);
   out.seed = clamp(out.seed, 0, 2147483647);
   out.root = clamp(out.root, 1.1, 20);
   out.min_clip = clamp(out.min_clip, 0, 1);

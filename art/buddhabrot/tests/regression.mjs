@@ -11,14 +11,18 @@ import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch, evaluate, sleep } from './chrome.mjs';
 
+// The settings each case relies on, pinned: the defaults changed on 2026-10-21 (a gray type B), and the cases should
+// keep testing what they tested. A case's own keys come after these and win.
+const PINNED = 'sampler=bisection&samples=600&max_iter=100000&scale_mode=log&min_clip=0.143&max_clip=0.778&gradient=000000@0,b4140a@0.35,ffb928@0.7,ffffff@1';
 const CASES = {
   default: '',
-  bisection: '#samples=20000&nearby_points=0&refine_steps=40',
-  nearby: '#samples=20000&nearby_points=20&refine_steps=40&soft_points=1&blur_px=2&scale_mode=log&gradient=000000@0,ff0000@0.4,ffffff@1&min_clip=0.1',
-  grid: '#sampler=grid&samples=50000&max_iter=1000&scale_mode=equalize',
-  length: '#sampler=grid&samples=50000&max_iter=1000&colour_mode=length&channel_norm=shared',
-  midtone: '#sampler=grid&samples=50000&max_iter=1000&midtone=0.35&colour_mode=length',
-  metropolis: '#sampler=grid&samples=2000&xmin=-0.5&xmax=0&ymin=0.4&ymax=0.9&resolution=400'
+  typeA: '#' + PINNED,
+  bisection: '#' + PINNED + '&samples=20000&nearby_points=0&refine_steps=40',
+  nearby: '#' + PINNED + '&samples=20000&nearby_points=20&refine_steps=40&soft_points=1&blur_px=2&scale_mode=log&gradient=000000@0,ff0000@0.4,ffffff@1&min_clip=0.1',
+  grid: '#' + PINNED + '&sampler=grid&samples=50000&max_iter=1000&scale_mode=equalize',
+  length: '#' + PINNED + '&sampler=grid&samples=50000&max_iter=1000&colour_mode=length&channel_norm=shared',
+  midtone: '#' + PINNED + '&sampler=grid&samples=50000&max_iter=1000&midtone=0.35&colour_mode=length',
+  metropolis: '#' + PINNED + '&sampler=grid&samples=600000&xmin=-0.5&xmax=0&ymin=0.4&ymax=0.9&resolution=400'
 };
 const HASH = 'const c=document.getElementById("canvas");const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let h=0;for(let i=0;i<d.length;i++)h=(Math.imul(h,31)+d[i])|0;c.width+":"+h';
 const DONE = '!document.getElementById("stopBtn").disabled ? false : !!document.getElementById("stats").textContent';

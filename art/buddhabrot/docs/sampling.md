@@ -65,6 +65,49 @@ The owner's distinction; every sampling decision should say which type it serves
 - **Efficiency.** In this moderate zoom (a view 0.5 wide), Metropolis with the uniform sampler is not less noisy per orbit than brute-force uniform sampling. Its advantage is for deep zooms, where few brute-force orbits hit the view. This has not been measured in time yet; brute-force orbits that miss the view are cheap.
 - **Next.** Measure deep zooms in time per noise level, and hide the Metropolis controls behind automatic choices. This is the backlog item "Make the zoom work". The absolute scale from the seeding stage's mean `f` is done (see the last section).
 
+### Choosing the Metropolis settings (2026-10-21)
+
+The page no longer exposes chain length, burn-in, large step and mutation radii: zoomed views use Metropolis automatically (`METRO` in `compute.js`), and **Samples counts orbits** in both methods, so a zoom runs samples / 300 chains.
+
+**Measurement** (`tests/metro-tuning.js`): four views (the shoulder 0.5 wide, seahorse valley 0.1 and 0.01 wide, the minibrot at -1.7548 0.004 wide), `max_iter` 5000, 128 px. Reference: 8·10⁶ chain steps, two seeds. Each candidate: 4·10⁵ steps, two seeds, L1 to the reference; score err² × time (lower is better at equal effort). Times barely differed (≈0.35 s), so the score is mostly err².
+
+| | shoulder 0.5 | seahorse 0.1 | seahorse 0.01 | minibrot 0.004 |
+|---|---|---|---|---|
+| L = 10 | **3.8** | 14.8 | 170 | 186 |
+| L = 30 | **3.5** | 12.0 | 85 | 85 |
+| L = 100 | **3.7** | 10.5 | 64 | 55 |
+| L = 300 | 4.2 | **10.1** | **61** | **46** |
+| L = 1000 | 5.2 | **9.9** | 63 | **44** |
+
+At the best chain length: a large step of 0.01 scored about the same as 0.05; 0.2 was 10–20 % worse and 0.5 about 70–100 % worse in deep views. The largest radius 0.1 scored like 1, and 0.01 was 30–75 % worse. A burn-in of 20 changed nothing, as expected now that chains start from f-weighted seeds.
+
+**Chosen at first:** chains of 300 steps (at most 20 % off the best anywhere), burn-in 0, large step 0.02, radii 1e-7 to 1 times the view. Revised the same day, below. `tests/distribution.js` confirms them unbiased (L1 to brute force 0.015 against Metropolis's own 0.018, scale 1.005).
+
+**Seeding fix found on the way.** Seeding tested as many points as there were chains, so few long chains (400 chains of 1000) found no orbit into a deep view at all. It now tests at least 200,000 points per batch (`SEEDING.min`), and the norm divides by the points tested.
+
+**Revision: a lopsided minibrot (owner).** The minibrot at -1.7549 (view 0.07 wide), which lies on the real axis and should be mirror-symmetric, came out lopsided and different with every seed. The owner suspected the large step. Measured at 128 px, three seeds (variation between seeds as L1; lopsidedness as L1 between the image and its mirror):
+
+| | between seeds | lopsided | time |
+|---|---|---|---|
+| 200,000 seeding points, large step 0.02 | 0.215 | 0.199 | 1.4 s |
+| large step 0.2 | 0.241 | 0.232 | 1.2 s |
+| large step 0.5 | 0.309 | 0.294 | 1.4 s |
+| 2 million seeding points | 0.124 | 0.121 | 2.3 s |
+| 20 million seeding points | 0.101 | 0.100 | 7.9 s |
+
+- The lopsidedness is the noise between seeds: it is a variance problem, not a bias.
+- **Larger large steps make it worse:** in a small view nearly every large step proposes a c whose orbit misses it and is rejected.
+- **The cause was too few seeds:** few of 200,000 seeding points reach a small view, and chains that share few starts stay near them.
+- But seeding more is not free everywhere: in seahorse 0.01 it cost 2.5× the time for no gain (0.308 → 0.293).
+
+**Now:**
+- **Adaptive seeding:** after the first 200,000 points, seeding doubles until there is a seed per chain, up to as many seeding points as the batch traces orbits. Views with seeds enough cost nothing extra.
+- **Chain length from the view's width:** 30 / width steps, between 30 and 1000 (`METRO`), following the measurements: 30–100 best at width 0.5, 300–1000 at 0.1, 1000 below. Longer chains also need fewer seeds.
+- Minibrot: 0.215 → 0.117 between seeds at about the same time; it renders symmetric with any seed. Seahorse 0.01: 0.294 in 0.6 s, against 0.308 in 0.4 s before. `tests/distribution.js`: unbiased (L1 to brute force 0.012 against Metropolis's own 0.017, scale 0.994).
+- **A note for experiments:** run them on a page loaded with `#samples=1`. Otherwise the page's own startup render shares the worker pool with the experiment, and their messages get mixed up (one run failed that way).
+
+**Still open: zooms look grey and noisy at the default 2 million orbits** (seahorse 0.1 wide, 2000 px). Two causes, seen separately: whole-set brightness puts a region that is bright everywhere into the upper ranks, which equalization with the default clip renders as flat grey (min clip 0.85 brings the structure back); and each orbit adds only its few points inside the view, so 2000 px get few hits each (20 million orbits, 4 s, are cleaner; 700 px too).
+
 ## Densities for the starting points
 
 The goal is to sample long orbits more often, because they contribute more. Every option needs a *known* density, so that Metropolis can use it.

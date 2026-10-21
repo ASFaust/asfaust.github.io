@@ -126,29 +126,6 @@
             <small>an artistic choice. At 0 the samples start wherever the boundary is; the main cardioid and everything on it hold three quarters of it, so with few samples the body fills first. At 1 the head and its bulbs get as many samples as the rest.</small>
             <input type="range" id="p-balance" min="0" max="1" step="0.05">
           </div>
-          <div class="param metro-only">
-            <label for="p-chain"><span>Mutations per chain</span></label>
-            <small>orbits traced by each Metropolis chain</small>
-            <input type="number" id="p-chain" min="1" max="1000000" step="1">
-          </div>
-          <div class="param metro-only">
-            <label for="p-burn"><span>Burn-in</span></label>
-            <small>mutations per chain before anything is drawn</small>
-            <input type="number" id="p-burn" min="0" max="1000000" step="1">
-          </div>
-          <div class="param metro-only">
-            <label for="p-large"><span>Large step probability</span></label>
-            <small>chance of jumping to a uniformly random point</small>
-            <input type="number" id="p-large" min="0" max="1" step="0.01">
-          </div>
-          <div class="param metro-only">
-            <label for="p-mmin"><span>Mutation radius min / max</span></label>
-            <small>log-uniform, as a fraction of the view size</small>
-            <div class="row">
-              <input type="number" id="p-mmin" step="any" aria-label="Mutation radius min">
-              <input type="number" id="p-mmax" step="any" aria-label="Mutation radius max">
-            </div>
-          </div>
           <div class="param">
             <label for="p-seed"><span>Seed</span></label>
             <small>same seed and settings give the same image; “New seed” picks one at random</small>

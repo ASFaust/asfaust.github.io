@@ -31,11 +31,10 @@ function syncInputs() {
   Object.keys(NUMBER_IDS).forEach(function(k) { $('p-' + NUMBER_IDS[k]).value = st[k]; });
   $('p-sampler').value = st.sampler;
   var metro = !fullBounds(), bisection = st.sampler === 'bisection';
-  document.querySelectorAll('.metro-only').forEach(function(el) { el.classList.toggle('hidden', !metro); });
   document.querySelectorAll('.bisection-only').forEach(function(el) { el.classList.toggle('hidden', !bisection); });
   document.querySelectorAll('.density-only').forEach(function(el) { el.classList.toggle('hidden', bisection); });
   document.querySelectorAll('.nearby-only').forEach(function(el) { el.classList.toggle('hidden', metro || !bisection); });
-  $('samplesNote').textContent = metro ? 'Metropolis chains, each started at a sampled point whose orbit crosses the view'
+  $('samplesNote').textContent = metro ? 'orbits traced for this zoomed view, by Metropolis chains that follow the orbits crossing it'
     : bisection ? 'boundary points whose orbits are traced'
     : 'points near the boundary of the set; only escaping orbits are drawn';
   $('p-scale').value = st.scale_mode;

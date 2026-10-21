@@ -10,7 +10,7 @@
   const ui = { stage() {}, progress() {}, live: () => true };
   const IB = [-2, -1.25, -0.75, -0.25, 0.25, 1], out = {};
   for (const t of [0, 0.5, 1]) {
-    const p = Object.assign({}, s.DEFAULTS, { samples: 3000, max_iter: 10000, resolution: 600, balance: t });
+    const p = Object.assign({}, s.DEFAULTS, { sampler: 'bisection', nearby_points: 0, refine_steps: 40, samples: 3000, max_iter: 10000, resolution: 600, balance: t });
     const r = await m.compute(p, ui), n = r.res, sums = new Array(IB.length - 1).fill(0);
     let tot = 0;
     for (let i = 0; i < n; i++) {
