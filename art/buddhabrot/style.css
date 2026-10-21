@@ -68,7 +68,8 @@ body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; bac
 .stage { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: #000; border: 1px solid var(--color-border-secondary); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .stage.dragging { cursor: grabbing; }
 #canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
-#canvas.pixelated { image-rendering: pixelated; }
+#canvas.pixelated, #detail.pixelated { image-rendering: pixelated; }
+#detail { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
 .status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 14px; color: #aaa; padding: 2rem; pointer-events: none; }
 .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, 0.12); pointer-events: none; }
 .progress div { height: 100%; width: 0; background: #ddd; transition: width 0.15s; }
@@ -116,15 +117,27 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .row > * { flex: 1; min-width: 0; }
 .row > button { flex: none; }
 .wide { grid-column: 1 / -1; }
-.hidden { display: none; }
+.hidden { display: none !important; }
 
-#histCanvas { display: block; width: 100%; height: 90px; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
+/* the histogram spans exactly the clip bar's range: the bar's track overhangs its ends by the handle radius */
+#histCanvas { display: block; width: calc(100% - 16px); height: 90px; margin: 0.3rem 8px 0; border-bottom: 1px solid var(--color-border-secondary); }
+
+/* bars with one or two handles (bar.js, from art/mandelbrot): the near end is a filled dot, the far end a hollow one */
+.bar { position: relative; height: 22px; margin: 0.15rem 8px 0; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bar-track { position: absolute; left: -8px; right: -8px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-border-secondary); }
+.bar-fill { position: absolute; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-text-primary); }
+.bar-handle { position: absolute; top: 50%; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; background: var(--color-text-primary); border: 2px solid var(--color-text-primary); }
+.bar-handle.far { background: var(--color-bg); }
+.bar-handle.mid { width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 1px; transform: rotate(45deg); background: var(--color-bg); }
+.bar-handle:focus { outline: none; }
+.bar-handle:focus-visible { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-text-secondary); }
 .grad { position: relative; height: 34px; margin: 0.4rem 7px 0.5rem; touch-action: none; user-select: none; -webkit-user-select: none; }
 .grad-bar { position: absolute; left: 0; right: 0; top: 0; height: 20px; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: copy; }
 .grad-stop { position: absolute; top: 13px; width: 12px; height: 20px; margin-left: -7px; border: 1px solid var(--color-text-secondary); border-radius: 3px; cursor: ew-resize; }
 .grad-stop.sel { z-index: 1; border-color: var(--color-text-primary); box-shadow: 0 0 0 1px var(--color-text-primary); }
 .grad-tools { margin-top: 0.5rem; }
-.param oklch-picker { flex: none; width: 3rem; height: auto; }
+.param oklch-picker { flex: none; width: 3rem; height: auto; min-height: 1.9rem; }
+.param small.note-warn { color: var(--color-text-primary); margin-top: 0.3rem; }
 .preset-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 .notes { font-family: var(--font-serif); }

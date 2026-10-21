@@ -1,16 +1,16 @@
 # Buddhabrot Explorer: Start Here
 
-This folder documents the Buddhabrot page at `art/buddhabrot/` on the personal website (repo root: `repo/`). Read this file first; [backlog.md](backlog.md) holds the task list.
+This folder documents the Buddhabrot page at `art/buddhabrot/` on the personal website (repo root: `repo/`). Read this file first. [backlog.md](backlog.md) holds the task list, and [sampling.md](sampling.md) holds the open research on sampling, Metropolis, colouring and normalization, with the owner's two types of render (A, artsy; B, classical).
 
 ## What the page is
 
-An interactive page in the website's *Generative* section, still marked **(WIP)** in its title and in the home-page link (`repo/index.html`). It computes a Buddhabrot in the browser: it picks starting points `c`, traces their orbits under `z ← z² + c`, and counts every orbit point in a histogram. A display pipeline (scaling, normalization, clipping, blur, gradient) then turns the histogram into an image. That pipeline runs without recomputing the orbits.
+An interactive page in the website's *Generative* section, still marked **(WIP)** in its title and in the home-page link (`repo/index.html`). It computes a Buddhabrot in the browser: it picks starting points `c`, traces their orbits under `z ← z² + c`, and counts every orbit point in a histogram. A display pipeline (blur, scaling, clipping, colour) then turns the histogram into an image. That pipeline runs without recomputing the orbits.
 
 It is a port of the owner's desktop app **Buddhabrot Explorer** (`/home/andi/code/github-website/buddha/`, outside the website repo; Python, PySide6, Numba). Differences from the desktop app:
-- **Inside/outside pairs.** The desktop app takes its pairs from a coarse Mandelbrot image; the web page pairs a point on a circle with a fixed point on the real axis, or with a random point of the main cardioid or the period-2 bulb.
-- **New in the web page:** the Metropolis method for zoomed views, the uniform sampler, histogram equalization and percentile normalization, and the gradient editor.
+- **Inside/outside pairs.** Like the desktop app, the web page takes its pairs from a coarse Mandelbrot grid (the border grid), but it bisects them much closer to the set, and the grid's resolution is fixed, not a control.
+- **New in the web page:** the Metropolis method for zoomed views, the grid sampler ("near the boundary", with a known density), histogram equalization, the gradient editor, colouring by orbit length, and the clip bar with its midtone (a levels tool).
 - **Dropped:** the desktop pre-invert and post-invert options. "Reverse" in the gradient editor covers post-invert.
-- **Desktop presets still load.** Their matplotlib colormap names map to gradients for gray, hot, cividis and twilight, and they are normalized by the maximum, as on the desktop.
+- **Desktop presets still load.** Their matplotlib colormap names map to the page's gradients (gray and hot; cividis becomes night, twilight becomes dusk). Without a `scale_mode` of their own they get nth root, since the desktop app never equalized.
 
 The Info dialog in `index.html` explains the maths for visitors; keep it in sync with the code.
 
@@ -27,48 +27,88 @@ index.html        markup: top bar, viewer, sidebar panels, Info dialog; inline t
 style.css         layout (copied from art/mandelbrot, plus the gradient editor and histogram canvas)
 js/main.js        UI wiring: syncInputs() (settings → inputs), input handlers, generate/stop, progress, keys
 js/state.js       settings: DEFAULTS, GRADIENTS, BUILTIN presets, slider mappings, sanitize(), URL hash; the live st object
-js/compute.js     worker pool and the pipeline compute(p, ui) → { data, res, b, total }; no DOM
+js/compute.js     worker pool, the border grid, the head/body family weights, and compute(p, ui) → { data, res, b, total, norm, bands }; no DOM
 js/worker.js      escape test, boundary refinement, orbit tracing, Metropolis chains; one histogram per worker
-js/display.js     histogram → canvas: blur, scaling, normalization, gradient lookup table; histogram plot
+js/display.js     histogram → canvas: blur, scaling, clip, gradient or orbit-length colours; histogram plot
+js/grid.js        the grid sampler's density: pick() a point, weight() at a point; shared by compute.js and worker.js
 js/view.js        zoom and pan of the finished image (CSS transform); region() maps the visible part to bounds
+                  (main.js lays the sharp detail canvas over a zoomed preview)
 js/gradient.js    gradient editor (draggable stops, picker, presets, reverse)
+js/bar.js         slider with one to three handles, from art/mandelbrot/js/bar.js plus a third (midpoint) handle: the clip bar
 js/presets.js     built-in and localStorage presets, JSON export and import
 js/files.js       stamp() for file names, download()
 js/rng.js         mulberry32 rng(seed), mixSeed(seed, salt, i)
+tests/chrome.mjs       headless Chrome over the DevTools protocol, shared by the two scripts below
 tests/screenshot.mjs   headless Chrome: screenshot, console errors, values of JS expressions
+tests/regression.mjs   canvas-hash regression check over six URLs; hashes in tests/hashes-<cores>.json
+tests/distribution.js  expression for screenshot.mjs: does Metropolis reproduce its sampler? (L1 against brute force)
+tests/balance.js       expression for screenshot.mjs: share of the image in the head and body bands, per balance value
 ```
 
 ### Data flow of one render
 
 `main.generate()` copies the settings and calls `compute(p, ui)`. The `ui` callbacks drive the progress bar and the label of the Generate button, and `ui.live()` reports whether this run is still the current one.
 
-1. **Starting points.**
-   - The **boundary** sampler sends `refine` jobs to all cores. Each sample bisects randomly between an outside point and an inside point for `refine_steps` steps and keeps the outside end.
-   - The **uniform** sampler draws points from the disk `|c| ≤ 2` on the main thread.
+1. **Starting points.** Both samplers start from the border grid, which `borderGrid()` builds once for each `max_iter`, from `grid` jobs. The two values of `sampler`:
+   - **`bisection`** (density unknown; type A). The main thread pairs an inside and an outside corner of mixed cells, picked at random with the head/body family weights of `balance`, and `refine` jobs bisect each pair randomly for up to `refine_steps` steps (stopping at 1e-10) and keep the outside end. See [sampling.md](sampling.md#the-bisection-sampler-type-a).
+   - **`grid`** ("near the boundary", known density; type B) draws points from the blurred cell weights. See [sampling.md](sampling.md#the-grid-sampler-option-2-implemented-2026-10-21).
 2. **Histograms.** Each tracing worker gets `histInit`, which creates its own histogram. The number of tracing workers is capped so that all histograms fit into 768 MB.
-   - **Boundary method:** `trace` jobs.
-     - With the boundary sampler, every orbit point counts, including points of orbits that never escape. The Gaussian "nearby" clouds rely on this to fill the body.
-     - With the uniform sampler, only escaping orbits count.
-   - **Metropolis method** (uniform sampler only):
-     - `seed` keeps the starting points whose orbits reach the view.
-     - Each chain starts at a random kept point.
-     - `metro` runs the chains with expected-value splatting: each orbit adds weight `a/f` to each of its `f` points in the view, so the histogram is a `Float64Array`.
-3. **Combine.** `histGet` hands every worker's histogram back, and they are summed into one `Float32Array`.
-4. **Display.** `display.render(canvas, result, st)` draws the image and returns 256 brightness bins for the histogram plot. Display inputs call only `scheduleRender()`, at most once per animation frame, never `compute`.
+   - **Direct method** (`method: 'direct'`): `trace` jobs trace every sample.
+     - Orbits are recorded until `|z|` exceeds `bail`, the distance of the view's farthest corner from 0 (at least 2), so that the corners get points too.
+     - With the bisection sampler, the samples escape by construction. Their Gaussian "nearby" points count only if they escape too; one that does not is redrawn, up to 8 times.
+     - With the grid sampler, only escaping orbits count.
+   - **Metropolis method** (grid sampler only):
+     - `seed` keeps the starting points whose orbits reach the view, with their hit counts `f`.
+     - Each chain's start is drawn with probability proportional to `f`, so the chain starts in its stationary distribution.
+     - `metro` runs the chains with target `p·f`. It splats expected values: each orbit adds weight `a/f` to each of its `f` points in the view, so the histogram is a `Float64Array`. The grid sampler's density reaches every worker once, with `histInit`.
+3. **Combine.** `histGet` hands every worker's histogram back, and they are summed into one `Float32Array`, in worker order.
+4. **Display.** `display.render(canvas, result, st, ref)` draws the image and returns 256 brightness bins for the histogram plot.
+   - The canvas shows a **preview**: `pooled(result, k)` sums the histogram in k×k blocks, with k chosen so that the preview is about the stage's width in device pixels (`blockFor()` in `main.js`). Its `norm` is divided by k², so it keeps the densities. Every display setting works on the preview.
+   - "Save PNG" renders the full-resolution result into an offscreen canvas, with the preview as `ref`, so the saved file uses the preview's statistics and matches it.
+   - It compares densities, `data × norm` (hits per sample per unit area), through a quantile table of the image, so the look does not depend on the number of samples or the resolution.
+   - **Levels:** after clipping, the midtone (`midtone`, the third handle on the clip bar) bends the clipped range with a power curve, so that its point maps to the middle of the colours.
+   - For a zoom, `ref` is the preview of the last whole-set render of the same distribution (`reference` in `main.js`), whose table sets the brightness. A zoom without one (a page loaded straight into a zoom, or changed settings) renders it in the same run, after showing the zoom: 200,000 grid samples at the resolution of the preview a whole-set render would have (`REF_SAMPLES`, `refResolution()`). The button shows "Reference"; Stop keeps the zoom with its own brightness.
+   - **Zooming into the image** magnifies the preview (CSS transform). 150 ms after the view stops moving, `renderDetail()` draws the visible part again from the full histogram onto a second canvas (`#detail`) over it: `crop()` in `display.js` sums that square in blocks to about the stage's device pixels, with a margin for the blur, and renders it with the preview's statistics. The detail only appears where it is sharper than the preview, and display changes redraw it.
+   - With `colour_mode` set to `length`, the result holds three band histograms (`bands: 3`). `channels()` makes the three nested channels, each is normalized (separately or shared), and their colours add up.
+   - Display inputs call only `scheduleRender()`, at most once per animation frame, never `compute`.
 
 **Stopping** terminates the workers (`killPool()`), and their pending promises never settle. The run is dropped because `genId` has moved on, and the next run starts fresh workers.
+
+## Defaults and the owner's preferences
+
+- **The defaults are a type A render,** from the owner's picks on a contact sheet (https://claude.ai/artifact/8DtXzuTi62u3Mrf9wxreM5):
+  - sampling: bisection sampler, 600 samples, `max_iter` 10⁵, 10 refine steps, head and body 0.5, 20 nearby points with spread 10⁻³, 2000 px (refine steps and nearby points from the review sheets of 2026-10-21, judged over four seeds),
+  - display: log scaling, hot gradient, clip 0.143–0.778, blur 0.32.
+
+  A render takes about 1.5 s.
+- **Type A:** bisection, few samples, very long orbits, optionally nearby points; splotchy and artsy. **Type B:** many samples, classical, used for zooms; the grid sampler. Details and the owner's example URLs are in [sampling.md](sampling.md#two-types-of-render).
+- **No orbit-length colouring on type A.**
+- **The zoom (Metropolis) comes later.** Its controls should then disappear from the UI.
+- **Band limits stay fixed** (50 and 500 iterations), not relative to `max_iter` (owner, 2026-10-21).
+- **The owner likes:**
+  - colourful gradients with two hues (patina), over one-hue ones,
+  - the diverging-only nearby points,
+  - the grid sampler for type B,
+  - a quick "New seed" button.
 
 ## Conventions
 
 - **Axes.** Image rows follow the real axis (`xmin` at the top, `xmax` at the bottom); columns follow the imaginary axis (`ymin` on the left). This puts the figure upright. The histogram index is `(fx | 0) * res + (fy | 0)`.
-- **Settings keys** are snake_case and match the desktop app's preset JSON (`max_iter`, `soft_points`, …). The web-only keys are `method`, `sampler`, `inside_point`, `inside_real`, `outer_radius`, `chain_length`, `burn_in`, `large_step`, `mutation_min`, `mutation_max`, `normalize`, `norm_percentile` and `gradient`.
-- **Validation.** `st` is changed in place: `setState(data)` sanitizes `data` and assigns the result to `st`, so every module sees the same object. `sanitize()` is the only validation: it clamps every number, falls back to the default for any unknown option, and enforces one rule: **the boundary sampler means the boundary method on the default bounds.** Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed view is mostly noise.
+- **Nearby spread** (`nearby_spread`) is the standard deviation σ of the nearby cloud in the complex plane, on a log slider from 10⁻⁶ to 0.1, shown as "3.2 × 10⁻⁴". It replaced `nearby_distance` (= 1/σ) on 2026-10-21.
+- **The seed** sits in the Sampling panel, and the "New seed" button (key N) next to Generate picks a random one and renders, for flipping through type A renders. Generate keeps the seed.
+- **Settings keys** are snake_case and match the desktop app's preset JSON (`max_iter`, `soft_points`, …). The web-only keys are `method`, `sampler`, `balance`, `nearby_spread`, `chain_length`, `burn_in`, `large_step`, `mutation_min`, `mutation_max`, `gradient`, `midtone`, and the orbit-length colouring keys `colour_mode`, `band_short`, `band_mid`, `colour_short`, `colour_mid`, `colour_long` and `channel_norm`.
+- **Validation.** `st` is changed in place: `setState(data)` sanitizes `data` and assigns the result to `st`, so every module sees the same object. `sanitize()` is the only validation: it clamps every number, falls back to the default for any unknown option, and enforces one rule: **the bisection sampler means the direct method on the default bounds.** Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed view is mostly noise. Unknown keys are ignored.
+- **No backward compatibility while the page is in development** (owner, 2026-10-21). Rename and remove settings freely; old URLs and saved presets may break. Desktop-app presets still load through `sanitize()`, since importing them is a feature.
 - **Input element ids.** `p-<id>` is a setting's input and `v-<id>` its shown value. `SLIDER_IDS` and `NUMBER_IDS` in `state.js` map each setting to its id.
 - **Sliders that span decades** store a position from 0 to 1000 and map it through `SLIDERS[key].from/to`, which are logarithmic and use the desktop app's ranges.
-- **Gradients** are strings of `rrggbb@position` stops, sorted by position. The display uses a 1024-entry lookup table interpolated in sRGB.
+- **Gradients** are strings of `rrggbb@position` stops, sorted by position. The display uses a 1024-entry lookup table, blended in **OKLab** (owner's pick, 2026-10-21; the editor's bar uses CSS `linear-gradient(in oklab …)` to match). The presets (`GRADIENTS`) keep to 2 to 5 stops so that they stay easy to edit, start at black except cloud (a sky), and the owner wants them colourful: two hues, like patina, rather than one.
+- **The Display panel follows the pipeline order:** blur → scaling → histogram with the clip bar and midtone → colour.
+- **Scaling** (`scale_mode`) is linear, nth root or log, each scaled up to the brightest pixel, or histogram equalization, which maps a value to its rank. There is no separate normalization setting (removed 2026-10-21, owner's decision): percentile normalization was redundant with the max clip, and equalization ignores any scaling.
 - **URL hash** holds every setting that differs from its default, as `key=value` (booleans as 1 or 0).
-- **Reproducibility.** The same seed and settings give the same image on the same machine. Each chunk of work seeds its generator with `mixSeed(seed, salt, chunkIndex)` (salts 0 to 4, one per stage). The chunk sizes depend on `navigator.hardwareConcurrency`, so another machine with a different core count gives a different image.
-- **Code style.** The moved code keeps its original style: `var`, `function`, terse helpers, and comments that explain *why*. The site's other pages use `const` and arrow functions; modernizing is a backlog item. Identifiers and visitor-facing text use British spelling (`colour`), as elsewhere on the site, but the settings keys keep the desktop app's names.
+- **Reproducibility.** The same seed and settings give the same image on the same machine. Each chunk of work seeds its generator with `mixSeed(seed, salt, chunkIndex)`, one salt per stage (1 bisection, 2 tracing, 3 chain starts, 4 Metropolis, 5 grid sampling). The chunk sizes depend on `navigator.hardwareConcurrency`, so another machine with a different core count gives a different image.
+  - Workers take chunks as they become free, so which worker sums which chunk depends on timing. Integer counts do not care, but Metropolis splats fractional weights, whose float sums depend on their order: its chunks are therefore **pinned** (worker i runs chunks i, i + n, …; `runJobs(…, pinned)`), and the histograms are combined in worker order. Before this (fixed 2026-10-21), Metropolis renders differed from run to run in the last bits.
+- **Worker variables.** The worker's message handler is one function, and `var` is function-scoped. A `var` in one branch with the name of a worker global (`hist`, `grid`, `res`, …) shadows it in every branch. Use fresh names.
+- **Code style.** The moved code keeps its original style: `var`, `function`, terse helpers, and comments that explain *why*. The site's other pages use `const` and arrow functions; the owner decided against modernizing (2026-10-21), since the pages already look alike. Identifiers and visitor-facing text use British spelling (`colour`), as elsewhere on the site, but the settings keys keep the desktop app's names.
 
 ## Running and testing
 
@@ -77,21 +117,17 @@ tests/screenshot.mjs   headless Chrome: screenshot, console errors, values of JS
   - It needs Node 22 and `google-chrome`.
   - It prints console errors and the value of each JS expression; an argument `sleep:ms` waits instead.
   - `SIZE=390x844` gives a phone-sized window; the default is 1400 × 900.
-- **Regression check for refactors.** Rendering is deterministic on one machine, so a hash of the canvas pixels must not change. Before the change, hash a few URLs that cover all paths, for example:
-  - `#samples=20000`
-  - `#sampler=uniform&method=metropolis&samples=2000&xmin=-0.5&xmax=0&ymin=0.4&ymax=0.9&resolution=400`
-  - `#samples=20000&nearby_points=20&soft_points=1&blur_px=2&normalize=percentile&scale_mode=log&gradient=000000@0,ff0000@0.4,ffffff@1&min_clip=0.1`
-
-  Compare the hashes after the change. Use this expression, with a wait of about 12000 ms:
-  ```
-  (()=>{const c=document.getElementById("canvas");const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let h=0;for(let i=0;i<d.length;i++)h=(Math.imul(h,31)+d[i])|0;return c.width+":"+h})()
-  ```
+- **Experiments** call `compute()` and the display functions directly inside the page, through `import()` in a `screenshot.mjs` expression. `compute.js` exports `GRID` (grid size and blur) and `borderGrid()` for that. `tests/distribution.js` and `tests/balance.js` are examples.
+- **Head/body check for changes to the bisection sampler:** `tests/balance.js`, with reference values in its comment.
+- **Distribution check for sampler changes.** Load `compute()` with `import()` inside the page and compare a Metropolis render of a zoomed view with brute-force renders, using L1 distance on histograms normalized to sum 1. Script: `node tests/screenshot.mjs 'http://127.0.0.1:8765/art/buddhabrot/#sampler=grid' /tmp/x.png 2000 "$(cat tests/distribution.js)"`, which takes about 10 s; the comments in the file explain the numbers.
+- **Regression check for refactors:** `node tests/regression.mjs record` before the change, `node tests/regression.mjs` after it (exit code 1 on a difference). It serves `repo/` itself on a free port, so no server needs to run, renders six URLs that cover every path (bisection, nearby points, grid, equalize, orbit-length colouring, a Metropolis zoom with its background reference) and compares hashes of the canvas pixels. About 35 s. The hashes depend on the core count, so they are stored per count, in `tests/hashes-<cores>.json`; record again after a change that alters images on purpose. Only the preview canvas is hashed, not the detail canvas or a saved PNG.
 - **Layout check:** run it at 1400×900, 900×600 and 390×844. `document.documentElement.scrollHeight` must equal `innerHeight`, and the sidebar's `scrollWidth` must equal its `clientWidth`.
 
 ## Decisions and their reasons
 
 - **Split into modules** (2026-10-21). The page was one 1,500-line `index.html` with the worker in a `<script type="text/plain">` loaded from a Blob URL. The split moved the code without changing behaviour: the canvas hashes matched before and after.
 - **Same layout as the mandelbrot page.** The "How it works" text moved into the Info dialog, the intro line became the dialog's lede, and the timing of the last render moved from the hint text into the stats line under the buttons.
-- **The display runs on the main thread** from a `Float32Array`, because the display sliders must respond while dragging. Its caches: the blurred histogram (per result and radius), the scaled buffer, and the lookup table (per gradient).
+- **The display runs on the main thread** on a preview summed down to the screen size, because the display sliders must respond while dragging (16 ms per update with a 4000 px render). Its caches: the preview, the blurred histogram and the quantile table (each per result, in WeakMaps), and the colour lookup table (per gradient).
+- **Logical against artistic settings.** Most settings follow from correctness: unbiased Metropolis, densities that stay put across resolution and zoom, no grid artifacts. "Head and body" was the first purely artistic choice. The owner wants such choices exposed as controls, never baked in.
 - **Workers are terminated, not cancelled**, so a new run always starts clean.
 - The owner works with a fresh Claude Code session per task. Keep these docs current, and record findings, including negative results, where they belong.

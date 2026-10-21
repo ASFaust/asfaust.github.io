@@ -27,11 +27,13 @@
     <section class="viewer">
       <div class="stage" id="stage">
         <canvas id="canvas" aria-label="Buddhabrot render. Drag to pan, scroll or pinch to zoom."></canvas>
+        <canvas id="detail" class="hidden" aria-hidden="true"></canvas>
         <div class="status" id="status">Starting…</div>
         <div class="progress"><div id="progress"></div></div>
       </div>
       <div class="controls">
-        <button id="genBtn">Generate</button>
+        <button id="genBtn" title="Render with the current settings and seed (Enter or G)">Generate</button>
+        <button id="newSeedBtn" title="Render again with a new random seed (N)">New seed</button>
         <button id="stopBtn" disabled>Stop</button>
         <button id="viewBtn" class="density-only" disabled title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
         <button id="resetBtn" disabled>Reset zoom</button>
@@ -42,7 +44,7 @@
     </section>
 
     <div class="sidebar">
-    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, Escape stops. The URL always holds the current settings, so you can share it.</p>
+    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, N renders a new seed, Escape stops. The URL always holds the current settings, so you can share it.</p>
 
     <div class="panels">
       <details open>
@@ -50,9 +52,9 @@
         <div class="params">
           <div class="param">
             <label for="p-method"><span>Method</span></label>
-            <small>Metropolis follows the orbits that cross the view, for zoomed renders; it needs the uniform sampler</small>
+            <small>direct traces every sample; Metropolis follows the orbits that cross the view, for zoomed renders, and needs the “near the boundary” sampler</small>
             <select id="p-method">
-              <option value="boundary">boundary</option>
+              <option value="direct">direct</option>
               <option value="metropolis">metropolis</option>
             </select>
           </div>
@@ -60,8 +62,8 @@
             <label for="p-sampler"><span>Sampler</span></label>
             <small>where the starting points c come from</small>
             <select id="p-sampler">
-              <option value="boundary">boundary</option>
-              <option value="uniform">uniform</option>
+              <option value="bisection">bisection: very close to the boundary</option>
+              <option value="grid">near the boundary: even, known density</option>
             </select>
           </div>
           <div class="param">
@@ -75,42 +77,29 @@
             <input type="number" id="p-iter" min="2" max="1000000" step="1">
           </div>
           <div class="param nearby-only">
-            <label for="p-nearby"><span>Nearby points / boundary</span><span id="v-nearby"></span></label>
-            <small>extra Gaussian samples around each boundary point</small>
+            <label for="p-nearby"><span>Nearby points per sample</span><span id="v-nearby"></span></label>
+            <small>extra starting points scattered around each sample; their orbits are similar but shifted, which softens the few spots a long orbit keeps revisiting. Only those that escape count.</small>
             <input type="range" id="p-nearby" min="0" max="1000" step="1">
           </div>
           <div class="param nearby-only">
-            <label for="p-ndist"><span>Nearby distance</span><span id="v-ndist"></span></label>
-            <small>1 / standard deviation of the nearby samples</small>
-            <input type="range" id="p-ndist" min="0" max="1000" step="1">
+            <label for="p-nspread"><span>Nearby spread</span><span id="v-nspread"></span></label>
+            <small>how far they scatter: the standard deviation in the plane, where the whole set is about 3 wide. Tight clouds blur gently, wide ones mix in different orbits.</small>
+            <input type="range" id="p-nspread" min="0" max="1000" step="1">
           </div>
           <div class="param">
             <label for="p-res"><span>Resolution</span></label>
             <small>image width and height in pixels (128–4096)</small>
             <input type="number" id="p-res" min="128" max="4096" step="1">
           </div>
-          <div class="param boundary-only">
-            <label for="p-inside"><span>Inside point</span></label>
-            <small>where each bisection starts inside the set</small>
-            <select id="p-inside">
-              <option value="fixed">fixed point on the real axis</option>
-              <option value="bulbs">random in cardioid / period-2 bulb</option>
-            </select>
-          </div>
-          <div class="param boundary-only">
-            <label for="p-inre"><span>Inside point, real part</span></label>
-            <small>0 is the body, −1 the head bulb (range −1.36 to 0.25)</small>
-            <input type="number" id="p-inre" min="-1.36" max="0.25" step="0.05">
-          </div>
-          <div class="param boundary-only">
-            <label for="p-orad"><span>Outside radius</span></label>
-            <small>outside points lie on this circle, at a uniform angle</small>
-            <input type="number" id="p-orad" min="2" max="100" step="0.5">
-          </div>
-          <div class="param boundary-only">
+          <div class="param bisection-only">
             <label for="p-refine"><span>Refine steps</span></label>
-            <small>random bisection steps that pull samples onto the boundary</small>
+            <small>random bisection steps from a grid cell's inside and outside corner towards the boundary</small>
             <input type="number" id="p-refine" min="0" max="10000" step="1">
+          </div>
+          <div class="param wide bisection-only">
+            <label for="p-balance"><span>Head and body</span><span id="v-balance"></span></label>
+            <small>an artistic choice. At 0 the samples start wherever the boundary is; the main cardioid and everything on it hold three quarters of it, so with few samples the body fills first. At 1 the head and its bulbs get as many samples as the rest.</small>
+            <input type="range" id="p-balance" min="0" max="1" step="0.05">
           </div>
           <div class="param metro-only">
             <label for="p-chain"><span>Mutations per chain</span></label>
@@ -137,11 +126,8 @@
           </div>
           <div class="param">
             <label for="p-seed"><span>Seed</span></label>
-            <small>same seed and settings give the same image</small>
-            <div class="row">
-              <input type="number" id="p-seed" min="0" max="2147483647" step="1">
-              <button id="seedBtn" type="button">Random</button>
-            </div>
+            <small>same seed and settings give the same image; “New seed” picks one at random</small>
+            <input type="number" id="p-seed" min="0" max="2147483647" step="1">
           </div>
           <div class="param density-only">
             <label for="p-xmin"><span>Real min / max</span></label>
@@ -165,22 +151,23 @@
       <details open>
         <summary>Display</summary>
         <div class="params">
+          <div class="param check">
+            <label><input type="checkbox" id="p-blur"> <span>Gaussian blur</span></label>
+            <small>smooth the counts before anything else</small>
+          </div>
+          <div class="param" id="blurParam">
+            <label for="p-blurs"><span>Blur radius</span><span id="v-blurs"></span></label>
+            <small>standard deviation, in pixels of a 1000-pixel image, so it looks the same at any resolution</small>
+            <input type="range" id="p-blurs" min="0" max="1000" step="1">
+          </div>
           <div class="param">
             <label for="p-scale"><span>Scaling</span></label>
-            <small>how counts are mapped to brightness</small>
+            <small>how counts become brightness: scaled up to the brightest pixel, or by rank (equalization)</small>
             <select id="p-scale">
               <option value="linear">linear</option>
               <option value="nth root">nth root</option>
               <option value="log">log</option>
-            </select>
-          </div>
-          <div class="param">
-            <label for="p-norm"><span>Normalization</span></label>
-            <small>how scaled counts are spread over the gradient</small>
-            <select id="p-norm">
               <option value="equalize">histogram equalization</option>
-              <option value="percentile">percentile</option>
-              <option value="max">maximum</option>
             </select>
           </div>
           <div class="param" id="rootParam">
@@ -188,54 +175,67 @@
             <small>higher roots lift faint orbits</small>
             <input type="range" id="p-root" min="1.1" max="20" step="0.01">
           </div>
-          <div class="param" id="pctParam">
-            <label for="p-pct"><span>Percentile</span><span id="v-pct"></span></label>
-            <small>this level and above get the last color</small>
-            <input type="range" id="p-pct" min="0" max="1000" step="1">
+          <div class="param wide">
+            <label id="l-clip"><span>Brightness and clip</span><span id="v-clip"></span></label>
+            <small>log count of pixels per brightness level. Drag the handles to clip: brightness below ● gets the first colour, above ○ the last. ◆ sets the midtone: drag it left to lift faint parts, right to darken them.</small>
+            <canvas id="histCanvas" width="512" height="180"></canvas>
+            <div id="p-clip" aria-labelledby="l-clip"></div>
           </div>
           <div class="param wide">
+            <label for="p-cmode"><span>Colour</span></label>
+            <small>a gradient over the brightness, or one colour per orbit length, added up, as in the classic “Nebulabrot”</small>
+            <select id="p-cmode">
+              <option value="gradient">gradient</option>
+              <option value="length">by orbit length</option>
+            </select>
+            <small class="note-warn hidden" id="lengthNote">Generate again to colour by orbit length; this image was computed without it.</small>
+          </div>
+          <div class="param length-only">
+            <label for="p-bshort"><span>Short orbits</span></label>
+            <small>escape within this many iterations; takes effect on Generate</small>
+            <div class="row">
+              <oklch-picker id="p-cshort" aria-label="Colour of short orbits"></oklch-picker>
+              <input type="number" id="p-bshort" min="1" max="1000000" step="1">
+            </div>
+          </div>
+          <div class="param length-only">
+            <label for="p-bmid"><span>Medium orbits</span></label>
+            <small>escape within this many iterations; takes effect on Generate</small>
+            <div class="row">
+              <oklch-picker id="p-cmid" aria-label="Colour of medium orbits"></oklch-picker>
+              <input type="number" id="p-bmid" min="2" max="1000000" step="1">
+            </div>
+          </div>
+          <div class="param length-only">
+            <label><span>Long orbits</span></label>
+            <small>all orbits, up to the maximum iterations</small>
+            <div class="row">
+              <oklch-picker id="p-clong" aria-label="Colour of long orbits"></oklch-picker>
+            </div>
+          </div>
+          <div class="param wide length-only">
+            <label for="p-chnorm"><span>Channel brightness</span></label>
+            <small>each channel stretched on its own gives the classic colours; shared keeps the true mix of orbit lengths. Histogram equalization stretches every channel fully, so the sum turns white: use another scaling here.</small>
+            <select id="p-chnorm">
+              <option value="separate">each on its own (classic)</option>
+              <option value="shared">shared (true mix)</option>
+            </select>
+          </div>
+          <div class="param wide grad-only">
             <label><span>Gradient</span></label>
             <small>drag a stop to move it, click the bar to add one</small>
             <div class="grad" id="grad"><div class="grad-bar" id="gradBar"></div></div>
             <div class="row grad-tools">
               <select id="p-gpreset" aria-label="Gradient preset">
                 <option value="">custom</option>
-                <option value="gray">gray</option>
-                <option value="hot">hot</option>
-                <option value="cividis">cividis</option>
-                <option value="twilight">twilight</option>
               </select>
               <button id="gradRevBtn" type="button">Reverse</button>
             </div>
             <div class="row grad-tools">
-              <oklch-picker id="p-gcolor" aria-label="Stop color"></oklch-picker>
+              <oklch-picker id="p-gcolor" aria-label="Stop colour"></oklch-picker>
               <input type="number" id="p-gpos" min="0" max="1" step="0.01" aria-label="Stop position">
               <button id="gradDelBtn" type="button">Remove stop</button>
             </div>
-          </div>
-          <div class="param check">
-            <label><input type="checkbox" id="p-blur"> <span>Gaussian blur</span></label>
-            <small>smooth the histogram before scaling</small>
-          </div>
-          <div class="param" id="blurParam">
-            <label for="p-blurs"><span>Blur radius</span><span id="v-blurs"></span></label>
-            <small>standard deviation in pixels</small>
-            <input type="range" id="p-blurs" min="0" max="1000" step="1">
-          </div>
-          <div class="param">
-            <label for="p-lo"><span>Min clip</span><span id="v-lo"></span></label>
-            <small>values below get the first color</small>
-            <input type="range" id="p-lo" min="0" max="1" step="0.001">
-          </div>
-          <div class="param">
-            <label for="p-hi"><span>Max clip</span><span id="v-hi"></span></label>
-            <small>values above get the last color</small>
-            <input type="range" id="p-hi" min="0" max="1" step="0.001">
-          </div>
-          <div class="param wide">
-            <label><span>Histogram</span></label>
-            <small>log count per brightness level; the blue and orange marks are the clips</small>
-            <canvas id="histCanvas" width="512" height="180"></canvas>
           </div>
         </div>
       </details>
@@ -257,7 +257,7 @@
             </div>
           </div>
           <div class="param wide">
-            <small>Desktop-version JSON presets load too; their gray, hot, cividis and twilight colormaps carry over.</small>
+            <small>Desktop-version JSON presets load too; their gray and hot colormaps carry over, cividis becomes night and twilight becomes dusk.</small>
             <div class="preset-actions">
               <button id="deletePresetBtn" type="button" disabled>Delete selected</button>
               <button id="exportBtn" type="button">Export JSON</button>
@@ -282,12 +282,14 @@
       <p>The Mandelbrot set asks, for each point <code>c</code> of the complex plane, whether the orbit</p>
 <pre>z₀ = 0
 zₙ₊₁ = zₙ² + c</pre>
-      <p>stays bounded. The usual picture colours each <code>c</code> by how quickly its orbit escapes. The Buddhabrot looks at the orbits themselves: every <code>c</code> that escapes leaves a trail of points <code>z₁, z₂, …</code>, and each of those adds one to a counter at its pixel. Millions of trails pile up into the seated figure that gives the image its name. The real axis runs from top to bottom here, so the figure sits upright.</p>
+      <p>stays bounded. The usual picture colours each <code>c</code> by how quickly its orbit escapes. The Buddhabrot looks at the orbits themselves: every <code>c</code> that escapes leaves a trail of points <code>z₁, z₂, …</code>, and each of those adds one to a counter at its pixel. Millions of trails pile up into the seated figure that gives the image its name. A trail is followed until it leaves a circle that holds the whole picture, so even the corners get the last points of escaping orbits. The real axis runs from top to bottom here, so the figure sits upright.</p>
       <h3>Sampling the boundary</h3>
-      <p>Most random points escape after a few steps and only add noise near the centre. The interesting orbits are long, and they start right at the edge of the set. So the boundary sampler does not sample the plane at random. Each sample starts as a pair: a point on a circle far outside the set, at a random angle, and a point inside it, either a chosen point on the real axis or a random point of the main cardioid or the period-2 bulb. Then the pair moves closer to the boundary: a random point near the middle of the pair replaces whichever end is on the same side. After a few dozen of these steps the outside point sits a hair's breadth from the set, where orbits take the longest to escape. The uniform sampler draws plain random points from the disk <code>|c| ≤ 2</code> instead; it is slow but has no bias.</p>
-      <p>Optional nearby points scatter a Gaussian cloud around each boundary sample; some of them land inside the set and add their full, never escaping orbits, which fills in the body. Everything after the histogram, from scaling and clipping to blur and colour, runs instantly in your browser without recomputing the orbits. The heavy part is spread over Web Workers, one per CPU core.</p>
+      <p>Most random points escape after a few steps and only add noise near the centre. The interesting orbits are long, and they start right at the edge of the set. So the page does not sample the plane at random. It first lays a fine grid over the set and tests every grid point; a cell whose corners disagree, some inside the set and some outside, lies on its boundary. The “near the boundary” sampler spreads its points evenly over a thin band of such cells, softened at the edges so that no squares show. The bisection sampler goes further. Each of its samples starts as two corners of one boundary cell, one inside the set and one outside. A random point near the middle of the pair then replaces whichever end is on the same side, over and over. After a few dozen of these steps the outside point sits a hair's breadth from the set, where orbits take the longest to escape.</p>
+      <p>Optional nearby points scatter a Gaussian cloud around each boundary sample and add the orbits of those that escape too: similar orbits, slightly shifted, which soften the points a long orbit revisits again and again. Everything after the histogram, from scaling and clipping to blur and colour, runs instantly in your browser without recomputing the orbits. The heavy part is spread over Web Workers, one per CPU core.</p>
+      <h3>Colour by orbit length</h3>
+      <p>The classic way to colour a Buddhabrot, sometimes called the “Nebulabrot”, sorts the orbits by how long they take to escape. Here there are three channels: the orbits that escape within a few dozen steps, those that escape within a few hundred, and all of them. Each channel is a Buddhabrot of its own, gets its own colour, and the three colours add up. Short orbits stay near the outside and draw a soft halo, long orbits trace the fine structure close to the set, and where all of them pile up the picture turns white.</p>
       <h3>Zoomed views</h3>
-      <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the plain Buddhabrot of the window, only with far less noise. The walks start from boundary points of the whole set whose orbits reach the view.</p>
+      <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the same picture the whole-set render shows in that window, only with far less noise. This needs to know how densely the starting points are spread, which is why Metropolis works with the “near the boundary” sampler but not with the bisection one. The walks start from starting points whose orbits reach the view, picked by their number of hits, and the zoom borrows the brightness of the last whole-set render, so it keeps its look.</p>
     </div>
   </dialog>
 

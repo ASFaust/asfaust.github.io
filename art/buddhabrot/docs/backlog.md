@@ -4,17 +4,99 @@ This is only the task list; [README.md](README.md) explains the code. When you f
 - move it to "Done" with a date and one line,
 - put any lasting findings, including negative results, into README.md.
 
-## Open
+## Sampling and Metropolis (research; read [sampling.md](sampling.md) first)
+
+Label each experiment **type A** (artsy) or **type B** (classical), or both.
+
+- **Make the zoom work, look good and run efficiently** (B; later, owner). The "Method" dropdown and the Metropolis controls (mutations per chain, burn-in, large step, mutation radii) should disappear from the UI. Zoomed renders use Metropolis automatically, with settings chosen by the page. Part of this:
+  - measure time per noise level against brute force, in deep zooms,
+  - choose chain length, burn-in (probably 0, now that chains start in their stationary distribution) and step sizes automatically,
+  - a reference for pages loaded straight into a zoom (see below).
+  → [sampling.md](sampling.md#metropolis)
+
+## Colouring and normalization
+
+- **Orbit-length colouring, follow-up:** a gradient per channel instead of a single colour? (Band limits stay fixed, owner's verdict.) → [sampling.md](sampling.md#colouring-by-orbit-length-implemented-2026-10-21)
+- **Make equalization less dependent on sparse samples.** The background reference (200,000 grid samples) is sparse enough that equalization with the default clip turns the body of a zoom white; a whole-set render with the same samples does the same. → [sampling.md](sampling.md#normalization-across-zoom-and-resolution-implemented-2026-10-21)
+
+## Other open items
 
 - **Decide what "done" means, then drop "(WIP)".** The label is in the `<title>`, the top-bar `<h1>` and the home-page link (`repo/index.html`). The owner has not yet named the criteria.
-- **Curated built-in presets.** `BUILTIN` in `state.js` holds only "Default". Possible additions: nebulabrot-like colour, deep orbits (high `max_iter`), a Metropolis zoom, and a filled body using nearby points.
-- **Modernize the JS style** to match `art/mandelbrot` and `art/polyhedra` (`const`/`let`, arrow functions). Check it with the canvas-hash regression check.
-- **Interpolate gradients in OKLab** instead of sRGB, as the mandelbrot page does (its `js/colour.js`). This changes how images look, so it needs the owner's eye.
-- **Display speed at large resolutions.** At 4096² every slider move rescales 16 M pixels on the main thread. Measure it first; options include an OffscreenCanvas worker, or rendering at the screen size while dragging.
-- **Export larger than the preview.** "Save PNG" saves the canvas at `resolution`. A separate export size, as on the mandelbrot page, would keep the preview fast.
-- **Automated regression script.** The canvas-hash check is a manual procedure (README, "Running and testing"). A `tests/` script that records and compares the hashes would make it one command. The hashes depend on the core count, so it should store them per machine.
+- **Generate some nice presets (do this last,** once sampling and colouring have settled). Two type A rows the owner starred on the round 2 sheet, besides the new default, are good candidates: 20 refine steps with 20 nearby points @ 1e-3, and 10 refine steps with 5 nearby points @ 1e-5. `BUILTIN` in `state.js` holds only "Default". Cover both types: type A (bisection, long orbits, nearby points; no orbit-length colouring) and type B (grid, many samples, possibly orbit-length colouring), plus a Metropolis zoom once the zoom works.
+- **"Spread" as a second artistic slider?** The image-crowding weighting (tried, dropped from the code) spread the figure out and lifted the lower lobes. → [sampling.md](sampling.md#head-and-body-balance-implemented-2026-10-21-the-first-purely-artistic-setting)
+- **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-21, review round 2 acted on** (sheet: https://claude.ai/artifact/VuuBD9KgNFouxx4ahMrCzb; picks also in its db, `review/round2`).
+  - cloud is the deep sky `2f6fb8@0,6fa8dc@0.35,d8e6f2@0.75,ffffff@1`; lapis, sodium, reef, sunset and ember-ice added; orchid, ion and verdigris dropped.
+  - Type A defaults: 10 refine steps, 20 nearby points @ 1e-3 (starred in both rounds). Tuning the bisection sampler is done for now.
+  - Regression: the bisection and nearby cases name their old refine and nearby settings, so only the default case changed.
+
+- **2026-10-21, review round 1 acted on** (owner's picks: gray, ice, dusk, aurora, gold, patina keep; cloud, hot, amethyst maybe; nebula, twilight drop; OKLab; band limits fixed; type A stars n3_r10 and n1_r20, but "needs more than one seed").
+  - Gradients blend in OKLab. The list: gray, hot, night (the old cloud, renamed), cloud (now a sky; owner: "the background should be sky blue"), ice, dusk, aurora, gold, amethyst, patina.
+  - Midtone handle on the clip bar (owner: a levels tool rather than a curves editor). `midtone`, default 0.5 = no change.
+  - Regression check gained a midtone case; hashes re-recorded for OKLab (the orbit-length case kept its hash, so nothing else changed).
+  - A haze slider (classical nebula) was built, then removed at the owner's request; its findings are in sampling.md.
+  - Info dialog: nearby points no longer said to add never-escaping orbits.
+
+- **2026-10-21, zoom, reference and regression script.**
+  - Zooming in no longer pixelates: once the view rests, the visible part is drawn from the full histogram onto a detail canvas over the preview.
+  - A zoom without a matching whole-set render gets one in the background, in the same run (200,000 grid samples).
+  - `tests/regression.mjs` records and checks the canvas hashes in one command; `tests/chrome.mjs` holds the Chrome code it shares with `screenshot.mjs`.
+  - Found and fixed: Metropolis renders were not reproducible (float sums in timing-dependent order). Its chunks are now pinned to workers.
+  - Dropped from the backlog (owner): modernizing the JS style.
+  - Review sheet published for gradients, type A tuning and band limits.
+
+- **2026-10-21.** "Nearby distance" (1/σ) replaced by "Nearby spread" (σ in the plane, 10⁻⁶ to 0.1, wide to the right).
+
+- **2026-10-21, head and body balance.** Measured where image weight comes from by start region. Added the slider "Head and body" (`balance`, default 0.5): family weighting of the bisection's starting cells, with t = 1 giving the head family as many samples as the cardioid family. Also fixed a hoisted `var hist` in a worker branch that shadowed the histogram.
+
+- **2026-10-21, type A round.**
+  - Nearby points count only if they diverge (owner's idea).
+  - New defaults from the contact-sheet picks: bisection, 600 samples, 10⁵ iterations, 40 refine steps, 2000 px, log scaling, hot gradient, clip 0.143–0.778, blur 0.32.
+  - "New seed" button (and key N) next to Generate.
+
+- **2026-10-21, preview.**
+  - The display works on a copy summed down in k×k blocks to about the stage's size in device pixels (`pooled()`). With the owner's 4000 px example, an update takes 16 ms instead of 428 ms.
+  - "Save PNG" renders the full resolution, using the preview's statistics, so the file matches the preview: 0.45 s at 4000 px.
+  - Type A contact sheet published for picking defaults.
+
+- **2026-10-21, samplers reworked (owner's design).**
+  - The owner is content with the grid sampler ("near the boundary") for type B, so even coverage is settled there.
+  - The uniform sampler removed; Metropolis now needs the grid sampler.
+  - The bisection sampler now starts from close inside/outside corner pairs of the grid's mixed cells, replacing the circle and cardioid points (`outer_radius` is gone), and stops at a pair distance of 1e-10, which removed a ring at radius 2. Default refine steps 40.
+  - Orbits are recorded out to the view's farthest corner, so no part of the view stays black.
+  - The method `boundary` renamed `direct`.
+
+- **2026-10-21, display simplified (owner).** The Normalization setting is gone, together with the greying out. Histogram equalization is now a fourth scaling; the others scale up to the maximum. Percentile went away, because the max clip covers it.
+
+- **2026-10-21, colouring by orbit length.**
+  - A second colour mode with three nested orbit-length channels and a colour each, as in the classic Nebulabrot.
+  - Channel brightness either separate (classic) or shared (true mix).
+  - Fixed `.hidden` losing against `.param small`.
+
+- **2026-10-21, normalization.**
+  - Densities per sample and unit area (`norm`), with the Metropolis scale taken from the seeding stage's mean `f`.
+  - One quantile table per image drives every normalization; log is relative to the median.
+  - Zooms borrow the whole-set render's table.
+  - Blur in units of a 1000-pixel image.
+  - Fixed a progress-bar bug in the Metropolis stage: a reused `lo` variable.
+
+- **2026-10-21, grid sampler fixes.**
+  - The floating squares are gone: the cell weights are blurred (2 cells), and Metropolis uses the weights.
+  - The bright line on the real axis is gone: grid vertices no longer lie on the axis.
+  - Scaling dropdown and Root slider greyed out under equalization. (Later removed, together with the Normalization setting.)
+
+- **2026-10-21, sampling.**
+  - Metropolis bias found (the chains started at uniformly chosen seeds) and fixed: starts are now drawn with probability proportional to `f`. Verified against brute-force renders.
+  - New grid sampler with a known density, which also works with Metropolis.
+  - The fixed inside point removed.
+- **2026-10-21, display.**
+  - "Scaling" and "Root" greyed out under equalization.
+  - The panel reordered to follow the pipeline (blur, normalization, scaling, histogram, clip, gradient).
+  - Min/max clip merged into one two-handle bar under the histogram; the clipped parts of the histogram are drawn faint.
+  - New gradients with 2 to 5 stops, with cloud replacing cividis.
 
 - **2026-10-21.**
   - Docs set up (`docs/README.md`, `docs/backlog.md`).

@@ -1,26 +1,39 @@
 // The settings: defaults, validation, slider mappings and the URL hash. st is the one live settings
 // object; it is changed in place (setState), so every module that imports it sees the same values.
 
-// Gradients are "rrggbb@position" stops. cividis stops at 0.75 of the matplotlib map, before it turns yellow.
+// Gradients are "rrggbb@position" stops, blended in OKLab (display.js). Few stops on purpose: they are meant to be
+// edited by hand. All but cloud start at black, the empty background. Picked by the owner on two review sheets
+// (docs/backlog.md, 2026-10-21): "night" is the former cloud, cloud is now a sky, and the last five have two hues.
 export var GRADIENTS = {
   gray: '000000@0,ffffff@1',
-  hot: '000000@0,ff0000@0.365,ffff00@0.746,ffffff@1',
-  cividis: '00224e@0,19386f@0.167,434e6c@0.333,61646f@0.5,7c7c78@0.667,9b9377@0.833,bbad6d@1',
-  twilight: 'e2d9e2@0,b3c7ce@0.083,7ca1c3@0.167,6275bb@0.25,5e43a5@0.333,4e186f@0.417,321239@0.5,581647@0.583,8e2c50@0.667,b25653@0.75,c68a6d@0.833,d3bcac@0.917,e2d9e2@1'
+  hot: '000000@0,b4140a@0.35,ffb928@0.7,ffffff@1',
+  night: '04060b@0,1f2a40@0.3,7d88a0@0.65,f3eee6@1',
+  cloud: '2f6fb8@0,6fa8dc@0.35,d8e6f2@0.75,ffffff@1',
+  ice: '000000@0,0d2a4d@0.35,5b9bd5@0.7,f2f8ff@1',
+  dusk: '000000@0,321239@0.35,b25653@0.7,e2d9e2@1',
+  aurora: '000000@0,0b3b3a@0.35,3fbf8f@0.7,effff0@1',
+  gold: '000000@0,3d2606@0.35,c48a2c@0.7,fff4d6@1',
+  amethyst: '000000@0,2a1650@0.35,9a7ae0@0.7,f6f0ff@1',
+  patina: '000000@0,0f3a46@0.4,d08850@0.78,fff6ea@1',
+  lapis: '000000@0,0f2350@0.35,c89b3c@0.75,fff6dc@1',
+  sodium: '000000@0,1a1f5c@0.35,f08a30@0.75,fff4e0@1',
+  reef: '000000@0,0b3a4a@0.3,e06a50@0.65,ffe9a8@1',
+  sunset: '000000@0,1b1446@0.25,9c2f6e@0.5,f08a4b@0.75,fff1c9@1',
+  'ember-ice': '000000@0,3a0d05@0.3,c0502a@0.55,8fd0e8@0.85,ffffff@1'
 };
+// matplotlib colormap names in desktop presets → the nearest gradient here
+var CMAPS = { gray: 'gray', hot: 'hot', cividis: 'night', twilight: 'dusk' };
 
 export var DEFAULTS = {
-  method: 'boundary',
-  sampler: 'boundary',
-  samples: 50000,
-  nearby_points: 0,
-  nearby_distance: 1000,
-  max_iter: 1000,
-  resolution: 800,
-  inside_point: 'fixed',
-  inside_real: 0,
-  outer_radius: 4,
-  refine_steps: 80,
+  method: 'direct',
+  sampler: 'bisection',
+  samples: 600,
+  nearby_points: 20,
+  nearby_spread: 1e-3,
+  max_iter: 100000,
+  resolution: 2000,
+  refine_steps: 10,
+  balance: 0.5,
   chain_length: 100,
   burn_in: 20,
   large_step: 0.05,
@@ -31,15 +44,24 @@ export var DEFAULTS = {
   xmax: 1.0,
   ymin: -1.5,
   ymax: 1.5,
-  scale_mode: 'nth root',
+  scale_mode: 'log',
   root: 2.5,
-  normalize: 'equalize',
-  norm_percentile: 99.9,
-  gradient: GRADIENTS.gray,
-  min_clip: 0,
-  max_clip: 1,
-  soft_points: false,
-  blur_px: 1
+  gradient: GRADIENTS.hot,
+  min_clip: 0.143,
+  max_clip: 0.778,
+  // the levels midpoint: where between the clips mid-grey falls, as a fraction of the clipped range (0.5: no change)
+  midtone: 0.5,
+  soft_points: true,
+  blur_px: 0.32,
+  // Colouring by orbit length (the "Nebulabrot"): orbits escaping within band_short iterations, within band_mid, and the
+  // rest. Channel colours add up; each channel holds its band and all shorter ones, as in the classic picture.
+  colour_mode: 'gradient',
+  band_short: 50,
+  band_mid: 500,
+  colour_short: '2050ff',
+  colour_mid: '20e060',
+  colour_long: 'ff3020',
+  channel_norm: 'separate'
 };
 export var KEYS = Object.keys(DEFAULTS);
 
@@ -67,28 +89,26 @@ export var SLIDERS = {
     to: function(v) { return v <= 0 ? 0 : logTo(Math.min(1e5, v), 1, 1e5); },
     fmt: function(v) { return String(v); }
   },
-  nearby_distance: {
-    from: function(t) { return Math.min(1e4, Math.max(10, logFrom(t, 10, 1e4))); },
-    to: function(v) { return logTo(Math.max(10, Math.min(1e4, v)), 10, 1e4); },
-    fmt: function(v) { return String(Math.round(v)); }
+  // standard deviation of the nearby cloud in the complex plane, log scale from 1e-6 (tight) to 0.1 (wide)
+  nearby_spread: {
+    from: function(t) { return +logFrom(t, 1e-6, 0.1).toPrecision(2); },
+    to: function(v) { return logTo(Math.max(1e-6, Math.min(0.1, v)), 1e-6, 0.1); },
+    fmt: function(v) {
+      var e = Math.floor(Math.log10(v) + 1e-9), m = v / Math.pow(10, e);
+      return (+m.toFixed(1)) + ' × 10' + String(e).replace('-', '⁻').replace(/\d/g, function(d) { return '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]; });
+    }
   },
   // std. dev. in pixels, log scale from 5 px on the left down to 0.1 px on the right
   blur_px: {
     from: function(t) { return +logFrom(1 - t, 0.1, 5).toFixed(2); },
     to: function(v) { return 1 - logTo(Math.max(0.1, Math.min(5, v)), 0.1, 5); },
     fmt: function(v) { return v.toFixed(2) + ' px'; }
-  },
-  // log scale on the tail above the percentile, 10% down to 0.001%
-  norm_percentile: {
-    from: function(t) { return +(100 - logFrom(1 - t, 0.001, 10)).toFixed(4); },
-    to: function(v) { return 1 - logTo(Math.max(0.001, Math.min(10, 100 - v)), 0.001, 10); },
-    fmt: function(v) { return +v.toFixed(3) + '%'; }
   }
 };
 // setting → element id suffix: p-… is the input, v-… the value shown next to a slider
-export var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_distance: 'ndist', blur_px: 'blurs', norm_percentile: 'pct' };
-export var NUMBER_IDS = { max_iter: 'iter', resolution: 'res', inside_real: 'inre', outer_radius: 'orad', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
-var INT_KEYS = { max_iter: 1, resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1 };
+export var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs' };
+export var NUMBER_IDS = { band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', resolution: 'res', refine_steps: 'refine', chain_length: 'chain', burn_in: 'burn', large_step: 'large', mutation_min: 'mmin', mutation_max: 'mmax', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
+var INT_KEYS = { max_iter: 1, resolution: 1, refine_steps: 1, chain_length: 1, burn_in: 1, seed: 1, band_short: 1, band_mid: 1 };
 
 export function parseGradient(str) {
   var stops = String(str).split(',').map(function(part) {
@@ -113,14 +133,11 @@ export function sanitize(data) {
   });
   out.samples = clamp(out.samples, 1, 5e6);
   out.nearby_points = clamp(out.nearby_points, 0, 1e5);
-  out.nearby_distance = clamp(out.nearby_distance, 10, 1e4);
+  out.nearby_spread = clamp(out.nearby_spread, 1e-6, 0.1);
   out.max_iter = clamp(out.max_iter, 2, 1e6);
   out.resolution = clamp(out.resolution, 128, 4096);
-  out.outer_radius = clamp(out.outer_radius, 2, 100);
-  // Only bulb interiors work as the inside end: below the period-4 bulb (−1.368) the real axis is the thin antenna,
-  // every point next to it escapes, and the bisection collapses all samples onto the axis.
-  out.inside_real = clamp(out.inside_real, -1.36, 0.25);
   out.refine_steps = clamp(out.refine_steps, 0, 10000);
+  out.balance = clamp(out.balance, 0, 1);
   out.chain_length = clamp(out.chain_length, 1, 1e6);
   out.burn_in = clamp(out.burn_in, 0, 1e6);
   out.large_step = clamp(out.large_step, 0, 1);
@@ -130,24 +147,29 @@ export function sanitize(data) {
   out.root = clamp(out.root, 1.1, 20);
   out.min_clip = clamp(out.min_clip, 0, 1);
   out.max_clip = clamp(out.max_clip, 0, 1);
+  out.midtone = clamp(out.midtone, 0.02, 0.98);
   out.blur_px = clamp(out.blur_px, 0.1, 5);
-  if (['boundary', 'metropolis'].indexOf(out.method) < 0) out.method = DEFAULTS.method;
-  if (['boundary', 'uniform'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
-  if (['fixed', 'bulbs'].indexOf(out.inside_point) < 0) out.inside_point = DEFAULTS.inside_point;
+  if (['direct', 'metropolis'].indexOf(out.method) < 0) out.method = DEFAULTS.method;
+  if (['bisection', 'grid'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
   // Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed render is mostly noise:
-  // the boundary sampler always draws the whole set.
-  if (out.sampler === 'boundary') {
-    out.method = 'boundary';
+  // the bisection sampler always draws the whole set.
+  if (out.sampler === 'bisection') {
+    out.method = 'direct';
     ['xmin', 'xmax', 'ymin', 'ymax'].forEach(function(k) { out[k] = DEFAULTS[k]; });
   }
-  if (['linear', 'nth root', 'log'].indexOf(out.scale_mode) < 0) out.scale_mode = DEFAULTS.scale_mode;
-  out.norm_percentile = clamp(out.norm_percentile, 90, 99.999);
-  if (['equalize', 'percentile', 'max'].indexOf(out.normalize) < 0) out.normalize = DEFAULTS.normalize;
-  // desktop presets name a matplotlib colormap and were normalized by the maximum
-  if ('cmap' in data && !('gradient' in data)) {
-    if (GRADIENTS[data.cmap]) out.gradient = GRADIENTS[data.cmap];
-    if (!('normalize' in data)) out.normalize = 'max';
-  }
+  // desktop presets were scaled up to the maximum, never equalized
+  if ('cmap' in data && !('scale_mode' in data)) out.scale_mode = 'nth root';
+  if (['linear', 'nth root', 'log', 'equalize'].indexOf(out.scale_mode) < 0) out.scale_mode = DEFAULTS.scale_mode;
+  // desktop presets name a matplotlib colormap
+  if ('cmap' in data && !('gradient' in data) && CMAPS[data.cmap]) out.gradient = GRADIENTS[CMAPS[data.cmap]];
+  if (['gradient', 'length'].indexOf(out.colour_mode) < 0) out.colour_mode = DEFAULTS.colour_mode;
+  if (['separate', 'shared'].indexOf(out.channel_norm) < 0) out.channel_norm = DEFAULTS.channel_norm;
+  out.band_short = clamp(out.band_short, 1, 1e6);
+  out.band_mid = clamp(out.band_mid, out.band_short + 1, 1e6);
+  ['colour_short', 'colour_mid', 'colour_long'].forEach(function(k) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(out[k]);
+    out[k] = m ? m[1].toLowerCase() : DEFAULTS[k];
+  });
   var g = parseGradient(out.gradient);
   out.gradient = g ? gradientString(g) : DEFAULTS.gradient;
   return out;

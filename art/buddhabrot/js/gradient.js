@@ -10,7 +10,7 @@ export function createGradientEditor(changed) {
 
   function draw() {
     var sorted = parseGradient(st.gradient), els = grad.getElementsByClassName('grad-stop');
-    $('gradBar').style.background = 'linear-gradient(to right, ' + sorted.map(function(s) { return s.c + ' ' + s.p * 100 + '%'; }).join(', ') + ')';
+    $('gradBar').style.background = 'linear-gradient(in oklab to right, ' + sorted.map(function(s) { return s.c + ' ' + s.p * 100 + '%'; }).join(', ') + ')';
     while (els.length > gStops.length) els[els.length - 1].remove();
     while (els.length < gStops.length) { var el = document.createElement('div'); el.className = 'grad-stop'; grad.appendChild(el); }
     gStops.forEach(function(s, i) {
@@ -64,6 +64,12 @@ export function createGradientEditor(changed) {
     st.gradient = GRADIENTS[this.value];
     sync();
     changed();
+  });
+
+  Object.keys(GRADIENTS).forEach(function(k) {
+    var o = document.createElement('option');
+    o.value = o.textContent = k;
+    $('p-gpreset').appendChild(o);
   });
 
   return { sync: sync };
