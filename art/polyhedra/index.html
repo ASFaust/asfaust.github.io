@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conway Polyhedra</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+  <!-- the vendored three.js add-ons import 'three' by name -->
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <h1>Conway Polyhedra</h1>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <main class="app">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="The polyhedron in 3D. Drag to turn, scroll or pinch to zoom, double-click to reset the view."></canvas>
+        <div class="status" id="status">Starting…</div>
+        <div class="progress"><div id="progress"></div></div>
+      </div>
+      <div class="controls">
+        <button id="randomBtn" title="A random seed with a few random operators">Random</button>
+        <button id="resetBtn" title="Turn back to the starting view">Reset view</button>
+        <button id="saveBtn" title="Save the image as shown">Save PNG</button>
+        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <div class="sidebar">
+    <p class="hint">Pick a seed and apply operators to it, or type Conway notation directly: operators then a seed, read from right to left, so <code>tkD</code> is the truncated kis dodecahedron. Drag to turn the shape, scroll or pinch to zoom, double-click to reset the view. The URL holds the current settings, so you can share it.</p>
+
+    <div class="panels">
+      <details open>
+        <summary>Shape</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-notation"><span>Notation</span></label>
+            <div class="row">
+              <input type="text" class="mono" id="p-notation" spellcheck="false" autocomplete="off" autocapitalize="off">
+              <button id="goBtn" type="button">Go</button>
+            </div>
+            <div class="note" id="desc"></div>
+          </div>
+          <div class="param wide">
+            <label><span>Operators</span></label>
+            <small>each click applies one more operator to the current shape</small>
+            <div class="ops" id="ops"></div>
+          </div>
+          <div class="param">
+            <label for="p-seed"><span>Seed</span></label>
+            <select id="p-seed"></select>
+          </div>
+          <div class="param" id="n-param">
+            <label for="p-n"><span>Sides</span></label>
+            <input type="number" id="p-n" min="3" max="64" step="1">
+          </div>
+          <div class="param wide">
+            <label for="p-named"><span>Named shapes</span></label>
+            <small>Archimedean and Catalan solids are all one operator away from a Platonic one</small>
+            <select id="p-named"></select>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Realization</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-mode"><span>Shape in space</span></label>
+            <small>the operators fix only which faces meet where; this decides where the vertices go</small>
+            <select id="p-mode">
+              <option value="canonical">Canonical: edges touch a sphere, faces flat</option>
+              <option value="faces">Detached faces: each face made regular on its own</option>
+              <option value="planar">Flat faces, close to how it was built</option>
+              <option value="raw">As built by the operators</option>
+            </select>
+          </div>
+          <div class="param" id="faces-regularity">
+            <label for="p-regularity"><span>Regularity</span><span id="v-regularity"></span></label>
+            <small>0 only flattens each face, 1 makes it a regular polygon</small>
+            <input type="range" id="p-regularity" min="0" max="1" step="0.05">
+          </div>
+          <div class="param" id="faces-stiffness">
+            <label for="p-stiffness"><span>Stiffness</span><span id="v-stiffness"></span></label>
+            <small>how firmly vertices whose faces disagree hold their place</small>
+            <input type="range" id="p-stiffness" min="0" max="20" step="0.5">
+          </div>
+          <div class="param check wide" id="faces-symmetric">
+            <label><input type="checkbox" id="p-symmetric"> <span>Keep the symmetry</span></label>
+            <small>averages the shape over all its symmetries every few rounds, so it cannot drift away from them</small>
+          </div>
+          <div class="param wide">
+            <div class="note" id="mode-note"></div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Appearance</summary>
+        <div class="params">
+          <div class="param">
+            <label for="p-style"><span>Style</span></label>
+            <select id="p-style">
+              <option value="solid">Solid</option>
+              <option value="glass">Glass</option>
+              <option value="frame">Frame (edges only)</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-material"><span>Material</span></label>
+            <select id="p-material">
+              <option value="matte">Matte</option>
+              <option value="glossy">Glossy</option>
+              <option value="metal">Metal</option>
+              <option value="iridescent">Iridescent</option>
+            </select>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-ao"> <span>Ambient occlusion</span></label>
+            <small>darkens creases and hollows; solid style only</small>
+          </div>
+          <div class="param">
+            <label for="p-colouring"><span>Colour faces by</span></label>
+            <select id="p-colouring">
+              <option value="origin">Origin</option>
+              <option value="sides">Number of sides</option>
+              <option value="orbit">Symmetry orbit</option>
+              <option value="single">One colour</option>
+            </select>
+          </div>
+          <div class="param wide">
+            <label for="p-palette"><span>Palette</span></label>
+            <small>colour k of the palette goes to the k-th kind of face; click a swatch to change it</small>
+            <select id="p-palette">
+              <option value="generated">Generated from hue</option>
+              <option value="pastel">Pastel</option>
+              <option value="earth">Earth</option>
+              <option value="ocean">Ocean</option>
+              <option value="ember">Ember</option>
+              <option value="mono">Monochrome</option>
+              <option value="metals">Metals</option>
+              <option value="pearl">Pearl</option>
+              <option value="custom">Custom</option>
+            </select>
+            <div class="swatches"><span id="swatches"></span><button type="button" id="swatch-add" title="Add a colour">+</button><button type="button" id="swatch-remove" title="Remove the last colour">−</button></div>
+          </div>
+          <div class="param" id="hue-param">
+            <label for="p-hue"><span>Hue</span><span id="v-hue"></span></label>
+            <input type="range" id="p-hue" min="0" max="359" step="1">
+          </div>
+          <div class="param" id="chroma-param">
+            <label for="p-chroma"><span>Chroma</span><span id="v-chroma"></span></label>
+            <input type="range" id="p-chroma" min="0" max="0.25" step="0.01">
+          </div>
+          <div class="param">
+            <label for="p-edge"><span>Edges</span><span id="v-edge"></span></label>
+            <small>width of the lines drawn on the faces, relative to the edge length</small>
+            <input type="range" id="p-edge" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-ink"><span>Edge colour</span></label>
+            <small>&nbsp;</small>
+            <select id="p-ink">
+              <option value="auto">Automatic</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="colour">Colour</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-fov"><span>Perspective</span><span id="v-fov"></span></label>
+            <small>field of view; small is nearly flat</small>
+            <input type="range" id="p-fov" min="2" max="70" step="1">
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-spin"> <span>Turn by itself</span></label>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Export</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-size"><span>Image size</span></label>
+            <small>renders the current view again at this size and saves it as PNG</small>
+            <div class="row">
+              <select id="p-size">
+                <option value="1024">1024 × 1024</option>
+                <option value="2048" selected>2048 × 2048</option>
+                <option value="4096">4096 × 4096</option>
+                <option value="8192">8192 × 8192</option>
+              </select>
+              <button id="exportBtn" type="button">Render &amp; save</button>
+            </div>
+          </div>
+          <div class="param check wide">
+            <label><input type="checkbox" id="p-transparent"> <span>Transparent background</span></label>
+          </div>
+          <div class="param wide">
+            <label><span>3D files</span></label>
+            <small>OBJ keeps the polygons; STL is triangles, for 3D printing</small>
+            <div class="row">
+              <button id="objBtn" type="button">Save OBJ</button>
+              <button id="stlBtn" type="button">Save STL</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+    </div>
+  </main>
+
+  <dialog class="info" id="infoDialog" aria-labelledby="infoTitle">
+    <div class="info-head">
+      <h2 id="infoTitle">Conway Polyhedra</h2>
+      <button type="button" id="infoClose" aria-label="Close">✕</button>
+    </div>
+    <div class="notes">
+      <p class="lede">A handful of simple operations, applied to a handful of simple solids, give almost every polyhedron with a name, and endlessly many without one.</p>
+      <h3>Operators</h3>
+      <p>John Conway wrote polyhedra as a seed, a capital letter, with operators in front of it: <code>T C O D I</code> are the five Platonic solids, <code>P5 A5 Y5 U5</code> the pentagonal prism, antiprism, pyramid and cupola, and <code>J27</code> the 27th Johnson solid. The operators act from right to left, so <code>tkD</code> is the dodecahedron (<code>D</code>) with a pyramid raised on each face (<code>k</code>, kis), with every vertex then cut off (<code>t</code>, truncate).</p>
+      <p>The basic operators are dual <code>d</code>, which swaps faces and vertices; ambo <code>a</code>, which cuts every vertex down to the midpoints of its edges; truncate <code>t</code>; kis <code>k</code>; join <code>j</code>, a four-sided face across every edge; gyro <code>g</code> and propeller <code>p</code>, which give everything a twist; and chamfer <code>c</code>, which turns every edge into a hexagon. The others are made from them: expand <code>e = aa</code>, ortho <code>o = jj</code>, bevel <code>b = ta</code>, meta <code>m = kj</code>, needle <code>n = kd</code>, zip <code>z = dk</code>, snub <code>s = dg</code>. <code>r</code> is the mirror image, which only changes the chiral shapes. A number limits <code>t</code> and <code>k</code> to vertices or faces of that degree: <code>k4</code> raises pyramids only on the squares.</p>
+      <p>All 13 Archimedean solids are one or two operators away from a Platonic solid (<code>tI</code> is the football, <code>sC</code> the snub cube), and their duals, the Catalan solids, are a <code>d</code> further. Goldberg polyhedra and geodesic spheres are short strings too: <code>tI</code>, <code>cD</code>, <code>tkD</code>.</p>
+      <h3>Only the graph</h3>
+      <p>The operators work on the combinatorics alone: which vertices lie on which face, in which order around it. The page stores every face as a list of vertices running counter-clockwise when seen from outside, and splits each edge into two half-edges, one per side. Each operator then builds its new faces from these half-edges without looking at any coordinates, and so the faces come out with the right orientation, every time.</p>
+      <p>Colour by origin shows the bookkeeping. Faces that grow out of an old face keep its colour, faces that grow around an old vertex take the colour of that vertex, and faces that grow out of edges get a new colour. In <code>tC</code> the octagons are the old faces of the cube, the triangles its old corners.</p>
+      <h3>Back into space</h3>
+      <p>The graph alone says nothing about where the vertices should go. Steinitz’s theorem says that the graphs of convex polyhedra are exactly the planar 3-connected graphs, and every operator here keeps a graph planar and 3-connected, so a convex shape always exists. A stronger theorem, by Koebe, Andreev and Thurston, picks out a particularly nice one: the canonical polyhedron, whose edges all touch one sphere, whose faces are flat, and whose points of contact are centred on the middle of the sphere. It is unique up to rotation and has every symmetry the graph has.</p>
+      <p>The page finds it with George Hart’s iteration: move both ends of each edge so that the edge’s point closest to the centre moves towards the unit sphere, recentre, move each vertex towards the planes of its faces, and repeat. Two changes make it reliable. Hart takes the closest point on the whole line through an edge; the page takes it on the edge itself, since otherwise the apex of a flat pyramid runs away to infinity. And each round also continues a little in the direction of the last one, which makes the slow, large-scale adjustments of big shapes many times faster. The shape is relaxed after each operator, so that the next one starts from a good shape, and you can watch the last relaxation happen.</p>
+      <p>The canonical shape can be extreme. In <code>tttttD</code> the twelve big faces take up nearly everything, and the small ones shrink to slivers. Detached faces trades flatness for nicer faces: each round gives every face its own copies of its vertices, moves each face on its own towards the regular polygon that fits it best, and then puts every vertex at the mean of its copies. Vertices whose copies disagree a lot hold their place more firmly in the next round (“stiffness”), so the other vertices of their faces give way instead. The result need not be convex, and with full regularity often is not.</p>
+      <h3>Symmetry</h3>
+      <p>A symmetry of the graph, an automorphism, is pinned down by where it sends a single half-edge and whether it keeps or reverses the orientation. So the page tries every half-edge that looks alike, grows the map from there along the faces, and keeps the ones that close up. The canonical polyhedron shows every automorphism as a rotation or reflection, so fitting a matrix to each names the point group, shown under the picture as its Schoenflies symbol: <code>Ih</code> for the full symmetry of the icosahedron, <code>I</code> for its rotations alone, <code>D5h</code> for a pentagonal prism. Colouring by symmetry orbit gives faces that the symmetries carry into each other the same colour. For detached faces, “keep the symmetry” averages the shape over all its symmetries every few rounds; that stops it drifting off and makes it settle much sooner.</p>
+      <h3>Drawing</h3>
+      <p>The edges are painted onto the faces rather than built as tubes. Every triangle on the screen knows its distance to the nearby sides of its face, and the pixels closer than the line width take the edge colour. The width is measured on the shape, not on the screen, so an export at 8192 pixels looks like the view, only sharper.</p>
+      <h3>Origin</h3>
+      <p>This is a port of PolyOp, an earlier C++ library with Python bindings, rewritten from scratch around half-edges. The detached-faces optimizer comes from there; the spectral realizations do not yet.</p>
+    </div>
+  </dialog>
+
+  <script>
+    var themeBtn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      themeBtn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    themeBtn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      themeBtn.textContent = isDark ? '☀' : '☾';
+    });
+    var info = document.getElementById('infoDialog');
+    document.getElementById('infoBtn').addEventListener('click', function() { info.showModal(); });
+    document.getElementById('infoClose').addEventListener('click', function() { info.close(); });
+    // a click on the backdrop closes the dialog
+    info.addEventListener('click', function(e) { if (e.target === info) info.close(); });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

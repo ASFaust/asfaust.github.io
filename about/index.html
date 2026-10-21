@@ -73,6 +73,41 @@
 
     .link-meta { font-size: 13px; color: var(--color-text-secondary); display: flex; gap: 1rem; justify-content: space-between; }
     .link-meta .domain { font-size: 12px; white-space: nowrap; }
+
+    .contact-hint { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 0.8rem; }
+    .contact { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 17px; color: var(--color-text-secondary); min-height: 1.6em; margin-bottom: 0.6rem; white-space: pre; overflow: hidden; }
+    .contact a { color: var(--color-text-primary); }
+
+    .slider-wrap { position: relative; max-width: 360px; --thumb: 16px; }
+    .slider-wrap input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 20px;
+      background: transparent;
+      cursor: pointer;
+      display: block;
+    }
+    .slider-wrap input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--color-border-secondary); }
+    .slider-wrap input[type="range"]::-moz-range-track { height: 2px; background: var(--color-border-secondary); }
+    .slider-wrap input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: var(--thumb); height: var(--thumb); margin-top: -7px;
+      border-radius: 50%; background: var(--color-text-primary); border: none;
+    }
+    .slider-wrap input[type="range"]::-moz-range-thumb {
+      width: var(--thumb); height: var(--thumb);
+      border-radius: 50%; background: var(--color-text-primary); border: none;
+    }
+    .slider-mark {
+      position: absolute;
+      top: 15px;
+      width: 2px; height: 8px;
+      margin-left: -1px;
+      background: var(--color-text-secondary);
+      pointer-events: none;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -85,6 +120,14 @@
     <h1>About</h1>
     <p class="tagline">Andreas Faust</p>
     <p class="about">I was born in 1995 in Germany and studied computer science.</p>
+
+    <h2 class="section-gap">Contact</h2>
+    <p class="contact-hint">Slide until it makes sense.</p>
+    <p class="contact" id="contact"></p>
+    <div class="slider-wrap">
+      <input type="range" id="emailSlider" min="0" max="300" value="0" aria-label="Email decoder">
+      <span class="slider-mark" id="sliderMark"></span>
+    </div>
   </div>
 
   <script>
@@ -105,6 +148,53 @@
       document.documentElement.setAttribute('data-theme', next);
       btn.textContent = isDark ? '☀' : '☾';
     });
+
+    // Email is scrambled with a per-character shift that depends on the slider value.
+    // Only one slider position decodes it; that position isn't stored, it's found by scanning.
+    (function() {
+      var enc = ';SJtx5;2JfqYs/';
+      var slider = document.getElementById('emailSlider');
+      var mark = document.getElementById('sliderMark');
+      var contact = document.getElementById('contact');
+      var looksValid = /^[\w.+-]+@[\w-]+\.[a-z]{2,}$/;
+
+      function shift(s, i) {
+        var h = Math.imul(s + 1, 0x9E3779B1) ^ Math.imul(i + 1, 0x85EBCA77);
+        h ^= h >>> 15; h = Math.imul(h, 0xC2B2AE3D); h ^= h >>> 13;
+        return (h >>> 0) % 94;
+      }
+      function decode(s) {
+        var out = '';
+        for (var i = 0; i < enc.length; i++) {
+          out += String.fromCharCode(((enc.charCodeAt(i) - 33 - shift(s, i)) % 94 + 94) % 94 + 33);
+        }
+        return out;
+      }
+
+      var max = +slider.max, key = -1;
+      for (var s = 0; s <= max; s++) {
+        if (looksValid.test(decode(s))) { key = s; break; }
+      }
+      if (key >= 0) {
+        mark.style.left = 'calc(' + (key / max) + ' * (100% - var(--thumb)) + var(--thumb) / 2)';
+        mark.style.display = 'block';
+      }
+
+      function update() {
+        var s = +slider.value, text = decode(s);
+        if (s === key) {
+          var a = document.createElement('a');
+          a.href = 'mailto:' + text;
+          a.textContent = text;
+          contact.textContent = '';
+          contact.appendChild(a);
+        } else {
+          contact.textContent = text;
+        }
+      }
+      slider.addEventListener('input', update);
+      update();
+    })();
   </script>
 </body>
 </html>
