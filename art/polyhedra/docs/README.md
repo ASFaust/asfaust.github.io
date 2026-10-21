@@ -18,7 +18,8 @@ It is a JavaScript port of the owner's C++/Python library **PolyOp** (`/home/and
 | [backlog.md](backlog.md) | What to do next: short items, each linking to the doc with the details. |
 | [realization/README.md](realization/README.md) | **The open research problem**: placing a graph in space. Defines the two goals, the facts known, the metrics, and lists the approaches. |
 | [realization/canonical.md](realization/canonical.md) | Approach: canonical polyhedron (midsphere) by Hart's iteration. Implemented. |
-| [realization/detached-faces.md](realization/detached-faces.md) | Approach: detach faces, make each nice, merge. Implemented, experimental. |
+| [realization/regular-faces.md](realization/regular-faces.md) | Regular faces and affine faces: detach faces, make each (affine-)regular, merge. The artsy optimizers. |
+| [realization/planes.md](realization/planes.md) | Approach: optimize readability directly over face planes (simple) or vertices (simplicial). Implemented as the "Readable" optimizer. |
 | [realization/spectral.md](realization/spectral.md) | Approach: eigenvectors of graph matrices. Not implemented yet. |
 | [realization/nozono.md](realization/nozono.md) | Math note (by the owner): midpoint iteration, affine-regular polygons, rank-3 coplanarity. |
 | [symmetry.md](symmetry.md) | Graph automorphisms, symmetry matrices, point-group names. Implemented. |
@@ -32,14 +33,16 @@ There is no build step. The page uses plain ES modules, loaded directly by the b
 index.html, style.css     the page; layout copied from art/mandelbrot (viewer left, panels right, Info dialog)
 js/main.js                UI wiring, state, URL hash, worker jobs, stats line, palette swatches
 js/worker.js              one job per worker: build → symmetries → realize, posting positions live
-js/pipeline.js            build + realization loop, shared by worker.js and the tests
+js/pipeline.js            build, OPTIMIZERS, one optimizer run (Realization); shared by worker.js and the tests
 js/notation.js            parse "tk4dD" → { ops, seed }, describe(), size estimate()
 js/seeds.js               seed polyhedra from coordinates (Platonic, P/A/Y/U families, 35 Johnson solids)
 js/hull.js                3D convex hull with coplanar faces merged; builds every seed
 js/mesh.js                Polyhedron class, half-edge topology(), ring(), check(), centroids, normals
 js/operators.js           Conway operators on half-edges; OPS table (names, composites, growth formulas)
 js/canonical.js           flatten(), Realizer: Hart's canonicalization and the planar-only mode
-js/faces.js               FaceRelaxer: the detached-faces realization
+js/faces.js               FaceRelaxer: regular faces, affine faces, face mean
+js/frame.js               the per-round adjustments (centre, orthogonalise, normalise), random positions, rng
+js/readable.js            Readable: the readable realization (planes or vertices, L-BFGS); readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup()
 js/viewer.js              three.js scene, flat-painted edges shader, materials, GTAO, palette colouring, export render
 js/palettes.js            palette presets, hex ↔ linear helpers
@@ -50,10 +53,11 @@ vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons
 ```
 
 **Data flow.**
-1. `main.run()` parses the text once for instant feedback, then starts a fresh worker. The previous worker is terminated, so there is never more than one job.
-2. The worker `build`s the polyhedron (seed → operators, relaxing between operators in canonical and faces modes), and posts `mesh` (the faces as flat arrays, tags, census) and then `symmetry` (group name, order, face orbits).
-3. The worker runs a `Realization`, posting `pos` about every 40 ms, then `done`.
-4. The main thread applies at most one position update per animation frame.
+1. `main.run()` parses the text once for instant feedback, then starts a fresh worker for the shape. The previous worker is terminated, so there is never more than one shape.
+2. The worker `build`s the polyhedron (seed → operators, relaxing canonically between operators), keeps those positions for "As built", and posts `mesh` (the faces as flat arrays, tags, census) and then `symmetry` (group name, order, face orbits).
+3. The worker replays the **chain** of steps (`st.steps`): an optional init (`random` with its seed; `built` is the empty chain), then optimizers, each a `Realization` from wherever the previous one left the vertices, posting `start`, `pos` about every 40 ms, and `done` per step.
+4. An optimizer button sends `run` (or `stop`, when it is the running one). The worker checks for new requests between frames: the running step stops there and reports its round count (`done` with `stopped`), and the new one starts from the current positions.
+5. The main thread applies at most one position update per animation frame.
 
 ## Core data structures and conventions
 
@@ -73,7 +77,7 @@ vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons
   - chamfer corners at 1/3 of the way to the face centroid.
 - **Composite operators** expand at parse time: `e=aa o=jj b=ta m=kj n=kd z=dk s=dg`. `tₙ` and `kₙ` act only on vertices or faces of degree n.
 - **Size cap**: 120,000 edges. It is estimated before building, from the `grow` formulas in `OPS`.
-- **URL hash** holds the whole state: `n` notation, `m` mode, `rg` regularity, `k` stiffness, `sym`, `st` style, `mat`, `ao`, `aos`, `c` colouring, `pal`, `pc` custom colours, `h`, `ch`, `e`, `ink`, `fov`, `spin`. Values equal to the default are omitted.
+- **URL hash** holds the whole state: `n` notation, `m` the chain (`random:83121,affine/n,regular:0.8/co@340`: a random init with its seed, then optimizers with regularity after a colon, adjustments after a slash, the round a step was stopped at after `@`; `built` for none; old single modes `faces`, `planar`, `raw` are still read), `st` style, `mat`, `ao`, `aos`, `c` colouring, `pal`, `pc` custom colours, `h`, `ch`, `e`, `ink`, `fov`, `spin`. Values equal to the default are omitted.
 
 ## Code style
 
@@ -90,7 +94,8 @@ The page's look and structure follow `art/mandelbrot/`: theme toggle, Info dialo
 - The tests are plain Node (v22), with no dependencies:
   - `node tests/topology.mjs`: census of every named solid, validity of 200 random strings, size estimates, `dd`/`rr` involutions.
   - `node tests/symmetry.mjs [-v]`: automorphism counts and point-group names for 36 shapes; symmetrize exactness.
-  - `node tests/realize.mjs [--mode canonical|faces|planar] [--sym] [--random N] [--max-it N] [--regularity x] [--stiffness x] [strings…]`: the realization benchmark; metrics are explained in [realization/README.md](realization/README.md#measuring).
+  - `node tests/realize.mjs [--mode chain] [--sym] [--random N] [--max-it N] [--regularity x] [strings…]`: the realization benchmark; the chain is optimizers run in turn from the built shape (`canonical,regular`), metrics after the last; metrics are explained in [realization/README.md](realization/README.md#measuring).
+  - `node tests/planes.mjs [--start raw|canonical] [strings…]`: the readability optimizer for simple and simplicial graphs ([realization/planes.md](realization/planes.md)).
   - `node tests/screenshot.mjs <url> <out.png> [waitMs] [js…]`: headless Chrome over CDP (`google-chrome` with SwiftShader, so it is slow on big shapes). It prints console errors and the values of the given JS expressions; `sleep:ms` waits.
 - `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, `metrics`, and `balance` (per-face roundness and size).
 
@@ -98,7 +103,8 @@ The page's look and structure follow `art/mandelbrot/`: theme toggle, Info dialo
 
 - **One operator engine on half-edges**, not a port of each C++ operator. Orientation then comes for free, and new operators are about 20 lines each.
 - **Seeds from coordinates and a hull**, so the Johnson solids need no hand-written face lists. They are built as stacks of regular-polygon "rings" with unit edges (`tower()` in `seeds.js`).
-- **Relax after every operator** (canonical and faces modes). Without it, long strings start from degenerate geometry and canonicalization fails (`pgI`, `cccC`).
+- **Relax between operators** (not after the last; the optimizer chain does that). Without it, long strings start from degenerate geometry and canonicalization fails (`pgI`, `cccC`).
 - **Edges painted flat onto faces in the shader**, not tubes and balls; this is the owner's preference. The width is in world units relative to the mean edge length, so exports look the same at every resolution.
-- **Workers are terminated, not cancelled**, so a new job always starts clean.
+- **Workers are terminated when the shape changes**, so a new shape always starts clean; within one shape, optimizer runs are interrupted between frames instead, so the next one can start from the current positions.
+- **Optimizers are buttons that chain**, not a mode that restarts (owner, 2026-10-21): using them in sequence, and stopping them part-way, is an artsy control. Every optimizer is deterministic, so the chain with stop rounds in the URL replays exactly. The symmetry is kept except after a random init. **Inits** (As built, Random) start the chain again; a new polyhedron empties it (owner). **Adjustments** (centre, orthogonalise, normalise; `frame.js`) are recorded per step when its button is clicked, so a chain replays exactly.
 - The owner works with fresh Claude Code sessions per task. Keep these docs current, and record findings, including negative results, where they belong.

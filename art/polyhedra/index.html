@@ -81,30 +81,39 @@
         <summary>Realization</summary>
         <div class="params">
           <div class="param wide">
-            <label for="p-mode"><span>Shape in space</span></label>
-            <small>the operators fix only which faces meet where; this decides where the vertices go</small>
-            <select id="p-mode">
-              <option value="canonical">Canonical: edges touch a sphere, faces flat</option>
-              <option value="faces">Detached faces: each face made regular on its own</option>
-              <option value="planar">Flat faces, close to how it was built</option>
-              <option value="raw">As built by the operators</option>
-            </select>
-          </div>
-          <div class="param" id="faces-regularity">
-            <label for="p-regularity"><span>Regularity</span><span id="v-regularity"></span></label>
-            <small>0 only flattens each face, 1 makes it a regular polygon</small>
-            <input type="range" id="p-regularity" min="0" max="1" step="0.05">
-          </div>
-          <div class="param" id="faces-stiffness">
-            <label for="p-stiffness"><span>Stiffness</span><span id="v-stiffness"></span></label>
-            <small>how firmly vertices whose faces disagree hold their place</small>
-            <input type="range" id="p-stiffness" min="0" max="20" step="0.5">
-          </div>
-          <div class="param check wide" id="faces-symmetric">
-            <label><input type="checkbox" id="p-symmetric"> <span>Keep the symmetry</span></label>
-            <small>averages the shape over all its symmetries every few rounds, so it cannot drift away from them</small>
+            <label><span>Start from</span></label>
+            <small>the operators fix only which faces meet where; these put the vertices somewhere to start from</small>
+            <div class="opts">
+              <button type="button" data-opt="built"><b>As built</b><span>where the operators put them</span></button>
+              <button type="button" data-opt="random"><b>Random</b><span>a cloud of random points</span></button>
+            </div>
           </div>
           <div class="param wide">
+            <label><span>Optimizers</span></label>
+            <small>each moves the vertices on from where they are now, so they can be used one after another; click the running one to stop it there</small>
+            <div class="opts">
+              <button type="button" data-opt="canonical"><b>Canonical</b><span>edges touch a sphere</span></button>
+              <button type="button" data-opt="readable"><b>Readable</b><span>convex, every corner clear</span></button>
+              <div class="split">
+                <button type="button" data-opt="regular"><b>Regular faces</b><span>each face made regular</span></button>
+                <input type="number" id="p-regularity" min="0" max="1" step="0.1" value="1" title="Regularity: 0 only flattens each face, 1 makes it a regular polygon">
+              </div>
+              <button type="button" data-opt="affine"><b>Affine faces</b><span>each face an even ellipse polygon</span></button>
+              <button type="button" data-opt="mean"><b>Face mean</b><span>each vertex at its faces’ centres</span></button>
+              <button type="button" data-opt="flat"><b>Flat faces</b><span>only flattens</span></button>
+            </div>
+          </div>
+          <div class="param wide">
+            <label><span>After every round</span></label>
+            <small>for the next optimizer you start (not readable). Affine faces is unaffected by all three; the others are pushed elsewhere, on purpose</small>
+            <div class="toggles">
+              <label title="Subtract the mean position"><input type="checkbox" id="p-centre"> Centre</label>
+              <label title="Gram–Schmidt on the x, y and z coordinates, so they are uncorrelated: a shear"><input type="checkbox" id="p-orthogonalise"> Orthogonalise</label>
+              <label title="Scale x, y and z to the same spread, so the shape cannot collapse into a plane or a line"><input type="checkbox" id="p-normalise"> Normalise</label>
+            </div>
+          </div>
+          <div class="param wide">
+            <div class="note" id="recipe"></div>
             <div class="note" id="mode-note"></div>
           </div>
         </div>
@@ -248,14 +257,17 @@
       <p>Colour by origin shows the bookkeeping. Faces that grow out of an old face keep its colour, faces that grow around an old vertex take the colour of that vertex, and faces that grow out of edges get a new colour. In <code>tC</code> the octagons are the old faces of the cube, the triangles its old corners.</p>
       <h3>Back into space</h3>
       <p>The graph alone says nothing about where the vertices should go. Steinitz’s theorem says that the graphs of convex polyhedra are exactly the planar 3-connected graphs, and every operator here keeps a graph planar and 3-connected, so a convex shape always exists. A stronger theorem, by Koebe, Andreev and Thurston, picks out a particularly nice one: the canonical polyhedron, whose edges all touch one sphere, whose faces are flat, and whose points of contact are centred on the middle of the sphere. It is unique up to rotation and has every symmetry the graph has.</p>
-      <p>The page finds it with George Hart’s iteration: move both ends of each edge so that the edge’s point closest to the centre moves towards the unit sphere, recentre, move each vertex towards the planes of its faces, and repeat. Two changes make it reliable. Hart takes the closest point on the whole line through an edge; the page takes it on the edge itself, since otherwise the apex of a flat pyramid runs away to infinity. And each round also continues a little in the direction of the last one, which makes the slow, large-scale adjustments of big shapes many times faster. The shape is relaxed after each operator, so that the next one starts from a good shape, and you can watch the last relaxation happen.</p>
-      <p>The canonical shape can be extreme. In <code>tttttD</code> the twelve big faces take up nearly everything, and the small ones shrink to slivers. Detached faces trades flatness for nicer faces: each round gives every face its own copies of its vertices, moves each face on its own towards the regular polygon that fits it best, and then puts every vertex at the mean of its copies. Vertices whose copies disagree a lot hold their place more firmly in the next round (“stiffness”), so the other vertices of their faces give way instead. The result need not be convex, and with full regularity often is not.</p>
+      <p>The page finds it with George Hart’s iteration: move both ends of each edge so that the edge’s point closest to the centre moves towards the unit sphere, recentre, move each vertex towards the planes of its faces, and repeat. Two changes make it reliable. Hart takes the closest point on the whole line through an edge; the page takes it on the edge itself, since otherwise the apex of a flat pyramid runs away to infinity. And each round also continues a little in the direction of the last one, which makes the slow, large-scale adjustments of big shapes many times faster. The shape is relaxed after each operator, so that the next one starts from a good shape, and the canonical optimizer then finishes the job while you watch.</p>
+      <p>Each optimizer is a button, and each starts from wherever the vertices are, so they can be chained: canonical, then regular faces, then flat faces gives a different shape from regular faces alone. Clicking another button while one runs switches over on the spot; clicking the running one stops it there. The URL records the chain, with the round at which a step was stopped, and since every optimizer is deterministic, a link replays to exactly the same shape. A new polyhedron starts as built, with an empty chain.</p>
+      <p>Two buttons give a fresh start instead of an optimizer: “As built” puts the vertices back where the operators put them, and “Random” scatters them as a cloud of random points, from which the optimizers find their own way (a random start has no symmetry, so none is kept). Three switches act after every round of the next optimizer you start. Centre subtracts the mean position. Orthogonalise makes the x, y and z coordinates uncorrelated by Gram–Schmidt, a shear. Normalise scales x, y and z to the same spread, so the shape cannot collapse into a plane or a line. All three are affine maps, and affine faces commutes with them: what it settles to stays settled. The other optimizers are pushed somewhere else, which is the point.</p>
+      <p>The canonical shape can be extreme. In <code>tttttD</code> the twelve big faces take up nearly everything, and the small ones shrink to slivers. Regular faces tries something else: make every face a regular polygon. Each round gives every face its own copies of its vertices, moves each face on its own towards the regular polygon that fits it best, and then puts every vertex at the mean of its copies. It often succeeds, and the price is convexity: where the corners of regular polygons around a vertex add up to more than a full turn, the vertex has to become a saddle, and the shape folds. The number in its button blends between only flattening each face (0) and making it regular (1). Affine faces is the same scheme with a looser target: each face becomes the affine image of a regular polygon, evenly spaced points on an ellipse, which is where repeatedly taking the midpoints of a polygon’s edges ends up. Triangles are always affine-regular, so they only follow their neighbours. Flat faces moves each vertex towards the planes of its faces and nothing else, so it keeps the shape close to where it was. Face mean puts every vertex at the mean of the centres of its faces, again and again. That is the power method for the matrix doing it, so on its own the shape flattens into a plane or a line, its strongest pattern; with Orthogonalise and Normalise on it keeps three patterns apart, and settles on the spectral layout of the graph, which PolyOp used to make its seeds. Its faces need not be flat.</p>
+      <p>The readable shape asks for something weaker than regular faces, and so can keep the shape convex and flat. A face reads wrong when two of its corners nearly merge, so that a hexagon looks like a pentagon, or when a corner is nearly straight. So it asks that the edges of each face be about equally long and that every corner turn at least 60% as much as a regular polygon’s corner does; how big each face is may vary as much as the graph needs. Where that still leaves a choice, as in <code>czD</code>, whose hexagons can all have equal edges in many ways, it prefers corners that are alike, so that faces come out as regular as the shape allows. It changes the shape in a way that cannot bend a face: when every vertex has three edges, as after a truncation, it moves the planes of the faces and puts each vertex where its three planes meet; when every face is a triangle, it moves the vertices, since a triangle is always flat. Any step that would dent the shape is refused, so it needs a convex shape to start from: the current one if it is convex, else the one the operators built, else it first runs the canonical optimizer until the shape is convex. On other shapes it runs the canonical optimizer instead. On <code>tttttD</code> the faces next to the big ones become even ovals instead of spiky slivers. Not every graph can be made fully readable: where many triangles meet at one corner of a convex shape, some of them must be thin.</p>
       <h3>Symmetry</h3>
-      <p>A symmetry of the graph, an automorphism, is pinned down by where it sends a single half-edge and whether it keeps or reverses the orientation. So the page tries every half-edge that looks alike, grows the map from there along the faces, and keeps the ones that close up. The canonical polyhedron shows every automorphism as a rotation or reflection, so fitting a matrix to each names the point group, shown under the picture as its Schoenflies symbol: <code>Ih</code> for the full symmetry of the icosahedron, <code>I</code> for its rotations alone, <code>D5h</code> for a pentagonal prism. Colouring by symmetry orbit gives faces that the symmetries carry into each other the same colour. For detached faces, “keep the symmetry” averages the shape over all its symmetries every few rounds; that stops it drifting off and makes it settle much sooner.</p>
+      <p>A symmetry of the graph, an automorphism, is pinned down by where it sends a single half-edge and whether it keeps or reverses the orientation. So the page tries every half-edge that looks alike, grows the map from there along the faces, and keeps the ones that close up. The canonical polyhedron shows every automorphism as a rotation or reflection, so fitting a matrix to each names the point group, shown under the picture as its Schoenflies symbol: <code>Ih</code> for the full symmetry of the icosahedron, <code>I</code> for its rotations alone, <code>D5h</code> for a pentagonal prism. Colouring by symmetry orbit gives faces that the symmetries carry into each other the same colour. Every optimizer averages the shape over all its symmetries every few rounds; that stops it drifting off and makes regular faces settle much sooner.</p>
       <h3>Drawing</h3>
       <p>The edges are painted onto the faces rather than built as tubes. Every triangle on the screen knows its distance to the nearby sides of its face, and the pixels closer than the line width take the edge colour. The width is measured on the shape, not on the screen, so an export at 8192 pixels looks like the view, only sharper.</p>
       <h3>Origin</h3>
-      <p>This is a port of PolyOp, an earlier C++ library with Python bindings, rewritten from scratch around half-edges. The detached-faces optimizer comes from there; the spectral realizations do not yet.</p>
+      <p>This is a port of PolyOp, an earlier C++ library with Python bindings, rewritten from scratch around half-edges. The regular-faces optimizer (there called detached faces) comes from there; the spectral realizations do not yet.</p>
     </div>
   </dialog>
 

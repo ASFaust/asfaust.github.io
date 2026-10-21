@@ -4,7 +4,7 @@
 - goal B: stellated and spiky shapes,
 - possibly a starting point for goal A (see [README.md](README.md)).
 
-**Status:** not implemented in the page. It existed in PolyOp (C++). **Prerequisite, done:** automorphisms ([../symmetry.md](../symmetry.md)).
+**Status:** the face-mean layout is reachable in the page by iteration: the "Face mean" optimizer with orthogonalise and normalise on is subspace iteration for the face-mean matrix, converging to its three strongest non-trivial eigenvectors ([regular-faces.md](regular-faces.md#face-mean-2026-10-21)). Browsing other eigenvector triples (stellations) and the other matrices is not implemented. It existed in PolyOp (C++). **Prerequisite, done:** automorphisms ([../symmetry.md](../symmetry.md)).
 
 ## Idea
 
@@ -56,7 +56,7 @@ All of these are cheap, and the page needs them anyway:
 2. **Matrices.** Adjacency, the symmetrized face-mean (`D^{-1/2}`-similarity) and vertex-mean, and a proper Laplacian `D − A` (use its *smallest* non-zero eigenvalues).
 3. **Grouping.** Group eigenvalues into eigenspaces (with a tolerance), and label each with its dimension. Later, use the automorphisms to compute characters, and so the isotypic type.
 4. **Search.** Enumerate the candidate triples (3-dimensional eigenspaces, 2+1 combinations, 1+1+1), run the checks, and classify each as convex, stellated or degenerate.
-5. **Page.** A "Spectral" realization mode with a stepper that browses the triples and shows each one's classification. The convex one can be the default. It can also seed canonical or detached faces.
+5. **Page.** A "Spectral" optimizer button with a stepper that browses the triples and shows each one's classification. The convex one can be the default. It can also seed canonical or detached faces.
 6. **Tests.**
    - Platonic solids, prisms, antiprisms (the PolyOp failure case) and `tI` give convex shapes.
    - The icosahedron's stellated triple is found.

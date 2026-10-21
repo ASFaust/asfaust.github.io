@@ -30,8 +30,8 @@ The identity comes first in `maps`. **Cost:** at most one O(E) growth per candid
   1. For each automorphism, solve `R = (Σ y xᵀ)(Σ x xᵀ)⁻¹` around the vertex centroid, with `y_i = x_φ(i)`.
   2. Make `R` orthogonal by Newton's polar iteration, `R ← (R + R⁻ᵀ)/2`.
 - `symmetrize(pos, maps)`: `x_i ← (1/|G|) Σ_σ R_σᵀ x_φσ(i)`. This is the orthogonal projection onto symmetric shapes for the fitted `R`s. From a disturbed shape, each pass squares the error, because the `R`s are refitted; 3 passes get below 1e-9 (what the test checks).
-- In a realization (`pipeline.js`), `symmetrize` runs every 10 rounds when "keep the symmetry" is on, and only in detached-faces mode:
-  - in detached faces it makes everything settle much sooner ([realization/detached-faces.md](realization/detached-faces.md)),
+- In a realization (`pipeline.js`), `symmetrize` runs every 10 rounds in the regular-faces and affine-faces optimizers, always:
+  - there it makes everything settle much sooner ([realization/regular-faces.md](realization/regular-faces.md)),
   - in canonical it made things about 2× slower, with no fewer rounds ([realization/canonical.md](realization/canonical.md)). The likely cause is that the momentum velocity no longer matches the projected positions.
 
 ## Naming the point group
@@ -56,7 +56,7 @@ The matrices come from the shape *as built* (positions after the build, before t
 
 - **Stats line:** "Ih, 120 symmetries".
 - **Colouring:** "Symmetry orbit", one colour per face orbit.
-- **Realization:** the "Keep the symmetry" checkbox (detached faces only).
+- **Realization:** always kept (the "Keep the symmetry" checkbox was removed 2026-10-21); the readable optimizer averages in its own variables.
 
 ## Open
 

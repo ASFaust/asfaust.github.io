@@ -69,14 +69,14 @@ Roughly in order of value per effort.
 - **Per-face painting:** click a face to colour it, or its whole orbit. Needs a raycast and a face id per drawn triangle; the fan layout already maps triangles to faces. Overrides go in the URL, compressed.
 - **Vertex and edge orbit colourings**, and per-orbit edge ink (needs [symmetry.md](symmetry.md) extras).
 - **Palette authoring extras:** reorder swatches; a "shuffle the assignment" button.
-- **Colour by balance:** a diagnostic colouring from each face's edge ratio, turn, roundness or size ([realization/README.md](realization/README.md#balance)), on a sequential ramp. It would show where weird adapters, slivers and oversized faces are, which the stats line cannot. The formulas are in `balance()` in `tests/lib.mjs`; they would move to `js/` (the worker computes them after `done`).
+- **Colour by balance:** a diagnostic colouring from each face's edge ratio, turn, roundness or size ([realization/README.md](realization/README.md#balance)), on a sequential ramp. It would show where weird adapters, slivers and oversized faces are, which the stats line cannot. Edge ratio and turn are `readability()` in `js/readable.js`; roundness and size are in `balance()` in `tests/lib.mjs`. The worker would compute them after `done`.
 
 ### Geometry styles: render-time topology passes
 These change the mesh that is drawn, not the polyhedron:
 - **Wireframe + subdivide** gives organic tubes. Thicken each edge into a tube around the faces, with each face becoming a hole with an inset rim, then Catmull–Clark subdivide. In Conway terms: inset all faces ("loft"), delete the inner faces, solidify, subdivide. *Refs:* `hfgdhfgjd.png`, `unsstitled.png`.
 - **Detached face tiles:** each face becomes its own prism or pyramid, shrunk and moved out (PolyOp's `detach_faces(scale, move, thickness, pyramidal)`). *Ref:* `untitled.png`.
 - **Smooth-shaded subdivision** of non-convex realizations, for folded, crumpled and pleated looks. *Refs:* `Screenshot from 2026-10-21 16-20-56.png`, `fig5.jpg`, `untitled4.png`.
-- **Stellated and spiky shapes** come from realizations, not rendering: [realization/spectral.md](realization/spectral.md), and star-polygon targets in [realization/detached-faces.md](realization/detached-faces.md). *Refs:* `Figure_10.png`, `Figure_11.png`.
+- **Stellated and spiky shapes** come from realizations, not rendering: [realization/spectral.md](realization/spectral.md), and star-polygon targets in [realization/regular-faces.md](realization/regular-faces.md). *Refs:* `Figure_10.png`, `Figure_11.png`.
 
 ### Viewer
 - Turntable GIF or WebM export.

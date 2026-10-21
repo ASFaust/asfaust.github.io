@@ -20,7 +20,7 @@ const KNOWN = {
 
 for (const [text, [group, order]] of Object.entries(KNOWN)) {
   const t0 = performance.now();
-  const { P } = build(text, 'canonical');
+  const { P } = build(text);
   const sym = automorphisms(P, topology(P));
   const name = pointGroup(fitMatrices(P.pos, sym.maps).Rs);
   expect(sym.maps.length === order, `${text}: ${sym.maps.length} automorphisms, expected ${order}`);
@@ -30,7 +30,7 @@ for (const [text, [group, order]] of Object.entries(KNOWN)) {
 
 // after symmetrizing a disturbed shape, every automorphism maps it exactly onto itself
 for (const text of ['tI', 'gpD', 'J45']) {
-  const { P } = build(text, 'canonical');
+  const { P } = build(text);
   const sym = automorphisms(P, topology(P));
   for (let i = 0; i < P.pos.length; i++) P.pos[i] += 1e-2 * Math.sin(17 * i);
   // the matrices are fitted to the disturbed shape, so each pass squares the error
@@ -56,7 +56,7 @@ for (const text of ['tI', 'gpD', 'J45']) {
 // a big one, for time
 {
   const t0 = performance.now();
-  const { P } = build('tkdkdkD', 'raw');
+  const { P } = build('tkdkdkD', { relax: false });
   const sym = automorphisms(P, topology(P));
   const ms = performance.now() - t0;
   expect(sym.maps.length === 120, `tkdkdkD: ${sym.maps.length} automorphisms`);

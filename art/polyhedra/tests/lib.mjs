@@ -1,18 +1,11 @@
 // Shared helpers for the tests: plain Node, importing the page's modules directly.
 
 import { centroids, normals, topology } from '../js/mesh.js';
+import { readability } from '../js/readable.js';
 
 // a seeded random generator (mulberry32), so the random strings are the same every run
-export function rng(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { rng } from '../js/frame.js';
+export { rng };
 
 const SEEDS = ['T', 'C', 'O', 'D', 'I', 'P5', 'A4', 'Y6', 'U4', 'J17', 'J29', 'J45'];
 const OPS = 'datkjgpcresobmnz';
@@ -52,6 +45,7 @@ const regularArea = (n, l) => n * l * l / (4 * Math.tan(Math.PI / n));
 //   are nearly straight too. It is the unsigned angle between the two edges in space, so that it
 //   means the same on bent faces; a reflex corner is still a visible corner (convexity is counted
 //   apart, by inward and reflex in metrics()).
+// edge and turn come from readability() in js/readable.js, which the readable mode optimizes.
 // Descriptive, not part of the definition (they cannot reach 1 for most graphs):
 // - round: area / area of the regular n-gon with the same perimeter. The regular n-gon has the most
 //   area for its perimeter, so this is 1 for a regular face and falls towards 0 for a sliver.
@@ -59,23 +53,10 @@ const regularArea = (n, l) => n * l * l / (4 * Math.tan(Math.PI / n));
 //   every face of a regular-faced solid, so it says how much bigger or smaller a face is than its
 //   degree alone accounts for.
 export function balance(P, area, perimeter, elen) {
-  const p = P.pos;
-  const edge = new Float64Array(P.nf), turn = new Float64Array(P.nf);
+  const { edge, turn } = readability(P.faces, P.pos);
   const round = new Float64Array(P.nf), size = new Float64Array(P.nf);
   P.faces.forEach((f, i) => {
     const n = f.length;
-    let lmin = Infinity, lmax = 0, tmin = Infinity;
-    for (let k = 0; k < n; k++) {
-      const a = 3 * f[(k + n - 1) % n], b = 3 * f[k], c = 3 * f[(k + 1) % n];
-      const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
-      const vx = p[c] - p[b], vy = p[c + 1] - p[b + 1], vz = p[c + 2] - p[b + 2];
-      const l = Math.hypot(vx, vy, vz);
-      lmin = Math.min(lmin, l); lmax = Math.max(lmax, l);
-      const cross = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
-      tmin = Math.min(tmin, Math.atan2(cross, ux * vx + uy * vy + uz * vz));
-    }
-    edge[i] = lmax / lmin;
-    turn[i] = tmin / (2 * Math.PI / n);
     round[i] = area[i] / regularArea(n, perimeter[i] / n);
     size[i] = Math.sqrt(area[i] / regularArea(n, elen));
   });
@@ -129,6 +110,18 @@ export function metrics(P) {
     area[i] = Math.hypot(ax, ay, az) / 2;
     amin = Math.min(amin, area[i]); amax = Math.max(amax, area[i]);
   });
+  // a reflex corner: the face turns the wrong way there, about its own normal (a twisted or
+  // non-convex face, which the edge test below can miss)
+  let reflexCorners = 0;
+  P.faces.forEach((f, i) => {
+    const d = f.length;
+    for (let k = 0; k < d; k++) {
+      const a = 3 * f[(k + d - 1) % d], b = 3 * f[k], e = 3 * f[(k + 1) % d];
+      const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+      const wx = p[e] - p[b], wy = p[e + 1] - p[b + 1], wz = p[e + 2] - p[b + 2];
+      if ((uy * wz - uz * wy) * n[3 * i] + (uz * wx - ux * wz) * n[3 * i + 1] + (ux * wy - uy * wx) * n[3 * i + 2] < 0) reflexCorners++;
+    }
+  });
   // a reflex edge: the centre of the face on one side lies above the plane of the other
   let reflex = 0;
   for (let h = 0; h < T.nh; h++) {
@@ -140,7 +133,7 @@ export function metrics(P) {
   const { faceEdgeMax, turnMin, roundMin, sizeRatio, degreeSlope } = balance(P, area, perimeter, elen);
   return {
     planarMax: pmax / elen, planarMean: psum / pn / elen,
-    inward, reflex, edgeRatio: emax / emin, areaRatio: amax / amin,
+    inward, reflex, reflexCorners, edgeRatio: emax / emin, areaRatio: amax / amin,
     faceEdgeMax, turnMin, roundMin, sizeRatio, degreeSlope,
   };
 }

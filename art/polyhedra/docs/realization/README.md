@@ -20,16 +20,16 @@ For *any* graph the page can produce, give a shape that is a faithful, good-look
 - **Baseline:** the canonical polyhedron ([canonical.md](canonical.md)). It meets every hard requirement, but it is badly unbalanced on graphs with very unequal faces (`tttttD`, `kkkD`) and slow to converge on them.
 
 ### Goal B: artsy shapes
-For a graph plus some style controls, give a shape that looks interesting.
+For a graph plus some style controls, give a shape that looks interesting. The two axes (owner, 2026-10-21): **non-convexity and symmetry**. Regular faces and affine faces aim at it directly: regular or affine-regular faces, which the graph can usually only have by folding ([regular-faces.md](regular-faces.md)). The controls are the buttons themselves: an init (as built, or random points), then optimizers chained and stopped part-way, each with optional per-round adjustments (centre, orthogonalise, normalise).
 - **Allowed:** non-convex shapes, slightly bent faces, stellations, self-intersections when they look good.
 - **Required:**
-  - controllable: sliders change the shape continuously,
+  - controllable: the chain of optimizers, where each is stopped, and regularity, decide the shape,
   - stable: it settles and does not flicker or explode,
   - reproducible from the URL.
 - Quality is judged by eye. The reference renders in `PolyOp/polyop_ref/` show the taste: folded, crumpled, spiky and stellated shapes, and soft organic ones.
 
 ### Where they meet
-They share machinery: per-face projections, symmetry averaging, the metrics below, and the benchmark. A goal-B method restricted to safe parameters can become a goal-A candidate; detached faces with low regularity is close to the canonical shape. A goal-A method stopped early, or pushed past its target, is often a goal-B effect.
+They share machinery: per-face projections, symmetry averaging, the metrics below, and the benchmark. A goal-B method restricted to safe parameters can become a goal-A candidate; regular faces with low regularity is close to the canonical shape. A goal-A method stopped early, or pushed past its target, is often a goal-B effect.
 
 ## Facts to build on
 
@@ -48,9 +48,9 @@ They share machinery: per-face projections, symmetry averaging, the metrics belo
 ## Vocabulary used in the code and docs
 
 - **round**: one iteration of an iterative realization (`step()`).
-- **settled**: no vertex moves more than `1e-8` of the shape's size in one round (detached faces).
+- **settled**: no vertex moves more than `1e-8` of the shape's size in one round (regular and affine faces).
 - **converged**: faces flat, and edges on the sphere, to `1e-6` (canonical).
-- **spread**: in detached faces, how far the per-face copies of a vertex lie from their merged position.
+- **spread**: in regular and affine faces, how far the per-face copies of a vertex lie from their merged position.
 - **reflex edge**: an edge where the shape is locally concave.
 - **tension**: whatever error remains when a method cannot reach its goal.
 
@@ -91,7 +91,7 @@ The edge ratio allows this, as long as the bridging is gradual. Two faces f and 
 - **Roundness** `round_f = A_f / A_reg(n, L_f/n)`: area over the area of the regular n-gon with the same perimeter. The regular n-gon has the largest area for its perimeter, so this is in (0, 1] and falls towards 0 for slivers. `roundMin` is the smallest.
 - **Size** `s_f = sqrt(A_f / A_reg(n, ℓ̄))`, with `ℓ̄` the mean edge length: the side a regular n-gon of the same area would have, in mean edges. `sizeRatio` is max/min over the faces. `degreeSlope` fits log s against log n (over the mean of each degree): positive means big faces are bigger than regular ones would be, which is the owner's "big faces stay too large".
 
-**Calibration** (2026-10-21), against renders from `tests/screenshot.mjs`. "Detached faces" is the page default: regularity 1, stiffness 2, symmetry on.
+**Calibration** (2026-10-21), against renders from `tests/screenshot.mjs`. "Detached faces" (now regular faces) was run at regularity 1, stiffness 2 (since removed), symmetry on.
 
 | shape | method | areaRatio | faceEdge | turn | round | size× | slope | by eye |
 |---|---|---|---|---|---|---|---|---|
@@ -109,54 +109,60 @@ The ordering matches the eye in every case, and `areaRatio` gets several of them
 **Findings:**
 - **By this definition canonical is already balanced on most of the benchmark list** (edge ratio ≤ 3.4), including `tktkI`, whose sizes vary 14×. It fails on `kkkD` (slivers) and `tttttD` (adapters).
 - **The `tttttD` adapters are not in the wedge itself.** Faces next to the shared 160-gon edges have edge ratio about 9. The worst faces (about 140) are the 24-gons three faces away: their edges next to triangles and hexagons are about 1e-2, but those shared with a 160-gon or a 48-gon are 2e-4 to 7e-4, so each of them reads as roughly a 21-gon. (Unconverged: planar 6e-3 and 600 inward faces at 30k rounds.)
-- **Detached faces is readable everywhere** (edge ratio ≤ 2.0, turn ≥ 0.46), but on `tttttD` only by giving up convexity and flatness. So the goal-A question is now precise: *a convex, flat realization of `tttttD` with every face readable*, if one exists. The wedge argument says the graph decides how many rings are available for the bridging, so a small enough edge ratio may not exist for every graph.
+- **Detached faces is readable everywhere** (edge ratio ≤ 2.0, turn ≥ 0.46), but on `tttttD` only by giving up convexity and flatness.
+- **A convex, flat, readable `tttttD` exists**: optimizing face planes directly gives edge ratio 3.4 and turn 0.59 ([planes.md](planes.md)), now the page's "Readable" mode.
+- **The readable loss does not suit simplicial graphs.** Freed from the convexity boundary, it flattens kis pyramids into flat triangulated patches; the attempt was rejected ([planes.md](planes.md#simplicial-graphs-a-rejected-fix-2026-10-21)).
+- **Not every graph has one.** At a convex vertex of degree d surrounded by triangles, some triangle has edge ratio at least sin 54° / sin(360°/d) if all its corners are readable. That is 6.2 for `kkkkD`, so no convex realization of it is readable ([planes.md](planes.md#a-lower-bound-high-degree-vertices)). Goal A must therefore aim for "as readable as the graph allows", not a fixed threshold.
 
 Other candidates considered: a neighbour-size measure (implied by the edge ratio, see above); the inradius per face (close to `s_f` for round faces, adds nothing).
 
 ## The code interface
 
-A realization is a class with:
-- `constructor(pos, flat, opts)`: `pos` is the `Float64Array` it moves in place; `flat = { fv, fo, edges }` comes from `flatten(P)` in `canonical.js`.
+An optimizer is a class with:
+- `constructor(pos, flat, opts)`: `pos` is the `Float64Array` it moves in place, **starting from whatever is in it** (optimizers chain); `flat = { fv, fo, edges }` comes from `flatten(P)` in `canonical.js`.
 - `step()`: one round; returns the largest vertex move relative to the shape's size.
 - `error()`: an object of method-specific errors, shown in the page's realization note.
 
-`pipeline.js` → `Realization` wraps it with the stopping rule, the per-mode settings and the optional symmetry averaging. To add a method:
+`pipeline.js` → `Realization` wraps it with the stopping rule, its settings and, for regular and affine faces, symmetry averaging. It must be deterministic: the URL replays a chain, including the round each step was stopped at. To add an optimizer:
 1. Implement the class.
-2. Add the mode to `MODES` and to the `Realization` constructor (with its stopping rule).
-3. Add an `<option>` in `index.html`'s "Shape in space" select, plus any sliders, shown only for that mode as in `showLook()`.
-4. Add its line to `realizationNote()` and to the progress measure in `main.js`.
+2. Add its name to `OPTIMIZERS` and to the `Realization` constructor (with its stopping rule).
+3. Add a button with `data-opt` in `index.html`'s `#opts`, and its name to `LABEL` in `main.js`. A parameter goes into the button, as the regularity field does.
+4. Add its line to `realizationNote()` and to `progressOf()` in `main.js`.
 5. Add a paragraph to the Info dialog.
 
-`tests/realize.mjs --mode <name>` then works without changes.
+`tests/realize.mjs --mode <chain>` then works without changes.
 
-`build()` in `pipeline.js` relaxes canonically after every operator (canonical mode: all but the last; faces mode: all). Every method therefore starts from a near-canonical shape, which matters a lot for robustness.
+`build()` in `pipeline.js` relaxes canonically between operators (not after the last), so the shape as built is close to canonical except for the last operator's construction; the default chain is `canonical`.
 
 ## Approaches
 
 | approach | serves | status | file |
 |---|---|---|---|
-| Canonical (Hart's iteration, with fixes) | A: the baseline | implemented, default mode | [canonical.md](canonical.md) |
-| Flat faces only | B, gently: keeps the operators' construction look | implemented (`planar` mode) | [canonical.md](canonical.md#planar-mode) |
-| As built | debugging; sometimes B | implemented (`raw` mode) | — |
-| Detached faces: per-face target, then merge | B now; A candidate with the right target | implemented: similarity-regular target | [detached-faces.md](detached-faces.md) |
-| Other per-face targets: affine-regular, tangential, equal angles, target size, star polygons | A and B | ideas, with analysis | [detached-faces.md](detached-faces.md#per-face-targets), [nozono.md](nozono.md) |
+| Canonical (Hart's iteration, with fixes) | A: the baseline | "Canonical" button, the default chain | [canonical.md](canonical.md) |
+| Flat faces only | B, gently: keeps the shape close to where it was | "Flat faces" button | [canonical.md](canonical.md#planar-mode) |
+| As built | the operators' construction (relaxed between operators); a starting point for chains | "As built" button | — |
+| Regular faces: per-face regular target, then merge | B | "Regular faces" button, with regularity | [regular-faces.md](regular-faces.md) |
+| Affine faces: per-face affine-regular target (nozono's `P_F`), then merge | B | "Affine faces" button | [regular-faces.md](regular-faces.md), [nozono.md](nozono.md) |
+| Face mean: each vertex to the mean of its faces' centres (power iteration) | B; with orthogonalise + normalise, the spectral face-mean layout | "Face mean" button | [regular-faces.md](regular-faces.md#face-mean-2026-10-21), [spectral.md](spectral.md) |
+| Star-polygon target | B: stellations | idea | [regular-faces.md](regular-faces.md#per-face-targets) |
+| Readable: optimize edge ratio and turn over face planes or vertices | A: simple and simplicial graphs | "Readable" button; `tttttD` convex, flat, readable | [planes.md](planes.md) |
 | Spectral: eigenvectors of graph matrices | B (stellations); seeds for A | not implemented | [spectral.md](spectral.md) |
-| Symmetry averaging (a component, not a method) | A and B | implemented; helps detached faces, hurts canonical | [../symmetry.md](../symmetry.md) |
+| Symmetry averaging (a component, not a method) | A and B | always on in regular and affine faces; hurts canonical, so not used there | [../symmetry.md](../symmetry.md) |
 | Artsy deformations (below) | B | ideas | this file |
 
 ### Artsy deformations (small ideas, no file yet)
 These move vertices without changing the graph:
 - **Scrape-off morph**, `scrape_off(t)` from PolyOp: one parameter going from truncate (t < 0.5) to ambo. It needs the old and new graphs mapped onto each other, so it fits better as an operator with a parameter.
-- **Stop early, or add noise**: stop a realization part-way, or add noise and relax a little.
+- **Stop early**: now done by clicking the running optimizer. Adding noise and relaxing a little is not done.
 - **Spherical projection**: put every vertex on the unit sphere; the faces then bend.
 - **Per-face extrusion and insets**: these change the geometry but not the graph, if done as a displacement.
-- **Ramped regularity**: run detached faces with regularity rising from 0 to 1, so tension appears gradually.
+- **Ramped regularity**: now done by chaining Regular faces at rising regularity (0.3, then 0.6, then 1).
 
 Topology-changing styles (wireframe tubes, detached tiles) are rendering, in [../rendering.md](../rendering.md).
 
 ## Open questions (cross-cutting)
 
-1. **What is "balanced"?** Defined now: every corner readable, measured by the edge ratio and turn within each face ([Balance](#balance)). Thresholds: edge ratio 4, turn 0.45 (accepted, revisable). Open: whether every graph has a convex, flat realization within them (`tttttD` is the test case). Size and slope remain descriptive; whether big faces should be smaller than regular is a taste question for goal B, not part of goal A.
+1. **What is "balanced"?** Defined now: every corner readable, measured by the edge ratio and turn within each face ([Balance](#balance)). Thresholds: edge ratio 4, turn 0.45 (accepted, revisable). Settled: not every graph has a convex, flat realization within them (`kkkkD` has none; `tttttD` has one), see [planes.md](planes.md). Size and slope remain descriptive; whether big faces should be smaller than regular is a taste question for goal B, not part of goal A.
 2. **Why are big faces sluggish?** Probably conditioning: a face of degree n couples n vertices, and its averaged pull on each vertex is weak. Ideas to try:
    - weighting by degree,
    - preconditioning,

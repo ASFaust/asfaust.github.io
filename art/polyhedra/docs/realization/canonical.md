@@ -1,6 +1,6 @@
 # Canonical Realization (Hart's Iteration)
 
-**Serves:** goal A, as the baseline (see [README.md](README.md)). **Status:** implemented, the default mode. **Code:** `js/canonical.js` (`Realizer`), driven by `js/pipeline.js`.
+**Serves:** goal A, as the baseline (see [README.md](README.md)). **Status:** implemented, the "Canonical" button and the default chain. **Code:** `js/canonical.js` (`Realizer`), driven by `js/pipeline.js`.
 
 ## Target
 
@@ -32,7 +32,7 @@ The constants are `TANGENT_RATE = 0.2`, `PLANAR_RATE = 0.3` and `MOMENTUM = 0.75
 
 ## Planar mode
 
-The same class with `mode = 'planar'` runs only steps 3 and 4. The shape keeps the proportions the operators gave it, and the faces just flatten. This is good for the look of the construction: Johnson seeds stay regular-faced, and truncations keep their 1/3 cuts.
+The page's "Flat faces" button. The same class with `mode = 'planar'` runs only steps 3 and 4, from wherever the vertices are. The shape keeps the proportions the operators gave it, and the faces just flatten. This is good for the look of the construction: Johnson seeds stay regular-faced, and truncations keep their 1/3 cuts.
 
 ## Reference numbers
 
@@ -68,7 +68,7 @@ Reaching a visual tolerance (about 1e-4) takes far fewer rounds than reaching 1e
 - **Weird adapters** (`tttttD`): faces with edge ratio up to 143, where a face bridges the corner spacing of a 160-gon and that of the small faces. See [README.md](README.md#balance).
 - **High-degree vertices** (`kkkD`): the faces stay flat (they are triangles), but tangency converges very slowly (stuck near `1e-4`). The triangles are slivers (round 0.36, edge ratio 5.7).
 - **Pyramids** of six or more sides are tall spikes (`Y6`: round 0.54); the canonical shape is correct, just not pretty.
-- **Symmetry averaging hurts here:** about 2× slower and no fewer rounds. It is not offered in this mode; see [../symmetry.md](../symmetry.md).
+- **Symmetry averaging hurts here:** about 2× slower and no fewer rounds. It is not used for this optimizer; see [../symmetry.md](../symmetry.md).
 
 ## Ideas
 

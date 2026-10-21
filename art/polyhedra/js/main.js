@@ -2,7 +2,7 @@ import { parse, describe, estimate } from './notation.js';
 import { OPS } from './operators.js';
 import { seed, JOHNSON_NAMES, MAX_N } from './seeds.js';
 import { Viewer, STYLES, COLOURINGS, INKS, MATERIALS } from './viewer.js';
-import { MODES } from './pipeline.js';
+import { OPTIMIZERS, INITS } from './pipeline.js';
 import { PALETTES, paletteHex, linearOf, isHex } from './palettes.js';
 import { obj, stl, download } from './export.js';
 
@@ -11,11 +11,13 @@ const $ = id => document.getElementById(id);
 // ---------- state ----------
 
 const DEFAULTS = {
-  text: 'tkD', mode: 'canonical', regularity: 1, stiffness: 2, symmetric: true,
+  text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', ao: 0.6, aoSize: 1, colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, ink: 'auto', fov: 30, spin: false,
 };
 const MAX_SWATCHES = 16;
+// the longest chain of optimizers kept in the URL
+const MAX_STEPS = 24;
 // the most edges the page will build; more makes the browser struggle
 const MAX_EDGES = 120000;
 let st = { ...DEFAULTS };
@@ -26,10 +28,7 @@ const ONE = (v, list, d) => (list.includes(v) ? v : d);
 function sanitize(s) {
   return {
     text: typeof s.text === 'string' && s.text.trim() ? s.text.replace(/\s+/g, '').slice(0, 60) : DEFAULTS.text,
-    mode: ONE(s.mode, MODES, DEFAULTS.mode),
-    regularity: NUM(s.regularity, 0, 1, DEFAULTS.regularity),
-    stiffness: NUM(s.stiffness, 0, 20, DEFAULTS.stiffness),
-    symmetric: typeof s.symmetric === 'boolean' ? s.symmetric : DEFAULTS.symmetric,
+    steps: (Array.isArray(s.steps) ? s.steps.slice(0, MAX_STEPS) : DEFAULTS.steps).map(t => ({ ...t })),
     style: ONE(s.style, STYLES, DEFAULTS.style),
     material: ONE(s.material, MATERIALS, DEFAULTS.material),
     ao: NUM(s.ao, 0, 1, DEFAULTS.ao),
@@ -47,7 +46,7 @@ function sanitize(s) {
 }
 
 const KEYS = {
-  text: 'n', mode: 'm', regularity: 'rg', stiffness: 'k', symmetric: 'sym', style: 'st', material: 'mat', ao: 'ao', aoSize: 'aos',
+  text: 'n', steps: 'm', style: 'st', material: 'mat', ao: 'ao', aoSize: 'aos',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', ink: 'ink', fov: 'fov', spin: 'spin',
 };
 
@@ -55,6 +54,7 @@ function writeHash() {
   const parts = ['n=' + encodeURIComponent(st.text)];
   for (const [k, short] of Object.entries(KEYS)) {
     if (k === 'text' || st[k] === DEFAULTS[k]) continue;
+    if (k === 'steps') { const m = stepsText(st.steps); if (m !== 'canonical') parts.push('m=' + m); continue; }
     if (k === 'custom') { if (st.palette === 'custom') parts.push('pc=' + st.custom.map(c => c.slice(1)).join(',')); continue; }
     parts.push(short + '=' + (typeof st[k] === 'boolean' ? +st[k] : st[k]));
   }
@@ -75,7 +75,41 @@ function readHash() {
     s[k] = typeof DEFAULTS[k] === 'boolean' && v !== undefined ? v === '1' : v;
   }
   s.custom = q.pc ? q.pc.split(',').map(c => '#' + c) : [];
+  s.steps = q.m === undefined ? undefined : parseSteps(q.m, q.rg);
   return sanitize(s);
+}
+
+// The chain of steps applied since the shape was built, in the URL as
+// "random:83121,affine/n,regular:0.8/co@340": a random start with its seed, then optimizers, each
+// with its regularity after a colon, its adjustments after a slash (c centre, o orthogonalise,
+// n normalise) and after an at sign the round at which it was stopped, so that the chain replays
+// to exactly the same shape. "built" is the empty chain: the shape as built.
+function stepsText(steps) {
+  if (!steps.length) return 'built';
+  return steps.map(t => t.opt + (t.opt === 'random' ? ':' + t.seed : t.opt === 'regular' && t.regularity !== 1 ? ':' + t.regularity : '')
+    + (t.flags ? '/' + t.flags : '') + (t.it !== undefined ? '@' + t.it : '')).join(',');
+}
+
+// Also reads the old single modes: faces (with its regularity rg), planar, raw.
+const OLD = { faces: 'regular', planar: 'flat' };
+function parseSteps(text, rg) {
+  const steps = [];
+  for (const tok of text.split(',')) {
+    const m = tok.match(/^([a-z]+)(?::([\d.]+))?(?:\/([con]+))?(?:@(\d+))?$/);
+    if (!m) continue;
+    if (m[1] === 'built' || m[1] === 'raw') { steps.length = 0; continue; }
+    if (m[1] === 'random') { steps.length = 0; steps.push({ opt: 'random', seed: Math.floor(+m[2]) || 1 }); continue; }
+    const opt = OLD[m[1]] || m[1];
+    if (!OPTIMIZERS.includes(opt)) continue;
+    // the old faces mode started from a canonical shape
+    if (m[1] === 'faces') steps.push({ opt: 'canonical' });
+    const step = { opt };
+    if (opt === 'regular') step.regularity = NUM(m[2] ?? (m[1] === 'faces' ? rg : undefined), 0, 1, 1);
+    if (m[3]) step.flags = flagsText(m[3]);
+    if (m[4] !== undefined) step.it = +m[4];
+    steps.push(step);
+  }
+  return steps;
 }
 
 // ---------- the worker ----------
@@ -98,7 +132,20 @@ function progress(x) {
   bar.parentElement.style.opacity = x > 0 && x < 1 ? 1 : 0;
 }
 
-// Builds and realizes st.text. A new run stops the one before.
+// Every step gets an id, so the worker's reports can be matched to it.
+let nextId = 1;
+const withId = t => (t.id ? t : Object.assign(t, { id: nextId++ }));
+const message = t => ({
+  id: t.id, opt: t.opt, regularity: t.regularity ?? 1, seed: t.seed, it: t.it,
+  flags: { centre: !!t.flags?.includes('c'), orthogonalise: !!t.flags?.includes('o'), normalise: !!t.flags?.includes('n') },
+});
+// the adjustments as letters, in a fixed order, or undefined for none
+const flagsText = s => [...'con'].filter(c => s.includes(c)).join('') || undefined;
+const flagsNow = () => flagsText(($('p-centre').checked ? 'c' : '') + ($('p-orthogonalise').checked ? 'o' : '') + ($('p-normalise').checked ? 'n' : ''));
+let running = null;   // the step the worker is running, or null
+let err0 = null, stage0;
+
+// Builds st.text and replays the chain of optimizers on it. A new run stops the one before.
 function run() {
   let parsed;
   try { parsed = parse(st.text); } catch (e) { return showError(e.message); }
@@ -114,8 +161,9 @@ function run() {
   const slow = setTimeout(() => { if (id === job && !mesh) showStatus('Building…'); }, 150);
   mesh = null;
   symmetry = null;
-  let err0 = null;
+  setRunning(null);
   $('mode-note').textContent = '';
+  showRecipe();
   worker.onmessage = e => {
     if (id !== job) return;
     const m = e.data;
@@ -128,34 +176,88 @@ function run() {
       viewer.setMesh(m);
       showStats();
       showLook();
-      if (st.mode !== 'raw') $('mode-note').textContent = 'Relaxing…';
+      if (!st.steps.length) $('mode-note').textContent = realizationNote(null, {});
     } else if (m.type === 'symmetry') {
       symmetry = m;
       viewer.setSymmetry(m);
       showStats();
       showLook();
+    } else if (m.type === 'start') {
+      setRunning(st.steps.find(t => t.id === m.id) || { id: m.id, opt: 'built' });
+      err0 = null;
+      if (!INITS.includes(running.opt)) $('mode-note').textContent = LABEL[running.opt] + '…';
     } else if (m.type === 'pos') {
       positions = m.pos;
       showPositions();
-      // how far along, on a log scale from the first error to the goal
-      const [err, goal] = st.mode === 'faces' ? [Math.max(m.moved, 1e-12), 1e-8] : [Math.max(m.err.planar, m.err.tangent, 1e-12), 1e-6];
-      if (err0 === null) err0 = err;
-      progress(Math.min(0.99, Math.max(0.02, Math.log(err0 / err) / Math.log(err0 / goal))));
+      if (running && !INITS.includes(running.opt)) progress(progressOf(running.opt, m));
     } else if (m.type === 'done') {
+      const t = st.steps.find(t => t.id === m.id);
+      if (t && m.stopped) { t.it = m.it; writeHash(); }
       progress(1);
-      $('mode-note').textContent = realizationNote(m);
+      $('mode-note').textContent = realizationNote(t, m);
+      setRunning(null);
+      showRecipe();
     } else if (m.type === 'error') {
       clearTimeout(slow);
       showStatus('');
       progress(1);
+      setRunning(null);
       showError(m.message);
     }
   };
   worker.onerror = e => { e.preventDefault(); if (id === job) showError(e.message || 'The worker failed to start.'); };
-  worker.postMessage({
-    text: st.text, mode: st.mode, regularity: st.regularity, stiffness: st.stiffness,
-    symmetric: st.mode === 'faces' && st.symmetric, maxEdges: MAX_EDGES,
-  });
+  worker.postMessage({ type: 'build', text: st.text, maxEdges: MAX_EDGES, steps: st.steps.map(t => message(withId(t))) });
+}
+
+// how far along a step is, on a log scale from its first error to the goal
+function progressOf(opt, m) {
+  const [err, goal] = opt === 'regular' || opt === 'affine' || opt === 'mean' ? [Math.max(m.moved, 1e-12), 1e-8]
+    : opt === 'readable' && m.err.stage === 'optimize' ? [Math.max(m.moved, 1e-12), 1e-6]
+    : [Math.max(m.err.planar || 0, m.err.tangent || 0, 1e-12), 1e-6];
+  // the readable optimizer changes what it measures when it starts optimizing
+  if (err0 === null || m.err.stage !== stage0) { err0 = err; stage0 = m.err.stage; }
+  return Math.min(0.99, Math.max(0.02, Math.log(err0 / err) / Math.log(err0 / goal)));
+}
+
+// One button: an init starts the chain again; an optimizer runs from the current shape, or stops
+// if it is the one running with the same settings.
+function optimize(opt) {
+  if (!worker || !mesh) return;
+  const regularity = NUM($('p-regularity').value, 0, 1, 1), flags = flagsNow();
+  const same = t => t && t.opt === opt && (opt !== 'regular' || t.regularity === regularity) && t.flags === flags;
+  if (running && !INITS.includes(opt) && same(running)) {
+    worker.postMessage({ type: 'stop' });
+    return;
+  }
+  if (INITS.includes(opt)) {
+    const t = withId(opt === 'random' ? { opt, seed: 1 + Math.floor(Math.random() * 999999) } : { opt });
+    st.steps = opt === 'random' ? [t] : [];
+    worker.postMessage({ type: 'run', step: message(t) });
+  } else {
+    const last = st.steps.at(-1);
+    // the same optimizer again, after it finished, would only confirm where it is
+    if (same(last) && last.it === undefined) return;
+    if (st.steps.length >= MAX_STEPS) { $('mode-note').textContent = `At most ${MAX_STEPS} steps in a row; an init starts again.`; return; }
+    const t = withId({ opt, ...(opt === 'regular' ? { regularity } : {}), ...(flags ? { flags } : {}) });
+    st.steps.push(t);
+    worker.postMessage({ type: 'run', step: message(t) });
+  }
+  writeHash();
+  showRecipe();
+}
+
+function setRunning(t) {
+  running = t;
+  for (const b of document.querySelectorAll('.opts button')) b.classList.toggle('running', !!t && b.dataset.opt === t.opt);
+}
+
+const LABEL = { canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces', random: 'Random' };
+const FLAG = { c: 'centred', o: 'orthogonalised', n: 'normalised' };
+function showRecipe() {
+  const steps = st.steps.map(t => LABEL[t.opt] + (t.opt === 'regular' && t.regularity !== 1 ? ' ' + t.regularity : '')
+    + (t.flags ? ', ' + [...t.flags].map(c => FLAG[c]).join(', ') : '')
+    + (t.it !== undefined ? ` (stopped after ${t.it.toLocaleString('en')} rounds)` : ''));
+  $('recipe').textContent = steps.length ? 'Applied: ' + steps.join(' → ') : 'Applied: nothing, as built.';
 }
 
 // The worker sends positions faster than a big shape can be redrawn; only the latest counts.
@@ -172,16 +274,28 @@ function showError(msg) {
 }
 
 const sci = x => x.toExponential(0).replace('e-', '·10⁻').replace(/\d+$/, d => [...d].map(c => '⁰¹²³⁴⁵⁶⁷⁸⁹'[c]).join(''));
-function realizationNote({ it, err }) {
-  if (!err) return 'Vertices where the operators put them; faces need not be flat.';
-  if (st.mode === 'faces') {
-    return `${it < 60000 ? 'Settled' : 'Stopped'} after ${it.toLocaleString('en')} rounds; the copies of a vertex disagree by up to ${err.spread.toFixed(3)} edge lengths.`;
+function realizationNote(t, { it, err }) {
+  if (t && t.opt === 'random') return 'Every vertex at a random point; the faces are tangled and bent. An optimizer brings order.';
+  if (!t || !err) return 'Vertices where the operators put them; faces need not be flat.';
+  const rounds = `${it.toLocaleString('en')} rounds`;
+  if (t.opt === 'mean') {
+    const whitened = t.flags?.includes('o') && t.flags.includes('n');
+    return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}.` + (whitened ? '' : ' Without Orthogonalise and Normalise the shape tends to flatten into a plane or a line.');
+  }
+  if (t.opt === 'regular' || t.opt === 'affine') {
+    return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}; the copies of a vertex disagree by up to ${err.spread.toFixed(3)} edge lengths.`;
+  }
+  if (t.opt === 'readable') {
+    const readable = `edges of a face differ by up to ${err.edge.toFixed(1)}×, and every corner turns at least ${Math.round(100 * err.turn)}% of a regular one`;
+    if (!err.supported) return `This shape has vertices with more than three edges and faces that are not triangles, which the readable optimizer does not handle; it ran the canonical one instead (faces flat to ${sci(err.planar)}): ${readable}.`;
+    if (err.stage === 'start') return `No convex start found after ${rounds}; this is the canonical iteration so far.`;
+    return `${t.it !== undefined ? 'Stopped' : 'Done'} after ${rounds}: convex, faces exactly flat; ${readable}.`;
   }
   const ok = err.planar < 1e-6 && err.tangent < 1e-6;
-  const what = st.mode === 'canonical'
+  const what = t.opt === 'canonical'
     ? `faces flat to ${sci(err.planar)}, edges within ${sci(err.tangent)} of the sphere`
     : `faces flat to ${sci(err.planar)}`;
-  return `${ok ? 'Done' : 'Stopped'} after ${it.toLocaleString('en')} rounds: ${what}.`;
+  return `${ok ? 'Done' : 'Stopped'} after ${rounds}: ${what}.`;
 }
 
 const POLYGON = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'nonagon', 10: 'decagon', 12: 'dodecagon' };
@@ -269,8 +383,10 @@ function syncPickers(p) {
 
 const opsPart = () => st.text.replace(/([TCODI]|[PAYUJ]\d*)$/, '');
 
+// A new polyhedron starts as built: the chain belongs to the old one.
 function setText(t) {
   st.text = t.replace(/\s+/g, '');
+  st.steps = [];
   $('p-notation').value = st.text;
   run();
 }
@@ -300,9 +416,6 @@ function randomText() {
 // ---------- appearance ----------
 
 function showLook() {
-  $('p-mode').value = st.mode;
-  for (const id of ['faces-regularity', 'faces-stiffness', 'faces-symmetric']) $(id).classList.toggle('hidden', st.mode !== 'faces');
-  $('p-symmetric').checked = st.symmetric;
   $('p-material').value = st.material;
   $('p-ao').value = st.ao; $('v-ao').textContent = st.ao ? st.ao.toFixed(2) : 'off';
   $('p-aosize').value = st.aoSize; $('v-aosize').textContent = st.aoSize.toFixed(1) + ' edges';
@@ -310,8 +423,6 @@ function showLook() {
   $('p-aosize').disabled ||= st.ao === 0;
   $('p-palette').value = st.palette;
   for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', st.palette !== 'generated');
-  $('p-regularity').value = st.regularity; $('v-regularity').textContent = st.regularity.toFixed(2);
-  $('p-stiffness').value = st.stiffness; $('v-stiffness').textContent = st.stiffness.toFixed(1);
   $('p-style').value = st.style;
   $('p-colouring').value = st.colouring;
   $('p-hue').value = st.hue; $('v-hue').textContent = st.hue + '°';
@@ -419,8 +530,8 @@ $('p-n').addEventListener('change', () => {
   setText(opsPart() + v + n);
 });
 $('p-named').addEventListener('change', () => { if ($('p-named').value) setText($('p-named').value); });
-$('p-mode').addEventListener('change', () => { st.mode = $('p-mode').value; showLook(); run(); });
-$('p-symmetric').addEventListener('change', () => { st.symmetric = $('p-symmetric').checked; run(); });
+for (const b of document.querySelectorAll('.opts button')) b.addEventListener('click', () => optimize(b.dataset.opt));
+$('p-regularity').addEventListener('keydown', e => { if (e.key === 'Enter') optimize('regular'); });
 $('swatch-add').addEventListener('click', () => {
   st.custom = [...paletteNow(), paletteNow().at(-1)];
   showLook(); writeHash();
@@ -429,10 +540,6 @@ $('swatch-remove').addEventListener('click', () => {
   st.custom = paletteNow().slice(0, -1);
   showLook(); writeHash();
 });
-for (const [id, key] of [['p-regularity', 'regularity'], ['p-stiffness', 'stiffness']]) {
-  $(id).addEventListener('input', () => { st[key] = +$(id).value; showLook(); });
-  $(id).addEventListener('change', run);
-}
 
 $('randomBtn').addEventListener('click', () => setText(randomText()));
 $('resetBtn').addEventListener('click', () => viewer.resetView());
@@ -457,7 +564,9 @@ $('exportBtn').addEventListener('click', async () => {
 $('objBtn').addEventListener('click', () => { if (mesh) download(obj(mesh, positions, st.text), fileName('obj')); });
 $('stlBtn').addEventListener('click', () => { if (mesh) download(stl(mesh, positions), fileName('stl')); });
 
-st = readHash() || { ...DEFAULTS };
+st = readHash() || sanitize({});
+// the regularity field starts at the last value used
+$('p-regularity').value = st.steps.filter(t => t.opt === 'regular').at(-1)?.regularity ?? 1;
 showLook();
 $('p-notation').value = st.text;
 run();
