@@ -11,7 +11,6 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 - **Make the zoom work, look good and run efficiently** (B; later, owner). Zoomed renders already use Metropolis automatically (the Method setting is gone since 2026-10-21). Still open: the Metropolis controls (mutations per chain, burn-in, large step, mutation radii), shown only for zoomed views, should disappear too, with settings chosen by the page. Part of this:
   - measure time per noise level against brute force, in deep zooms,
   - choose chain length, burn-in (probably 0, now that chains start in their stationary distribution) and step sizes automatically,
-  - a reference for pages loaded straight into a zoom (see below).
   → [sampling.md](sampling.md#metropolis)
 
 ## Colouring and normalization
