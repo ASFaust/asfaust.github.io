@@ -20,7 +20,7 @@ It is a JavaScript port of the owner's C++/Python library **PolyOp** (`/home/and
 | [realization/canonical.md](realization/canonical.md) | Approach: canonical polyhedron (midsphere) by Hart's iteration. Implemented. |
 | [realization/regular-faces.md](realization/regular-faces.md) | Regular faces and affine faces: detach faces, make each (affine-)regular, merge. The artsy optimizers. |
 | [realization/planes.md](realization/planes.md) | Approach: optimize readability directly over face planes (simple) or vertices (simplicial). Implemented as the "Readable" optimizer. |
-| [realization/spectral.md](realization/spectral.md) | Approach: eigenvectors of graph matrices. Not implemented yet. |
+| [realization/spectral.md](realization/spectral.md) | Approach: eigenvectors of the adjacency matrix. Implemented as the "Spectral" init (browsable starts, stellations among them). |
 | [realization/nozono.md](realization/nozono.md) | Math note (by the owner): midpoint iteration, affine-regular polygons, rank-3 coplanarity. |
 | [symmetry.md](symmetry.md) | Graph automorphisms, symmetry matrices, point-group names. Implemented. |
 | [rendering.md](rendering.md) | The viewer and the artsy rendering track: materials, AO, colour, ideas. |
@@ -40,7 +40,8 @@ js/hull.js                3D convex hull with coplanar faces merged; builds ever
 js/mesh.js                Polyhedron class, half-edge topology(), ring(), check(), centroids, normals
 js/operators.js           Conway operators on half-edges; OPS table (names, composites, growth formulas)
 js/canonical.js           flatten(), Realizer: Hart's canonicalization and the planar-only mode
-js/faces.js               FaceRelaxer: regular faces, affine faces, face mean
+js/faces.js               FaceRelaxer: regular faces, star faces (starK), affine faces, face mean
+js/spectral.js            SymmetricEigen (eigenvalues, eigenvectors on demand), spectralStarts(), density()
 js/frame.js               the per-round adjustments (centre, orthogonalise, normalise), random positions, rng
 js/readable.js            Readable: the readable realization (planes or vertices, L-BFGS); readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup()
@@ -55,7 +56,7 @@ vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons
 **Data flow.**
 1. `main.run()` parses the text once for instant feedback, then starts a fresh worker for the shape. The previous worker is terminated, so there is never more than one shape.
 2. The worker `build`s the polyhedron (seed → operators, relaxing canonically between operators), keeps those positions for "As built", and posts `mesh` (the faces as flat arrays, tags, census) and then `symmetry` (group name, order, face orbits).
-3. The worker replays the **chain** of steps (`st.steps`): an optional init (`random` with its seed; `built` is the empty chain), then optimizers, each a `Realization` from wherever the previous one left the vertices, posting `start`, `pos` about every 40 ms, and `done` per step.
+3. The worker replays the **chain** of steps (`st.steps`): an optional init (`random` with its seed, `spectral` with its index and matrix, the starts computed once per shape and matrix; `built` is the empty chain), then optimizers, each a `Realization` from wherever the previous one left the vertices, posting `start`, `pos` about every 40 ms, and `done` per step.
 4. An optimizer button sends `run` (or `stop`, when it is the running one). The worker checks for new requests between frames: the running step stops there and reports its round count (`done` with `stopped`), and the new one starts from the current positions.
 5. The main thread applies at most one position update per animation frame.
 
@@ -77,7 +78,7 @@ vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons
   - chamfer corners at 1/3 of the way to the face centroid.
 - **Composite operators** expand at parse time: `e=aa o=jj b=ta m=kj n=kd z=dk s=dg`. `tₙ` and `kₙ` act only on vertices or faces of degree n.
 - **Size cap**: 120,000 edges. It is estimated before building, from the `grow` formulas in `OPS`.
-- **URL hash** holds the whole state: `n` notation, `m` the chain (`random:83121,affine/n,regular:0.8/co@340`: a random init with its seed, then optimizers with regularity after a colon, adjustments after a slash, the round a step was stopped at after `@`; `built` for none; old single modes `faces`, `planar`, `raw` are still read), `st` style, `mat`, `ao`, `aos`, `c` colouring, `pal`, `pc` custom colours, `h`, `ch`, `e`, `ink`, `fov`, `spin`. Values equal to the default are omitted.
+- **URL hash** holds the whole state: `n` notation, `m` the chain (`random:83121,affine/n,regular:0.8/co@340`: a random init with its seed (or `spectral:3`, `spectral:3:laplacian`), then optimizers with regularity (star: pointedness, default 0.3) after a colon, adjustments after a slash, the round a step was stopped at after `@`; `built` for none; old single modes `faces`, `planar`, `raw` are still read), `st` style, `mat`, `ao`, `aos`, `c` colouring, `pal`, `pc` custom colours, `h`, `ch`, `e`, `ink`, `fov`, `spin`. Values equal to the default are omitted.
 
 ## Code style
 
@@ -95,6 +96,7 @@ The page's look and structure follow `art/mandelbrot/`: theme toggle, Info dialo
   - `node tests/topology.mjs`: census of every named solid, validity of 200 random strings, size estimates, `dd`/`rr` involutions.
   - `node tests/symmetry.mjs [-v]`: automorphism counts and point-group names for 36 shapes; symmetrize exactness.
   - `node tests/realize.mjs [--mode chain] [--sym] [--random N] [--max-it N] [--regularity x] [strings…]`: the realization benchmark; the chain is optimizers run in turn from the built shape (`canonical,regular`), metrics after the last; metrics are explained in [realization/README.md](realization/README.md#measuring).
+  - `node tests/spectral.mjs [-v] [strings…]`: the eigensolver, the spectral starts (convex first, the known stellations found), star faces reaching the uniform star polyhedra; with strings, lists their starts.
   - `node tests/planes.mjs [--start raw|canonical] [strings…]`: the readability optimizer for simple and simplicial graphs ([realization/planes.md](realization/planes.md)).
   - `node tests/screenshot.mjs <url> <out.png> [waitMs] [js…]`: headless Chrome over CDP (`google-chrome` with SwiftShader, so it is slow on big shapes). It prints console errors and the values of the given JS expressions; `sleep:ms` waits.
 - `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, `metrics`, and `balance` (per-face roundness and size).
@@ -106,5 +108,5 @@ The page's look and structure follow `art/mandelbrot/`: theme toggle, Info dialo
 - **Relax between operators** (not after the last; the optimizer chain does that). Without it, long strings start from degenerate geometry and canonicalization fails (`pgI`, `cccC`).
 - **Edges painted flat onto faces in the shader**, not tubes and balls; this is the owner's preference. The width is in world units relative to the mean edge length, so exports look the same at every resolution.
 - **Workers are terminated when the shape changes**, so a new shape always starts clean; within one shape, optimizer runs are interrupted between frames instead, so the next one can start from the current positions.
-- **Optimizers are buttons that chain**, not a mode that restarts (owner, 2026-10-21): using them in sequence, and stopping them part-way, is an artsy control. Every optimizer is deterministic, so the chain with stop rounds in the URL replays exactly. The symmetry is kept except after a random init. **Inits** (As built, Random) start the chain again; a new polyhedron empties it (owner). **Adjustments** (centre, orthogonalise, normalise; `frame.js`) are recorded per step when its button is clicked, so a chain replays exactly.
+- **Optimizers are buttons that chain**, not a mode that restarts (owner, 2026-10-21): using them in sequence, and stopping them part-way, is an artsy control. Every optimizer is deterministic, so the chain with stop rounds in the URL replays exactly. The symmetry is kept except after a random init; after a spectral init it is kept under the start's own matrices, which `symmetrize()` refits every time. **Inits** (As built, Random) start the chain again; a new polyhedron empties it (owner). **Adjustments** (centre, orthogonalise, normalise; `frame.js`) are recorded per step when its button is clicked, so a chain replays exactly.
 - The owner works with fresh Claude Code sessions per task. Keep these docs current, and record findings, including negative results, where they belong.

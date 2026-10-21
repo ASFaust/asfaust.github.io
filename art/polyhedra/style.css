@@ -132,6 +132,8 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .toggles label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
 .toggles input { accent-color: var(--color-text-primary); }
 .opts .split button { flex: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.opts .split.double { grid-column: span 2; }
+.param .opts .split select { flex: none; width: auto; min-width: 0; border-left: none; border-radius: 0; }
 .param .opts .split input[type="number"] { width: 3.4rem; flex: none; border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0; text-align: center; }
 
 /* the operator palette: one button per letter, its name underneath */

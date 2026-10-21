@@ -5,8 +5,9 @@
 // in:  { type: 'build', text, maxEdges, steps }    build, then run the steps in order
 //      { type: 'run', step }                       stop what is running, run this from here
 //      { type: 'stop' }                            stop what is running
-// A step is { id, opt, regularity, flags, seed, it }: opt is one of OPTIMIZERS or an init, 'built'
-// (back to the positions as built) or 'random' (random positions from seed); flags are the
+// A step is { id, opt, regularity, pointedness, flags, seed, index, matrix, it }: opt is one of OPTIMIZERS
+// or an init, 'built' (back to the positions as built), 'random' (random positions from seed) or
+// 'spectral' (the index-th spectral start, from 1, of the matrix named by matrix); flags are the
 // adjustments of frame.js; with it, the run stops after that many rounds, so a step that was
 // stopped part-way can be replayed exactly.
 //
@@ -15,7 +16,9 @@
 //      { type: 'symmetry', group, order, faceOrbit, nFaceOrbits }
 //      { type: 'start', id }                        a step starts
 //      { type: 'pos', pos, it, err, moved }         positions as the step moves them, repeatedly
-//      { type: 'done', id, it, err, stopped }       a step finished, or was stopped after it rounds
+//      { type: 'done', id, it, err, stopped }       a step finished, or was stopped after it rounds;
+//                                                   a spectral init adds spectral: { index, count,
+//                                                   values, dims, density, group } or { tooBig }
 //      { type: 'error', message }
 
 import { describe } from './notation.js';
@@ -24,14 +27,18 @@ import { flatten } from './canonical.js';
 import { build, Realization } from './pipeline.js';
 import { automorphisms, fitMatrices, pointGroup } from './symmetry.js';
 import { randomPositions } from './frame.js';
+import { spectralStarts, SPECTRAL_MAX } from './spectral.js';
 
 const FRAME_MS = 40;
 
 const post = (m, t) => self.postMessage(m, t || []);
 const sendPos = (P, extra) => { const pos = Float32Array.from(P.pos); post({ type: 'pos', pos, ...extra }, [pos.buffer]); };
 
-let P = null, flat = null, maps = null, built = null, text = '', raw = null;
-// a random start has no symmetry, so the optimizers stop keeping it until the next 'built'
+// starts: the spectral starts of each matrix, computed when first asked for
+let P = null, flat = null, maps = null, built = null, text = '', raw = null, starts = new Map();
+// a random start has no symmetry, so the optimizers stop keeping it until the next 'built' or
+// 'spectral'; a spectral start is exactly symmetric, though often under other matrices than the
+// shape as built, which symmetrize() refits every time
 let symmetric = true;
 let queue = [], busy = false, interrupt = false;
 
@@ -55,9 +62,29 @@ async function runQueue() {
       post({ type: 'done', id: step.id, it: 0, err: null, stopped: false });
       continue;
     }
+    if (step.opt === 'spectral') {
+      let spectral;
+      if (P.nv > SPECTRAL_MAX) spectral = { tooBig: true };
+      else {
+        const kind = step.matrix || 'adjacency';
+        if (!starts.has(kind)) { post({ type: 'stage', text: 'eigenvectors' }); starts.set(kind, spectralStarts(P, maps, kind)); }
+        const list = starts.get(kind);
+        // past the last start it wraps round, so the stepper can go on
+        const index = list.length ? ((Math.round(step.index || 1) - 1) % list.length + list.length) % list.length + 1 : 0;
+        if (index) {
+          const s = list[index - 1];
+          P.pos.set(s.pos);
+          symmetric = true;
+          sendPos(P, { it: 0, err: null, moved: 0 });
+          spectral = { index, count: list.length, values: s.values, dims: s.dims, density: s.density, group: s.group };
+        } else spectral = { index: 0, count: 0 };
+      }
+      post({ type: 'done', id: step.id, it: 0, err: null, stopped: false, spectral });
+      continue;
+    }
     // the readable optimizer may need the operators' construction without relaxation
     if (step.opt === 'readable' && !raw) raw = build(text, { relax: false }).P.pos;
-    const R = new Realization(P, flat, step.opt, { regularity: step.regularity, flags: step.flags, maps: symmetric ? maps : null, rawPos: raw });
+    const R = new Realization(P, flat, step.opt, { regularity: step.regularity, pointedness: step.pointedness, flags: step.flags, maps: symmetric ? maps : null, rawPos: raw });
     const limit = step.it ?? Infinity;
     let stopped = false;
     while (!R.done && R.it < limit) {
@@ -85,6 +112,7 @@ self.onmessage = e => {
   try {
     let parsed;
     text = m.text;
+    starts = new Map();
     ({ P, parsed } = build(m.text, { maxEdges: m.maxEdges, onStage: s => post({ type: 'stage', text: s }) }));
     const bad = check(P);
     if (bad) throw new Error('the result is not a polyhedron: ' + bad);

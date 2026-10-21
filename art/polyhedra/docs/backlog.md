@@ -6,8 +6,8 @@ The task list only. Every item links to the file that explains it. When you fini
 
 ## Artsy realization (goal B: non-convexity and symmetry; read [realization/README.md](realization/README.md) first)
 
-- **Star-polygon target**: regular faces with the template `ζ^{kj}` (k coprime to n), a deliberate stellation. Prototyped: k must be chosen per face size (or orbit); it does nothing from the convex shape, and from random starts it finds the uniform star polyhedra, but only without symmetry, since those live in another adjacency eigenspace (the spectral item gives that start). Open: how the user chooses k. → [realization/regular-faces.md](realization/regular-faces.md#per-face-targets)
-- **Spectral optimizer** (from PolyOp, owner's observations): the face-mean layout is now reachable (Face mean + orthogonalise + normalise); still open: other matrices, browsing eigenvector triples, stellations; characters and isotypic decomposition belong here. Note the C++ symmetric-solver caveat. → [realization/spectral.md](realization/spectral.md)
+- **Spectral, what is left**: drop mirrored duplicates from the list; eigenspaces of dimension 4+ (accidental merges; `eY6` has no start); characters and isotypic types to name each start; a sparse solver for more than 1,500 vertices. Only if the owner finds a concrete need. → [realization/spectral.md](realization/spectral.md)
+- **Star faces, per-orbit k**: on top of the pointedness rule, once faces can be picked (see per-face painting under Rendering). Does the viewer draw self-intersecting star faces right? Check on renders. → [realization/regular-faces.md](realization/regular-faces.md#per-face-targets)
 - **Subgroup symmetry dial**: keep only some symmetries, for controlled symmetry breaking. → [symmetry.md](symmetry.md#open)
 - **Which graphs suit affine faces**: clean, flat, spiky shapes (`ozJ45`) against collapsed faces (`jsdJ29`, `dA5`); all-quadrilateral graphs first. → [realization/regular-faces.md](realization/regular-faces.md#open-questions)
 - **More optimizer buttons from PolyOp's ideas**: scrape-off morph (truncate ↔ ambo, needs the two graphs mapped), spherical projection. Stopping early and ramped regularity are now done by chaining and stopping buttons. → [realization/README.md](realization/README.md#artsy-deformations-small-ideas-no-file-yet)
@@ -31,6 +31,9 @@ The direction comes from the owner's renders; the techniques are a session's sug
 - Turntable export; orthographic toggle.
 
 ## Done
+
+- **2026-10-21.** Spectral matrix dropdown: adjacency, Laplacian, vertex mean, face mean; the list capped at 100 starts. Survey: the first start is convex on about half of the random strings, Laplacian slightly best, face mean last. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
+- **2026-10-21.** Spectral init (`js/spectral.js`): exactly symmetric starts from whole adjacency eigenspaces, browsable, labelled by density; eigensolver rewritten to compute eigenvectors on demand (6× faster). Star faces optimizer with a pointedness rule for k. From the stellated starts it finds the uniform star polyhedra exactly with the symmetry kept. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
 
 - **2026-10-21.** Face mean optimizer (each vertex to the mean of its faces' centres): power iteration; with orthogonalise and normalise, the spectral face-mean layout. → [realization/regular-faces.md](realization/regular-faces.md#face-mean-2026-10-21)
 

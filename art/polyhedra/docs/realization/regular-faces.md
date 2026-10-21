@@ -88,21 +88,23 @@ The third target: every copy of a face at the face's centroid, so the merge puts
 
 ## Per-face targets
 
-What a "nice" face is decides everything. Implemented: flat, regular, affine. Kept as an idea: star polygons. The others were dropped in the 2026-10-21 backlog audit (no observed problem behind them); the notes stay for reference.
+What a "nice" face is decides everything. Implemented: flat, regular, star, affine. The others were dropped in the 2026-10-21 backlog audit (no observed problem behind them); the notes stay for reference.
 
 | target | parameters per face | always reachable for every face at once? | status |
 |---|---|---|---|
 | **flat only** | — | yes (canonical is one solution) | regularity 0, or the Flat faces button |
 | **regular** | centre, size, turn | no; only finitely many solids | Regular faces |
 | **affine-regular** | centre + two vectors (an ellipse) | not convexly for non-zonohedral even-faced graphs; non-convexly it settles anyway | Affine faces |
-| **star polygon** `{n/k}` | template `ζ^{kj}` | — | idea, goal B: deliberate stellation |
+| **star polygon** `{n/k}` | template `ζ^{kj}`, k from the pointedness | not from a convex start; from a stellated spectral start, yes on the uniform star polyhedra | Star faces |
 | tangential | lines tangent to one circle | yes; canonical has it | dropped |
 | equiangular | edge directions turn by 2π/n | not known | dropped |
 | target size | regular, with size from the degree | no | dropped |
 
 **Star polygon:** the regular target with `ζᵏ` replaced by `ζ^{kj}`, `gcd(k, n) = 1` (nozono.md §4, template view). Faces are wound the other way, so the result is a stellation.
 
-**Prototype (2026-10-21, scratch script, not in the page):** the one-line template change in `regular()`, with k chosen per face size (`5:2` means pentagons become `{5/2}`).
+**In the page (2026-10-21)** as the "Star faces" button with a pointedness field t (0 to ½, default 0.3): a face of n sides takes the star `{n/k}` with k nearest t·n among 1 and the valid stars, ties going to the more pointed (`starK` in `js/faces.js`). The owner could not choose between one k for all faces, this rule, and k per face orbit; this rule was the session's recommendation, since one k does nothing on most faces and per-orbit choice needs a face-picking UI first (it could be added on top). Regularity is always 1. With a spectral start the symmetry is kept and the uniform star polyhedra come out exactly ([spectral.md](spectral.md#findings-2026-10-21)). Rendering: star faces are drawn by the viewer's usual triangulation, which is not checked for self-intersecting polygons.
+
+**Prototype (2026-10-21, scratch script, before the page had it):** the one-line template change in `regular()`, with k chosen per face size (`5:2` means pentagons become `{5/2}`).
 - **k has to depend on the face**: a valid star needs `gcd(k, n) = 1` and `1 < k < n/2`, so triangles, squares and hexagons have none, pentagons and octagons have one (`{5/2}`, `{8/3}`), and heptagons have two (`{7/2}`, `{7/3}`). Any rule has to work per face size, or per face orbit: an automorphism keeps n, and it keeps k too, also when it reverses orientation. A different k on single faces of one orbit breaks the symmetry.
 - **From the convex shape nothing happens**: a regular face has no content in Fourier mode k, so the fit is 0, every copy goes to the centroid, and the round is face mean, of which Platonic solids are fixed points (`D 5:2`: 5 rounds, spread 0.85, still the dodecahedron). A jitter of 0.05 does not get out (spread 0.85 after 180 rounds). So the convex shape is an attractor, not just an unstable fixed point.
 - **From random starts, without symmetry, it finds the uniform star polyhedra exactly**: `D 5:2` gives the great stellated dodecahedron (seed 2: spread 0, edge ratio 1, all radii 1, 30 reflex edges), `tD 10:3` gives the great stellated truncated dodecahedron (`{10/3}` + triangles; 3 of 3 seeds). Other seeds end bent (`D 5:2` seeds 1 and 3: spread 0.10, planar 0.16), and `aD 5:2` gave non-uniform solutions (radii 0.92–1.07).

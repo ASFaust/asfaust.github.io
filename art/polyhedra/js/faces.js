@@ -5,6 +5,10 @@
 // What "nice" means is the target:
 // - 'regular': flat, and pulled towards the regular polygon that fits it best (regularity 0 only
 //   flattens, 1 replaces it by that regular polygon);
+// - 'star': replaced by the star polygon {n/k} that fits it best, with k from the pointedness
+//   (starK below; k = 1 is the regular polygon). A convex face has nothing of a star in it, so
+//   from a convex shape every copy goes to the centroid and nothing happens: start from a spectral
+//   layout that is already stellated (docs/realization/regular-faces.md#per-face-targets);
 // - 'affine': replaced by the affine-regular polygon that fits it best, an evenly spaced polygon
 //   on an ellipse (docs/realization/nozono.md). Triangles are always affine-regular, so they
 //   only follow their neighbours;
@@ -16,12 +20,25 @@
 //   the spectral face-mean layout.
 // The result need not be convex, and often is not: that is the point of it.
 
+// The k of the star {n/k} a face of n sides takes at pointedness t (0 to ½): the k nearest t·n
+// among 1 and the true stars, k coprime to n and 1 < k < n/2, ties going to the more pointed one.
+// Triangles, squares and hexagons have no star and stay regular; at t = 0.3 pentagons become
+// {5/2}, octagons {8/3} and decagons {10/3}.
+export function starK(n, t) {
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  let best = 1;
+  for (let k = 2; 2 * k < n; k++) if (gcd(k, n) === 1 && Math.abs(t * n - k) <= Math.abs(t * n - best)) best = k;
+  return best;
+}
+
 export class FaceRelaxer {
-  constructor(pos, { fv, fo }, { target = 'regular', regularity = 1 } = {}) {
+  constructor(pos, { fv, fo }, { target = 'regular', regularity = 1, pointedness = 0.3 } = {}) {
     this.pos = pos;
     this.fv = fv; this.fo = fo;
     this.target = target;
-    this.regularity = regularity;
+    this.regularity = target === 'star' ? 1 : regularity;
+    this.k = new Map();
+    if (target === 'star') for (let f = 0; f < fo.length - 1; f++) { const n = fo[f + 1] - fo[f]; this.k.set(n, starK(n, pointedness)); }
     const nv = pos.length / 3;
     this.sum = new Float64Array(pos.length);    // sum of the copies of each vertex
     this.count = new Float64Array(nv);          // number of faces at each vertex
@@ -37,7 +54,7 @@ export class FaceRelaxer {
     for (let f = 0; f < fo.length - 1; f++) {
       if (this.target === 'affine') this.affine(fo[f], fo[f + 1]);
       else if (this.target === 'mean') this.mean(fo[f], fo[f + 1]);
-      else this.regular(fo[f], fo[f + 1]);
+      else this.regular(fo[f], fo[f + 1], this.k.get(fo[f + 1] - fo[f]) || 1);
     }
 
     // merge
@@ -72,8 +89,9 @@ export class FaceRelaxer {
   // The copies of face s..t: its corners projected onto its plane (through the centroid, along the
   // Newell normal), then moved towards the regular polygon that fits them best. In complex
   // coordinates z_k in the plane, centred on the centroid, that polygon is a·ζᵏ with ζ = e^{2πi/n}
-  // and a = (1/n) Σ z_k conj(ζᵏ), the least-squares fit: the Fourier coefficient of mode 1.
-  regular(s, t) {
+  // and a = (1/n) Σ z_k conj(ζᵏ), the least-squares fit: the Fourier coefficient of mode 1. The star
+  // {n/m} is the same with ζ^{mk} for ζᵏ: mode m.
+  regular(s, t, m = 1) {
     const p = this.pos, fv = this.fv, q = this.copies, n = t - s, alpha = this.regularity;
     let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
     for (let i = s; i < t; i++) {
@@ -99,7 +117,7 @@ export class FaceRelaxer {
       const a = 3 * fv[i];
       const x = (p[a] - cx) * ex + (p[a + 1] - cy) * ey + (p[a + 2] - cz) * ez;
       const y = (p[a] - cx) * fx + (p[a + 1] - cy) * fy + (p[a + 2] - cz) * fz;
-      const th = 2 * Math.PI * k / n, c = Math.cos(th), sn = Math.sin(th);
+      const th = 2 * Math.PI * (m * k % n) / n, c = Math.cos(th), sn = Math.sin(th);
       ar += x * c + y * sn; ai += y * c - x * sn;
     }
     ar /= n; ai /= n;
@@ -107,7 +125,7 @@ export class FaceRelaxer {
       const a = 3 * fv[i];
       const x = (p[a] - cx) * ex + (p[a + 1] - cy) * ey + (p[a + 2] - cz) * ez;
       const y = (p[a] - cx) * fx + (p[a + 1] - cy) * fy + (p[a + 2] - cz) * fz;
-      const th = 2 * Math.PI * k / n, c = Math.cos(th), sn = Math.sin(th);
+      const th = 2 * Math.PI * (m * k % n) / n, c = Math.cos(th), sn = Math.sin(th);
       // between the flattened corner and the regular one
       const u = x + alpha * (ar * c - ai * sn - x), v = y + alpha * (ar * sn + ai * c - y);
       q[3 * i] = cx + u * ex + v * fx;

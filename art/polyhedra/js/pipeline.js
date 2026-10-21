@@ -21,10 +21,10 @@ const SYM_EVERY = 10;
 
 // The optimizers the page offers. Each starts from wherever the vertices are, so they can be used
 // one after another. The inits put the vertices somewhere to start from.
-export const OPTIMIZERS = ['canonical', 'readable', 'regular', 'affine', 'mean', 'flat'];
-export const INITS = ['built', 'random'];
+export const OPTIMIZERS = ['canonical', 'readable', 'regular', 'star', 'affine', 'mean', 'flat'];
+export const INITS = ['built', 'random', 'spectral'];
 // the optimizers of faces.js: detached faces with a per-face target
-const FACES = ['regular', 'affine', 'mean'];
+const FACES = ['regular', 'star', 'affine', 'mean'];
 
 // Parses and builds the polyhedron, relaxing canonically between operators (not after the last), so
 // that each operator starts from a good shape: without it long strings start from degenerate
@@ -53,17 +53,17 @@ export function relaxCanonical(P, tol = STEP_TOL, max = STEP_MAX) {
 }
 
 // One optimizer run on P in place, from its current positions, one round per step(). With maps
-// (the automorphisms), regular and affine faces make the shape exactly symmetric every few rounds,
+// (the automorphisms), the optimizers of faces.js make the shape exactly symmetric every few rounds,
 // which stops them drifting and makes them settle much sooner. Canonical and flat keep the symmetry
 // by themselves, and averaging fights their momentum (2× slower); readable keeps its own.
 export class Realization {
   // rawPos: the operators' construction without any relaxation, a possible start for readable;
   // flags: the adjustments of frame.js to apply after every round (not to readable, which keeps
   // its own variables)
-  constructor(P, flat, opt, { regularity = 1, maps = null, rawPos = null, flags = null } = {}) {
+  constructor(P, flat, opt, { regularity = 1, pointedness = 0.3, maps = null, rawPos = null, flags = null } = {}) {
     this.P = P;
     this.opt = opt;
-    this.R = FACES.includes(opt) ? new FaceRelaxer(P.pos, flat, { target: opt, regularity })
+    this.R = FACES.includes(opt) ? new FaceRelaxer(P.pos, flat, { target: opt, regularity, pointedness })
       : opt === 'readable' ? new Readable(P, { maps, rawPos })
       : new Realizer(P.pos, flat, opt === 'flat' ? 'planar' : 'canonical');
     this.maps = maps && maps.length > 1 && FACES.includes(opt) ? maps : null;

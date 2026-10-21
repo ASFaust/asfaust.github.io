@@ -3,6 +3,7 @@ import { OPS } from './operators.js';
 import { seed, JOHNSON_NAMES, MAX_N } from './seeds.js';
 import { Viewer, STYLES, COLOURINGS, INKS, MATERIALS } from './viewer.js';
 import { OPTIMIZERS, INITS } from './pipeline.js';
+import { SPECTRAL_MAX, MATRICES } from './spectral.js';
 import { PALETTES, paletteHex, linearOf, isHex } from './palettes.js';
 import { obj, stl, download } from './export.js';
 
@@ -80,13 +81,15 @@ function readHash() {
 }
 
 // The chain of steps applied since the shape was built, in the URL as
-// "random:83121,affine/n,regular:0.8/co@340": a random start with its seed, then optimizers, each
-// with its regularity after a colon, its adjustments after a slash (c centre, o orthogonalise,
+// "random:83121,affine/n,regular:0.8/co@340": a random start with its seed (or "spectral:3", the
+// third spectral start, "spectral:3:facemean" from another matrix than the adjacency), then optimizers, each with its regularity (star: its pointedness) after a
+// colon, its adjustments after a slash (c centre, o orthogonalise,
 // n normalise) and after an at sign the round at which it was stopped, so that the chain replays
 // to exactly the same shape. "built" is the empty chain: the shape as built.
 function stepsText(steps) {
   if (!steps.length) return 'built';
-  return steps.map(t => t.opt + (t.opt === 'random' ? ':' + t.seed : t.opt === 'regular' && t.regularity !== 1 ? ':' + t.regularity : '')
+  return steps.map(t => t.opt + (t.opt === 'random' ? ':' + t.seed : t.opt === 'spectral' ? ':' + t.index + (t.matrix && t.matrix !== 'adjacency' ? ':' + t.matrix : '')
+    : t.opt === 'regular' && t.regularity !== 1 ? ':' + t.regularity : t.opt === 'star' && t.pointedness !== 0.3 ? ':' + t.pointedness : '')
     + (t.flags ? '/' + t.flags : '') + (t.it !== undefined ? '@' + t.it : '')).join(',');
 }
 
@@ -95,18 +98,20 @@ const OLD = { faces: 'regular', planar: 'flat' };
 function parseSteps(text, rg) {
   const steps = [];
   for (const tok of text.split(',')) {
-    const m = tok.match(/^([a-z]+)(?::([\d.]+))?(?:\/([con]+))?(?:@(\d+))?$/);
+    const m = tok.match(/^([a-z]+)(?::([\d.]+))?(?::([a-z]+))?(?:\/([con]+))?(?:@(\d+))?$/);
     if (!m) continue;
     if (m[1] === 'built' || m[1] === 'raw') { steps.length = 0; continue; }
     if (m[1] === 'random') { steps.length = 0; steps.push({ opt: 'random', seed: Math.floor(+m[2]) || 1 }); continue; }
+    if (m[1] === 'spectral') { steps.length = 0; steps.push({ opt: 'spectral', index: Math.floor(+m[2]) || 1, matrix: ONE(m[3], MATRICES, 'adjacency') }); continue; }
     const opt = OLD[m[1]] || m[1];
     if (!OPTIMIZERS.includes(opt)) continue;
     // the old faces mode started from a canonical shape
     if (m[1] === 'faces') steps.push({ opt: 'canonical' });
     const step = { opt };
     if (opt === 'regular') step.regularity = NUM(m[2] ?? (m[1] === 'faces' ? rg : undefined), 0, 1, 1);
-    if (m[3]) step.flags = flagsText(m[3]);
-    if (m[4] !== undefined) step.it = +m[4];
+    if (opt === 'star') step.pointedness = NUM(m[2], 0, 0.5, 0.3);
+    if (m[4]) step.flags = flagsText(m[4]);
+    if (m[5] !== undefined) step.it = +m[5];
     steps.push(step);
   }
   return steps;
@@ -136,7 +141,7 @@ function progress(x) {
 let nextId = 1;
 const withId = t => (t.id ? t : Object.assign(t, { id: nextId++ }));
 const message = t => ({
-  id: t.id, opt: t.opt, regularity: t.regularity ?? 1, seed: t.seed, it: t.it,
+  id: t.id, opt: t.opt, regularity: t.regularity ?? 1, pointedness: t.pointedness ?? 0.3, seed: t.seed, index: t.index, matrix: t.matrix, it: t.it,
   flags: { centre: !!t.flags?.includes('c'), orthogonalise: !!t.flags?.includes('o'), normalise: !!t.flags?.includes('n') },
 });
 // the adjustments as letters, in a fixed order, or undefined for none
@@ -186,6 +191,7 @@ function run() {
       setRunning(st.steps.find(t => t.id === m.id) || { id: m.id, opt: 'built' });
       err0 = null;
       if (!INITS.includes(running.opt)) $('mode-note').textContent = LABEL[running.opt] + '…';
+      else if (running.opt === 'spectral') $('mode-note').textContent = 'Computing the eigenvectors…';
     } else if (m.type === 'pos') {
       positions = m.pos;
       showPositions();
@@ -193,6 +199,9 @@ function run() {
     } else if (m.type === 'done') {
       const t = st.steps.find(t => t.id === m.id);
       if (t && m.stopped) { t.it = m.it; writeHash(); }
+      // the worker wraps the index round past the last start
+      if (t && m.spectral?.index && m.spectral.index !== t.index) { t.index = m.spectral.index; writeHash(); }
+      if (m.spectral?.index) $('p-spectral').value = m.spectral.index;
       progress(1);
       $('mode-note').textContent = realizationNote(t, m);
       setRunning(null);
@@ -211,7 +220,7 @@ function run() {
 
 // how far along a step is, on a log scale from its first error to the goal
 function progressOf(opt, m) {
-  const [err, goal] = opt === 'regular' || opt === 'affine' || opt === 'mean' ? [Math.max(m.moved, 1e-12), 1e-8]
+  const [err, goal] = opt === 'regular' || opt === 'star' || opt === 'affine' || opt === 'mean' ? [Math.max(m.moved, 1e-12), 1e-8]
     : opt === 'readable' && m.err.stage === 'optimize' ? [Math.max(m.moved, 1e-12), 1e-6]
     : [Math.max(m.err.planar || 0, m.err.tangent || 0, 1e-12), 1e-6];
   // the readable optimizer changes what it measures when it starts optimizing
@@ -223,22 +232,24 @@ function progressOf(opt, m) {
 // if it is the one running with the same settings.
 function optimize(opt) {
   if (!worker || !mesh) return;
-  const regularity = NUM($('p-regularity').value, 0, 1, 1), flags = flagsNow();
-  const same = t => t && t.opt === opt && (opt !== 'regular' || t.regularity === regularity) && t.flags === flags;
+  const regularity = NUM($('p-regularity').value, 0, 1, 1), pointedness = NUM($('p-pointedness').value, 0, 0.5, 0.3), flags = flagsNow();
+  const same = t => t && t.opt === opt && (opt !== 'regular' || t.regularity === regularity)
+    && (opt !== 'star' || t.pointedness === pointedness) && t.flags === flags;
   if (running && !INITS.includes(opt) && same(running)) {
     worker.postMessage({ type: 'stop' });
     return;
   }
   if (INITS.includes(opt)) {
-    const t = withId(opt === 'random' ? { opt, seed: 1 + Math.floor(Math.random() * 999999) } : { opt });
-    st.steps = opt === 'random' ? [t] : [];
+    const t = withId(opt === 'random' ? { opt, seed: 1 + Math.floor(Math.random() * 999999) }
+      : opt === 'spectral' ? { opt, index: Math.round(NUM($('p-spectral').value, 1, 9999, 1)), matrix: ONE($('p-matrix').value, MATRICES, 'adjacency') } : { opt });
+    st.steps = opt === 'built' ? [] : [t];
     worker.postMessage({ type: 'run', step: message(t) });
   } else {
     const last = st.steps.at(-1);
     // the same optimizer again, after it finished, would only confirm where it is
     if (same(last) && last.it === undefined) return;
     if (st.steps.length >= MAX_STEPS) { $('mode-note').textContent = `At most ${MAX_STEPS} steps in a row; an init starts again.`; return; }
-    const t = withId({ opt, ...(opt === 'regular' ? { regularity } : {}), ...(flags ? { flags } : {}) });
+    const t = withId({ opt, ...(opt === 'regular' ? { regularity } : {}), ...(opt === 'star' ? { pointedness } : {}), ...(flags ? { flags } : {}) });
     st.steps.push(t);
     worker.postMessage({ type: 'run', step: message(t) });
   }
@@ -251,10 +262,11 @@ function setRunning(t) {
   for (const b of document.querySelectorAll('.opts button')) b.classList.toggle('running', !!t && b.dataset.opt === t.opt);
 }
 
-const LABEL = { canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces', random: 'Random' };
+const LABEL = { canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', star: 'Star faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces', random: 'Random', spectral: 'Spectral' };
 const FLAG = { c: 'centred', o: 'orthogonalised', n: 'normalised' };
 function showRecipe() {
   const steps = st.steps.map(t => LABEL[t.opt] + (t.opt === 'regular' && t.regularity !== 1 ? ' ' + t.regularity : '')
+    + (t.opt === 'star' ? ' ' + t.pointedness : '') + (t.opt === 'spectral' ? ` ${t.index} (${MATRIX[t.matrix || 'adjacency']})` : '')
     + (t.flags ? ', ' + [...t.flags].map(c => FLAG[c]).join(', ') : '')
     + (t.it !== undefined ? ` (stopped after ${t.it.toLocaleString('en')} rounds)` : ''));
   $('recipe').textContent = steps.length ? 'Applied: ' + steps.join(' → ') : 'Applied: nothing, as built.';
@@ -274,16 +286,20 @@ function showError(msg) {
 }
 
 const sci = x => x.toExponential(0).replace('e-', '·10⁻').replace(/\d+$/, d => [...d].map(c => '⁰¹²³⁴⁵⁶⁷⁸⁹'[c]).join(''));
-function realizationNote(t, { it, err }) {
+function realizationNote(t, m) {
+  const { it, err } = m;
   if (t && t.opt === 'random') return 'Every vertex at a random point; the faces are tangled and bent. An optimizer brings order.';
+  if (t && t.opt === 'spectral') return spectralNote(m.spectral, t.matrix);
   if (!t || !err) return 'Vertices where the operators put them; faces need not be flat.';
   const rounds = `${it.toLocaleString('en')} rounds`;
   if (t.opt === 'mean') {
     const whitened = t.flags?.includes('o') && t.flags.includes('n');
     return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}.` + (whitened ? '' : ' Without Orthogonalise and Normalise the shape tends to flatten into a plane or a line.');
   }
-  if (t.opt === 'regular' || t.opt === 'affine') {
-    return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}; the copies of a vertex disagree by up to ${err.spread.toFixed(3)} edge lengths.`;
+  if (t.opt === 'regular' || t.opt === 'star' || t.opt === 'affine') {
+    // a convex face has nothing of a star in it, so the star target cannot leave a convex shape
+    const hint = t.opt === 'star' && err.spread > 0.01 ? ' Star faces needs a start that is stellated already: try the spectral layouts that wind more than once.' : '';
+    return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}; the copies of a vertex disagree by up to ${err.spread.toFixed(3)} edge lengths.` + hint;
   }
   if (t.opt === 'readable') {
     const readable = `edges of a face differ by up to ${err.edge.toFixed(1)}×, and every corner turns at least ${Math.round(100 * err.turn)}% of a regular one`;
@@ -307,6 +323,23 @@ function showStats() {
   const sym = symmetry ? ` · ${symmetry.group}, ${symmetry.order} symmetries` : '';
   $('stats').textContent = `${m.nv.toLocaleString('en')} vertices · ${m.ne.toLocaleString('en')} edges · ${m.nf.toLocaleString('en')} faces: ${faces}${sym}`;
   $('stats').title = $('stats').textContent;
+}
+
+const signed = x => (x < 0 ? '−' : '') + Math.abs(x).toFixed(3).replace(/\.?0+$/, '');
+const MATRIX = { adjacency: 'adjacency', laplacian: 'Laplacian', vertexmean: 'vertex mean', facemean: 'face mean' };
+const MATRIX_LONG = {
+  adjacency: 'the adjacency matrix', laplacian: 'the Laplacian D − A',
+  vertexmean: 'the vertex-mean matrix (each vertex to the mean of its neighbours)', facemean: 'the face-mean matrix (each vertex to the mean of its faces’ centres)',
+};
+function spectralNote(s, matrix = 'adjacency') {
+  if (!s) return '';
+  if (s.tooBig) return `Spectral starts need the eigenvectors of a matrix as large as the number of vertices; the page computes them for up to ${SPECTRAL_MAX.toLocaleString('en')} vertices.`;
+  if (!s.count) return 'No layout from the eigenvectors shows every symmetry of this graph; the shape is unchanged.';
+  const ev = s.values.map((v, i) => signed(v) + (s.dims[i] > 1 ? ` (${s.dims[i]} eigenvectors)` : '')).join(', ');
+  const d = Math.round(s.density), whole = Math.abs(s.density - d) < 0.01;
+  const wind = !whole ? `its faces are not flat (density ${s.density.toFixed(2)})`
+    : d === 1 ? 'it winds once round its centre, as a convex shape does' : `it winds ${d} times round its centre: a stellation`;
+  return `Layout ${s.index} of ${s.count}, from eigenvalue${s.values.length > 1 ? 's' : ''} ${ev} of ${MATRIX_LONG[matrix]}; symmetry ${s.group}; ${wind}. Change the number for the others.`;
 }
 
 // ---------- the shape panel ----------
@@ -532,6 +565,11 @@ $('p-n').addEventListener('change', () => {
 $('p-named').addEventListener('change', () => { if ($('p-named').value) setText($('p-named').value); });
 for (const b of document.querySelectorAll('.opts button')) b.addEventListener('click', () => optimize(b.dataset.opt));
 $('p-regularity').addEventListener('keydown', e => { if (e.key === 'Enter') optimize('regular'); });
+$('p-pointedness').addEventListener('keydown', e => { if (e.key === 'Enter') optimize('star'); });
+// stepping the number browses the spectral starts
+$('p-spectral').addEventListener('change', () => optimize('spectral'));
+// another matrix has another list, which starts again from its smoothest layout
+$('p-matrix').addEventListener('change', () => { $('p-spectral').value = 1; optimize('spectral'); });
 $('swatch-add').addEventListener('click', () => {
   st.custom = [...paletteNow(), paletteNow().at(-1)];
   showLook(); writeHash();
@@ -567,6 +605,9 @@ $('stlBtn').addEventListener('click', () => { if (mesh) download(stl(mesh, posit
 st = readHash() || sanitize({});
 // the regularity field starts at the last value used
 $('p-regularity').value = st.steps.filter(t => t.opt === 'regular').at(-1)?.regularity ?? 1;
+$('p-pointedness').value = st.steps.filter(t => t.opt === 'star').at(-1)?.pointedness ?? 0.3;
+$('p-spectral').value = st.steps.find(t => t.opt === 'spectral')?.index ?? 1;
+$('p-matrix').value = st.steps.find(t => t.opt === 'spectral')?.matrix ?? 'adjacency';
 showLook();
 $('p-notation').value = st.text;
 run();
