@@ -56,4 +56,9 @@ export const PRESETS = [
     note: 'Example 11.1 of the toolbox.' },
   { group: 'Non-free groups', name: 'Non-free fronds', ta: '1.9247306-0.0449408i', tb: '1.91+0.2i', nonfree: true, altroot: true, levmax: 3000,
     note: 'A non-free group with complex traces for both generators.' },
+
+  { group: 'Elliptic commutators', name: 'Hexagonal whorls', ta: '1.91+0.05i', tb: '1.89-0.1i', comm: 'order3', symm: true,
+    note: 'Fig. 26g: (abAB)³ = I. In the symmetric normalization the commutator of order three turns the set into six-fold spirals.' },
+  { group: 'Elliptic commutators', name: 'Five-fold links', ta: 'i', tb: '1.41421356237', comm: 'pent', levmax: 20, clip: true,
+    note: 'Fig. 26f centre: b has order four and the commutator’s square root order five, tr abAB = 2 + 4cos²(π/5). The automaton only converges with short words, so branches at the limit are skipped.' },
 ];

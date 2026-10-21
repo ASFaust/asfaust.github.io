@@ -69,6 +69,7 @@ Roughly in order of value per effort.
 - **Per-face painting:** click a face to colour it, or its whole orbit. Needs a raycast and a face id per drawn triangle; the fan layout already maps triangles to faces. Overrides go in the URL, compressed.
 - **Vertex and edge orbit colourings**, and per-orbit edge ink (needs [symmetry.md](symmetry.md) extras).
 - **Palette authoring extras:** reorder swatches; a "shuffle the assignment" button.
+- **Colour by balance:** a diagnostic colouring from each face's edge ratio, turn, roundness or size ([realization/README.md](realization/README.md#balance)), on a sequential ramp. It would show where weird adapters, slivers and oversized faces are, which the stats line cannot. The formulas are in `balance()` in `tests/lib.mjs`; they would move to `js/` (the worker computes them after `done`).
 
 ### Geometry styles: render-time topology passes
 These change the mesh that is drawn, not the polyhedron:

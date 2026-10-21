@@ -86,15 +86,21 @@
           </div>
           <div class="param">
             <label for="p-comm"><span>Commutator abAB</span></label>
-            <small>parabolic gives a free group; order four needs an automaton</small>
+            <small>parabolic gives a free group; the others need an automaton for the words that cancel</small>
             <select id="p-comm">
               <option value="free">parabolic (trace −2)</option>
               <option value="nonfree">order four (trace 0)</option>
+              <option value="order3">order three (trace −1)</option>
+              <option value="pent">(abAB)⁵ = b⁴ = I (trace 4.618)</option>
             </select>
           </div>
           <div class="param check">
             <label><input type="checkbox" id="p-alt"> <span>Other root for tr ab</span></label>
             <small>tr ab solves a quadratic; this picks the second solution</small>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-symm"> <span>Symmetric normalization</span></label>
+            <small>conjugates the group so that an elliptic commutator turns the limit set about its centre</small>
           </div>
           <div class="param wide">
             <div class="info" id="info"></div>
@@ -131,6 +137,10 @@
             <label for="p-lev"><span>Maximum word length</span></label>
             <small>stops branches that never converge</small>
             <input type="number" id="p-lev" min="10" max="16000" step="1">
+          </div>
+          <div class="param check" data-methods="dfs descent">
+            <label><input type="checkbox" id="p-clip"> <span>Skip branches at the limit</span></label>
+            <small>draw nothing where a branch reaches the maximum length, for groups searched with a short one</small>
           </div>
           <div class="param check wide" data-methods="dfs descent">
             <label><input type="checkbox" id="p-neck"> <span>Follow narrow necks</span></label>
@@ -260,6 +270,7 @@
       <p>Fix the trace of <code>b</code> at 2, so <code>b</code> is parabolic, and vary the trace of <code>a</code>. The values that give a discrete group form the Maskit slice, the shaded region of the first trace plane. Its edge is fractal, and on it sit the cusp groups: for each fraction <code>p/q</code> a particular word <code>W(p/q)</code> becomes parabolic too, and the limit set pinches into chains of tangent circles with period <code>q</code>. The trace of <code>W(p/q)</code> is a polynomial of degree <code>q</code> in the trace of <code>a</code>. The explorer builds it along the Farey tree with the identity <code>tr uv + tr uV = tr u · tr v</code>, then finds the right root with Newton’s method. Fractions converging to an irrational number lead to degenerate groups, whose limit sets fill whole regions.</p>
       <p>For other values of tr b no such formula is known, so the trace planes test each point numerically. They run the same search, coarsely and without drawing, and measure distances on the Riemann sphere rather than in the plane, so the size and position of the limit set do not matter. Each point is searched twice, the second time with half the tolerance. For a discrete group that multiplies the work by about 2<sup>D</sup>, where D ≤ 2 is the dimension of its limit set. A group that is not discrete may look tidy at the coarse scale, but its words stop contracting below it, and the second search runs out of its budget. The number of steps rises towards the edge of the discrete region, which gives the shading. It is a numerical test, not a proof, but with tr b = 2 its edge lies on the exact curve of cusps.</p>
       <p>With the commutator trace set to 0 instead of −2, <code>(abAB)²</code> is the identity, the group is no longer free, and many words name the same map. A small finite-state automaton from <em>Indra’s Pearls</em> then tells the search which words to skip.</p>
+      <p>Other relations work the same way, given their automata. Chris King made them with Alun Williams’ program MAF for <code>(abAB)³ = I</code>, commutator trace −1, and for <code>(abAB)⁵ = b⁴ = I</code>, where the commutator has a square root of order five, and the recipe takes any commutator trace. When the commutator is elliptic, it turns the plane about its fixed point, but Grandma’s normalization hides that rotation. The symmetric normalization takes <code>AB</code> and <code>A</code> as the generators instead, and moves them by the Möbius map <code>[1 1; −1 1]</code>, so the rotation shows as a symmetry of the picture. With trace −1 it is six-fold. Some of these groups converge only for short words, and then the branches that reach the maximum length are best left out.</p>
 
       <h3>The quincuncial view</h3>
       <p>A Möbius map acts on the whole Riemann sphere, and a limit set often runs off to infinity, so the plane only ever shows part of it. Charles Peirce’s quincuncial projection maps the entire sphere conformally onto a square. The disk around the limit set becomes the northern hemisphere and goes onto the inscribed diamond, by the elliptic integral <code>∫ dt / √(1 − t⁴)</code>. The rest of the sphere, ∞ included, fills the four corners, and ∞ itself sits at the corners of the square. The search runs as usual, but each point is projected before ε is measured, so the detail stays even across the square. The squares tile the plane, each neighbour turned by 180°, so a curve that leaves through one edge returns through the mirror point of the same edge. Being conformal, the projection keeps small circles round, but it cannot be a Möbius map itself: it bends the large ones.</p>

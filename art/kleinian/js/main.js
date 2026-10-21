@@ -1,4 +1,4 @@
-import { parse, format, traceAB } from './group.js';
+import { parse, format, traceAB, RELATIONS } from './group.js';
 import { cuspByPath, gcd } from './cusps.js';
 import { Renderer, palette, GEN_NAMES } from './renderer.js';
 import { TracePlane, initProbes } from './planes.js';
@@ -10,7 +10,7 @@ const $ = id => document.getElementById(id);
 // ---------- state ----------
 
 const DEFAULTS = {
-  ta: '1.92+0.03i', tb: '2', nonfree: false, altroot: false, neck: true,
+  ta: '1.92+0.03i', tb: '2', comm: 'free', altroot: false, symm: false, neck: true, clip: false,
   eps: 0.6, levmax: 1000, color: 'letter', depth: 1, lw: 1, bg: 'auto', view: null,
   quinc: false, sphere: null, // sphere: { cx, cy, r }, the disk fitted to the limit set
   ssize: 0, // log10 of the equator's radius relative to sphere.r
@@ -24,13 +24,18 @@ const DESCENTS = [0.25, 1, 4, 16];
 let st = { ...DEFAULTS };
 let fitView = null; // preset view override, used by "Fit"
 
+// the commutator relations, as tr abAB is shown under the traces
+const COMM_INFO = { free: '−2 (parabolic)', nonfree: '0 (order 4)', order3: '−1 (order 3)', pent: '4.618, (abAB)⁵ = b⁴ = I' };
+// the cusp groups of the trace planes and the p/q input exist for these only
+const cusped = comm => comm === 'free' || comm === 'nonfree';
+
 const NUM = (v, lo, hi, d) => (isFinite(+v) && v !== '' && v !== null ? Math.min(hi, Math.max(lo, +v)) : d);
 
 function sanitize(s) {
   return {
     ta: parse(s.ta) ? String(s.ta) : DEFAULTS.ta,
     tb: parse(s.tb) ? String(s.tb) : DEFAULTS.tb,
-    nonfree: !!s.nonfree, altroot: !!s.altroot, neck: s.neck !== false,
+    comm: s.comm in RELATIONS ? s.comm : 'free', altroot: !!s.altroot, symm: !!s.symm, neck: s.neck !== false, clip: !!s.clip,
     eps: NUM(s.eps, 0.05, 10, DEFAULTS.eps),
     levmax: Math.round(NUM(s.levmax, 10, 16000, DEFAULTS.levmax)),
     color: ['letter', 'last', 'level', 'mono'].includes(s.color) ? s.color : DEFAULTS.color,
@@ -51,9 +56,12 @@ function writeHash() {
   const parts = [
     'ta=' + encodeURIComponent(st.ta), 'tb=' + encodeURIComponent(st.tb),
   ];
-  if (st.nonfree) parts.push('nf=1');
+  if (st.comm === 'nonfree') parts.push('nf=1');
+  else if (st.comm !== 'free') parts.push('c=' + st.comm);
   if (st.altroot) parts.push('alt=1');
+  if (st.symm) parts.push('sym=1');
   if (!st.neck) parts.push('neck=0');
+  if (st.clip) parts.push('clip=1');
   if (st.eps !== DEFAULTS.eps) parts.push('eps=' + st.eps);
   if (st.levmax !== DEFAULTS.levmax) parts.push('lev=' + st.levmax);
   if (st.color !== DEFAULTS.color) parts.push('col=' + st.color);
@@ -82,7 +90,8 @@ function readHash() {
   const v = q.v ? q.v.split(',').map(Number) : null;
   const sph = q.sph ? q.sph.split(',').map(Number) : null;
   return sanitize({
-    ta: q.ta, tb: q.tb, nonfree: q.nf === '1', altroot: q.alt === '1', neck: q.neck !== '0',
+    ta: q.ta, tb: q.tb, comm: q.c || (q.nf === '1' ? 'nonfree' : 'free'), altroot: q.alt === '1', symm: q.sym === '1',
+    neck: q.neck !== '0', clip: q.clip === '1',
     eps: q.eps, levmax: q.lev, color: q.col, depth: q.d, lw: q.lw, bg: q.bg,
     view: v && v.length === 3 ? { cx: v[0], cy: v[1], half: v[2] } : null,
     quinc: q.q === '1', ssize: q.ss, sphere: sph && sph.length === 3 ? { cx: sph[0], cy: sph[1], r: sph[2] } : null,
@@ -138,9 +147,9 @@ function groupParams() {
   const ta = parse(st.ta), tb = parse(st.tb);
   if (!ta) throw new Error('Could not read the trace of a.');
   if (!tb) throw new Error('Could not read the trace of b.');
-  return { ta, tb, nonfree: st.nonfree, altroot: st.altroot, neck: st.neck, levmax: st.levmax };
+  return { ta, tb, comm: st.comm, altroot: st.altroot, symm: st.symm, neck: st.neck, clip: st.clip, levmax: st.levmax };
 }
-const groupKey = g => JSON.stringify([g.ta, g.tb, g.nonfree, g.altroot, g.neck, g.levmax]);
+const groupKey = g => JSON.stringify([g.ta, g.tb, g.comm, g.altroot, g.symm, g.neck, g.clip, g.levmax]);
 
 function themeName() {
   if (st.bg !== 'auto') return st.bg;
@@ -441,9 +450,11 @@ function fit() {
 function syncInputs(recomputePlanes = true) {
   $('p-ta').value = st.ta;
   $('p-tb').value = st.tb;
-  $('p-comm').value = st.nonfree ? 'nonfree' : 'free';
+  $('p-comm').value = st.comm;
   $('p-alt').checked = st.altroot;
+  $('p-symm').checked = st.symm;
   $('p-neck').checked = st.neck;
+  $('p-clip').checked = st.clip;
   $('p-method').value = st.method;
   document.querySelectorAll('[data-methods]').forEach(el => el.classList.toggle('hidden', !el.dataset.methods.split(' ').includes(st.method)));
   $('p-descents').value = st.descents;
@@ -469,8 +480,8 @@ function syncInputs(recomputePlanes = true) {
 }
 
 function updateInfo(g) {
-  const tab = traceAB(g.ta, g.tb, g.nonfree ? 0 : -2, g.altroot);
-  $('info').textContent = `tr ab = ${format(tab, 8)} · tr abAB = ${g.nonfree ? '0 (order 4)' : '−2 (parabolic)'}`;
+  const tab = traceAB(g.ta, g.tb, RELATIONS[g.comm].tcomm, g.altroot);
+  $('info').textContent = `tr ab = ${format(tab, 8)} · tr abAB = ${COMM_INFO[g.comm]}`;
 }
 
 function updateLegend() {
@@ -515,9 +526,11 @@ function onGroupInput() {
 
 $('p-ta').addEventListener('change', onGroupInput);
 $('p-tb').addEventListener('change', onGroupInput);
-$('p-comm').addEventListener('change', function() { st.nonfree = this.value === 'nonfree'; fitView = null; syncInputs(); render({ fit: true }); });
+$('p-comm').addEventListener('change', function() { st.comm = this.value; fitView = null; syncInputs(); render({ fit: true }); });
 $('p-alt').addEventListener('change', function() { st.altroot = this.checked; fitView = null; updatePlanes(); render({ fit: true }); });
+$('p-symm').addEventListener('change', function() { st.symm = this.checked; fitView = null; updatePlanes(); render({ fit: true }); });
 $('p-neck').addEventListener('change', function() { st.neck = this.checked; updatePlanes(); render(); });
+$('p-clip').addEventListener('change', function() { st.clip = this.checked; render(); });
 $('p-eps').addEventListener('input', function() { st.eps = +Math.pow(10, +this.value).toPrecision(2); $('v-eps').textContent = st.eps < 1 ? st.eps.toFixed(2) : st.eps.toFixed(1); });
 $('p-eps').addEventListener('change', () => render());
 $('p-lev').addEventListener('change', function() { st.levmax = sanitize({ ...st, levmax: this.value }).levmax; this.value = st.levmax; render(); });
@@ -548,7 +561,7 @@ $('exportBtn').addEventListener('click', exportImage);
 
 function fileName(size) {
   const clean = s => s.replace(/[^0-9a-z.+-]/gi, '');
-  return `kleinian_${clean(st.ta)}_${clean(st.tb)}${st.nonfree ? '_nonfree' : ''}${size ? '_' + size : ''}.png`;
+  return `kleinian_${clean(st.ta)}_${clean(st.tb)}${st.comm !== 'free' ? '_' + st.comm : ''}${st.symm ? '_symm' : ''}${size ? '_' + size : ''}.png`;
 }
 
 function download(blob, name) {
@@ -632,7 +645,7 @@ document.querySelectorAll('[data-zoom]').forEach(btn => btn.addEventListener('cl
 
 function updatePlanes(recompute = true) {
   const ta = parse(st.ta) || [2, 0], tb = parse(st.tb) || [2, 0];
-  const group = { nonfree: st.nonfree, altroot: st.altroot, neck: st.neck };
+  const group = { comm: st.comm, altroot: st.altroot, symm: st.symm, neck: st.neck };
   // while dragging one plane, only its marker moves; the other plane waits for the release
   planeA.set({ value: ta, other: tb, group }, recompute);
   planeB.set({ value: tb, other: ta, group }, recompute);
@@ -650,9 +663,11 @@ function goCusp() {
   const g = gcd(p, q); p /= g; q /= g;
   // the slice is periodic: p/q and p/q + 1 differ by a shift of the period
   const whole = Math.floor(p / q), pr = p - whole * q;
-  const ta = cuspByPath(pr, q, st.nonfree);
+  if (!cusped(st.comm)) st.comm = 'free';
+  const nonfree = st.comm === 'nonfree';
+  const ta = cuspByPath(pr, q, nonfree);
   if (!ta) { $('p-cusp').classList.add('bad'); return; }
-  ta[1] -= whole * (st.nonfree ? Math.SQRT2 : 2);
+  ta[1] -= whole * (nonfree ? Math.SQRT2 : 2);
   st.ta = format(ta, 12);
   st.tb = '2';
   fitView = null;
@@ -688,7 +703,8 @@ function loadPreset(i) {
   st = sanitize({
     ...DEFAULTS, lw: st.lw, bg: st.bg, quinc: st.quinc, points: st.points, stay: st.stay, descents: st.descents,
     method: p.method || st.method,
-    ta: p.ta, tb: p.tb, nonfree: !!p.nonfree, altroot: !!p.altroot, neck: p.neck !== false,
+    ta: p.ta, tb: p.tb, comm: p.comm || (p.nonfree ? 'nonfree' : 'free'), altroot: !!p.altroot, symm: !!p.symm,
+    neck: p.neck !== false, clip: !!p.clip,
     eps: p.eps || DEFAULTS.eps, levmax: p.levmax || DEFAULTS.levmax,
     color: p.color || DEFAULTS.color, depth: p.depth || 1,
   });

@@ -81,7 +81,7 @@ export class TracePlane {
     this.onHover = onHover;
     this.value = [2, 0];              // the trace this plane chooses
     this.other = [2, 0];              // the other trace, held fixed
-    this.group = { nonfree: false, altroot: false, neck: true };
+    this.group = { comm: 'free', altroot: false, symm: false, neck: true };
     this.depKey = '';                 // what the cached counts depend on
     this.cache = new Map();           // 'L,i,j' → node count (−1: not discrete)
     this.gen = 0;
@@ -309,15 +309,18 @@ export class TracePlane {
   cusps() {
     const zoom = this.base.half / this.win.half;
     const maxQ = Math.min(160, Math.round(40 * Math.sqrt(Math.max(1, zoom)) / 10) * 10);
-    const k = (this.group.nonfree ? 'n' : 'f') + maxQ;
-    if (!this.cuspCache.has(k)) this.cuspCache.set(k, boundary(maxQ, this.group.nonfree));
+    const nonfree = this.group.comm === 'nonfree';
+    const k = (nonfree ? 'n' : 'f') + maxQ;
+    if (!this.cuspCache.has(k)) this.cuspCache.set(k, boundary(maxQ, nonfree));
     return this.cuspCache.get(k);
   }
 
   // cusp points over all periods that touch the window, in pixels
   visibleCusps() {
-    if (!this.showCusps) return [];
-    const P = this.group.nonfree ? Math.SQRT2 : 2, pts = this.cusps(), out = [];
+    // the cusps are known for the free and the order-four commutator only
+    const { comm } = this.group;
+    if (!this.showCusps || (comm !== 'free' && comm !== 'nonfree')) return [];
+    const P = comm === 'nonfree' ? Math.SQRT2 : 2, pts = this.cusps(), out = [];
     const lo = this.win.im - this.win.half - P, hi = this.win.im + this.win.half + P;
     if ((hi - lo) / P > 200) return []; // too far out to show
     for (let j = Math.floor(lo / P); j <= Math.ceil(hi / P); j++) {

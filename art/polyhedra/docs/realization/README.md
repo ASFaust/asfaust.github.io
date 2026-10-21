@@ -15,7 +15,7 @@ For *any* graph the page can produce, give a shape that is a faithful, good-look
   - deterministic,
   - never fails or explodes.
 - **Soft requirements:**
-  - **balanced**: no face shrinks to a sliver, and no face takes over the shape (see "open questions"),
+  - **balanced**: every corner of every face can be seen, so that no hexagon reads as a pentagon ([Balance](#balance)),
   - fast: seconds for up to about 10k edges, in a browser worker.
 - **Baseline:** the canonical polyhedron ([canonical.md](canonical.md)). It meets every hard requirement, but it is badly unbalanced on graphs with very unequal faces (`tttttD`, `kkkD`) and slow to converge on them.
 
@@ -64,11 +64,54 @@ They share machinery: per-face projections, symmetry averaging, the metrics belo
 | `inward` | faces whose normal points towards the centre | 0 for goal A |
 | `reflex` | edges where the face on one side has its centre above the plane of the other | 0 for goal A |
 | `edgeRatio` | longest / shortest edge | lower is more balanced |
-| `areaRatio` | largest / smallest face area | lower is more balanced |
+| `areaRatio` | largest / smallest face area | not a balance measure: it is dominated by the degrees (`U4`, all faces regular, has 11) |
+| `faceEdgeMax` | worst longest / shortest edge *within one face* (below) | 1 for regular faces; readable up to about 4 |
+| `turnMin` | smallest corner turn, relative to the regular n-gon's (below) | 1 for regular faces; readable down to about 0.45 |
+| `roundMin` | least round face (below) | 1 for regular faces; < 0.5 is a visible sliver |
+| `sizeRatio` | largest / smallest face *size* (below) | 1 for any regular-faced solid; lower is more balanced |
+| `degreeSlope` | slope of log size against log degree (below) | 0: big faces are as big as regular ones would be; > 0: they take more |
 
 `tests/realize.mjs` also reports the rounds and time of the final realization; the build, with its relaxation between operators, is not timed. Its fixed list covers easy, chiral, deep-chain and extreme cases: `tI tttC gpD pgI cccC tktkI dkdkdkdkI tttttD kkkD jsdJ29 aoeU4`. Use `--random N` for seeded random strings (always the same N). Reference numbers for each method are in its own file.
 
-**Missing:** a balance metric that matches what looks good. `areaRatio` is dominated by inherent degree differences. A 320-gon *should* be bigger than a triangle; the question is by how much. One option is to compare each face's area with the area a regular polygon of the same degree would have at the mean edge length.
+### Balance
+
+**The minimal definition (owner, 2026-10-21): every corner of every face can be seen.** A face whose edges have wildly different lengths is a "weird adapter". Two of its corners nearly merge, and a hexagon reads as a pentagon. A corner that is nearly straight vanishes in the same way. Two per-face measures (`balance()` in `tests/lib.mjs`, which also returns the per-face values), both 1 for a regular face:
+- **Edge ratio** `edge_f`: longest / shortest edge of the face. `faceEdgeMax` is the worst face.
+- **Turn** `turn_f`: the smallest turn at a corner (the angle between its two edges, unsigned, in space), over the regular n-gon's turn 2π/n. `turnMin` is the worst face. It is relative because a regular 160-gon's corners turn only 2.25°. It is unsigned and taken in space, so that it means the same on the bent faces of detached faces. Reflex corners are still visible corners, and convexity is counted apart (`inward`, `reflex`).
+
+Each catches cases the other misses. A hexagon with one edge shrunk to nothing is a regular pentagon, which is round (0.95) and turns well, so only the edge ratio sees it. A thin rhombus has equal edges, so only the turn sees it.
+
+**Why this and not equal sizes (the wedge argument, owner).** Most graphs need very different face sizes, so "equal size" cannot be the definition:
+- Where two big faces share an edge (in `tttttD` the 160-gons do), the angle between their next edges tends to 0 as the faces get round and many-sided, *whatever their size*. Only a sharp wedge is left for the small faces between them, so those must be small, with closely spaced corners. The big faces' corners are spaced far apart. Something has to bridge the two spacings.
+- In the canonical polyhedron this is literal: face incircles lie on the midsphere and neighbours' circles touch, so two big touching circles leave a horn-shaped gap, and the faces packed into it shrink towards the touching point.
+
+The edge ratio allows this, as long as the bridging is gradual. Two faces f and g sharing an edge of length ℓ have mean edges at most `edge_f·ℓ` and at least `ℓ/edge_g`, so their mean edges differ by at most `edge_f · edge_g`. A bound on the edge ratio therefore forces size to change *gradually*, over several rings of faces. That is the "adapter" spread out, instead of in one weird face. A separate neighbour-size measure is not needed.
+
+**Descriptive measures,** which say *how* a shape is unbalanced but are not the definition (most graphs cannot reach 1 on them):
+- **Roundness** `round_f = A_f / A_reg(n, L_f/n)`: area over the area of the regular n-gon with the same perimeter. The regular n-gon has the largest area for its perimeter, so this is in (0, 1] and falls towards 0 for slivers. `roundMin` is the smallest.
+- **Size** `s_f = sqrt(A_f / A_reg(n, ℓ̄))`, with `ℓ̄` the mean edge length: the side a regular n-gon of the same area would have, in mean edges. `sizeRatio` is max/min over the faces. `degreeSlope` fits log s against log n (over the mean of each degree): positive means big faces are bigger than regular ones would be, which is the owner's "big faces stay too large".
+
+**Calibration** (2026-10-21), against renders from `tests/screenshot.mjs`. "Detached faces" is the page default: regularity 1, stiffness 2, symmetry on.
+
+| shape | method | areaRatio | faceEdge | turn | round | size× | slope | by eye |
+|---|---|---|---|---|---|---|---|---|
+| `U4`, `J29`, `P5`, `tI`, `eC` | raw seeds / canonical | 1.5–11 | 1.0 | 1.00 | 1.00 | 1.0 | 0 | perfect (regular faces) |
+| `Y6` | canonical | 1.4 | 3.7 | 0.81 | 0.54 | 2.1 | −1.05 | a tall spike, but clearly triangles |
+| `tktkI` | canonical, 30k rounds (as `dkdkdkdkI`) | ≈3,400 | 3.4 | 0.49 | 0.96 | 13.9 | 2.22 | tiny triangles, huge decagons; every face readable |
+| `tktkI` | detached faces | 615 | 1.8 | 0.65 | 0.95 | 5.9 | 1.48 | the same, milder |
+| `tttC` | canonical / detached | 512 / 286 | 3.1 / 1.4 | 0.56 / 0.68 | 0.82 / 0.94 | 1.8 / 1.2 | 0.16 / 0.06 | look alike; fine |
+| `kkkD` | canonical | 4.0 | 5.7 | 0.32 | 0.36 | 2.1 | — | slivers everywhere |
+| `tttttD` | canonical, 30k rounds | 216,381 | 143 | 0.04 | 0.05 | 6.8 | 0.21 | weird adapters next to the big faces |
+| `tttttD` | detached faces | 10,939 | 2.0 | 0.46 | 0.76 | 2.1 | 0.07 | every face readable, but not convex (360 inward faces) and bent (planar 0.55) |
+
+The ordering matches the eye in every case, and `areaRatio` gets several of them backwards (`Y6` "best", `tttC` "far worse than `kkkD`"). The thresholds in the metrics table (edge ratio about 4, turn about 0.45) are read off these shapes only; the owner accepted them (2026-10-21) until a render shows otherwise. Likewise accepted: how big big faces should be is a goal-B taste question, not part of goal A.
+
+**Findings:**
+- **By this definition canonical is already balanced on most of the benchmark list** (edge ratio ≤ 3.4), including `tktkI`, whose sizes vary 14×. It fails on `kkkD` (slivers) and `tttttD` (adapters).
+- **The `tttttD` adapters are not in the wedge itself.** Faces next to the shared 160-gon edges have edge ratio about 9. The worst faces (about 140) are the 24-gons three faces away: their edges next to triangles and hexagons are about 1e-2, but those shared with a 160-gon or a 48-gon are 2e-4 to 7e-4, so each of them reads as roughly a 21-gon. (Unconverged: planar 6e-3 and 600 inward faces at 30k rounds.)
+- **Detached faces is readable everywhere** (edge ratio ≤ 2.0, turn ≥ 0.46), but on `tttttD` only by giving up convexity and flatness. So the goal-A question is now precise: *a convex, flat realization of `tttttD` with every face readable*, if one exists. The wedge argument says the graph decides how many rings are available for the bridging, so a small enough edge ratio may not exist for every graph.
+
+Other candidates considered: a neighbour-size measure (implied by the edge ratio, see above); the inradius per face (close to `s_f` for round faces, adds nothing).
 
 ## The code interface
 
@@ -113,12 +156,7 @@ Topology-changing styles (wireframe tubes, detached tiles) are rendering, in [..
 
 ## Open questions (cross-cutting)
 
-1. **What is "balanced"?** Goal A needs a precise target before any optimizer can be judged. Candidates:
-   - face area proportional to the area of a regular polygon of the same degree,
-   - bounded angles,
-   - an inscribed radius per face that varies little.
-
-   The answer decides the per-face target in detached faces.
+1. **What is "balanced"?** Defined now: every corner readable, measured by the edge ratio and turn within each face ([Balance](#balance)). Thresholds: edge ratio 4, turn 0.45 (accepted, revisable). Open: whether every graph has a convex, flat realization within them (`tttttD` is the test case). Size and slope remain descriptive; whether big faces should be smaller than regular is a taste question for goal B, not part of goal A.
 2. **Why are big faces sluggish?** Probably conditioning: a face of degree n couples n vertices, and its averaged pull on each vertex is weak. Ideas to try:
    - weighting by degree,
    - preconditioning,

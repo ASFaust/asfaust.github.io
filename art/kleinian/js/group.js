@@ -87,12 +87,16 @@ export function traceAB(ta, tb, tcomm, altroot) {
   return scale(altroot ? add(scale(p, -1), disc) : sub(scale(p, -1), disc), 0.5);
 }
 
-// Generators [a, b, A, B] for traces ta, tb.
-// free:    commutator trace −2 (parabolic), Grandma's special parabolic commutator recipe
-// nonfree: commutator trace 0, so (abAB)² = −I, Grandma's three-parameter "double alarm" recipe
-export function grandma(ta, tb, { nonfree = false, altroot = false } = {}) {
+// Generators [a, b, A, B] for traces ta, tb and the relation comm (a key of RELATIONS).
+// free: commutator trace −2 (parabolic), Grandma's special parabolic commutator recipe.
+// Otherwise Grandma's three-parameter "double alarm" recipe with tr ab solved for the commutator
+// trace of the relation. symm: the symmetric inverse normalization of Chris King's depthfirstFSA.c,
+// which changes the generators to (AB, A) and conjugates by [1 1; −1 1], so that the rotation of an
+// elliptic commutator shows as a rotational symmetry of the limit set.
+export function grandma(ta, tb, { comm = 'free', altroot = false, symm = false } = {}) {
+  const rel = RELATIONS[comm] || RELATIONS.free;
   let a, b;
-  if (!nonfree) {
+  if (!rel.fsa) {
     const tab = traceAB(ta, tb, -2, altroot);
     const z0 = div(mul(sub(tab, [2, 0]), tb), add(sub(mul(tb, tab), scale(ta, 2)), mul([0, 2], tab)));
     const ab = mat(scale(tab, 0.5), div(sub(tab, [2, 0]), scale(z0, 2)),
@@ -100,11 +104,11 @@ export function grandma(ta, tb, { nonfree = false, altroot = false } = {}) {
     b = mat(scale(sub(tb, [0, 2]), 0.5), scale(tb, 0.5), scale(tb, 0.5), scale(add(tb, [0, 2]), 0.5));
     a = mmul(ab, minv(b));
   } else {
-    const tab = traceAB(ta, tb, 0, altroot);
+    const tab = traceAB(ta, tb, rel.tcomm, altroot);
     const tC = sub(add(add(mul(ta, ta), mul(tb, tb)), mul(tab, tab)), add(mul(mul(ta, tb), tab), [2, 0]));
     const Q = sqrt(sub([2, 0], tC));
     const r = sqrt(add(tC, [2, 0]));
-    const R = abs(add(tC, mul(mul(I, Q), r))) >= 2 + 1e-15 ? r : scale(r, -1);
+    const R = abs(add(tC, mul(mul(I, Q), r))) >= 2 + rel.rtol ? r : scale(r, -1);
     const iQ = mul(I, Q);
     const zo = div(mul(sub(tab, [2, 0]), sub(tb, R)), add(sub(mul(tb, tab), scale(ta, 2)), mul(iQ, tab)));
     const tatab = sub(mul(ta, tab), scale(tb, 2));
@@ -115,6 +119,14 @@ export function grandma(ta, tb, { nonfree = false, altroot = false } = {}) {
             div(mul(sub(tatab, scale(iQ, 2)), zo), den2), scale(ta, 0.5));
     b = mat(scale(sub(tb, iQ), 0.5), div(sub(tbtab, mul(iQ, tab)), den1),
             div(mul(add(tbtab, mul(iQ, tab)), zo), den2), scale(add(tb, iQ), 0.5));
+  }
+  if (symm) {
+    const A = minv(a);
+    a = mmul(A, minv(b));
+    b = A;
+    const C = [1, 0, 1, 0, -1, 0, 1, 0], Ci = minv(C);
+    a = mmul(mmul(C, a), Ci);
+    b = mmul(mmul(C, b), Ci);
   }
   return [a, b, minv(a), minv(b)];
 }
@@ -142,3 +154,39 @@ export const FSA = [
   [1, 18, -1, 4], [9, -1, -1, 4], [-1, -1, 10, 4], [7, 2, -1, -1], [-1, 2, 8, -1], [-1, -1, 10, 4],
   [7, 2, -1, -1],
 ];
+
+// Automata generated with MAF (Alun Williams) for Chris King's depthfirstFSA.c, same layout.
+// (abAB)³ = I
+const FSA3 = [
+  [1, 2, 3, 4], [1, 5, -1, 4], [6, 2, 7, -1], [-1, 8, 3, 4], [9, -1, 10, 4], [6, 2, 11, -1], [1, 5, -1, 12], [-1, 8, 3, 13],
+  [14, 2, 7, -1], [1, 15, -1, 4], [-1, 16, 3, 4], [-1, 8, 3, 17], [9, -1, 18, 4], [19, -1, 10, 4], [1, 5, -1, 20], [6, 2, 21, -1],
+  [22, 2, 7, -1], [23, -1, 10, 4], [-1, 24, 3, 4], [1, 25, -1, 4], [9, -1, 26, 4], [-1, 8, 3, 27], [1, 5, -1, 28], [1, 29, -1, 4],
+  [-1, 2, 7, -1], [6, 2, 30, -1], [-1, -1, 3, 4], [-1, -1, 10, 4], [9, -1, -1, 4], [6, 5, -1, -1], [-1, 8, 7, -1],
+];
+// (abAB)⁵ = I and b⁴ = I
+const FSA5 = [
+  [1, 2, 3, 4], [1, 5, -1, 4], [6, 7, 8, -1], [-1, 9, 3, 4], [10, -1, 11, -1], [6, 7, 12, -1], [1, 5, -1, 13], [14, -1, 8, -1],
+  [-1, 9, 3, 15], [16, 7, 8, -1], [1, 17, -1, 18], [-1, 19, 3, 15], [-1, 9, 3, 20], [10, -1, 21, -1], [1, 22, -1, 13], [23, -1, 11, -1],
+  [1, 5, -1, 24], [6, 7, 25, -1], [10, -1, 26, -1], [27, 7, 8, -1], [28, -1, 11, -1], [-1, 29, 3, 15], [6, 7, 30, -1], [1, 31, -1, 18],
+  [10, -1, 32, -1], [-1, 9, 3, 33], [-1, 34, 3, 15], [1, 5, -1, 35], [1, 36, -1, 18], [37, 7, 8, -1], [-1, 9, 3, 38], [6, 7, 39, -1],
+  [-1, 40, 3, 15], [41, -1, 11, -1], [42, 7, 8, -1], [10, -1, 43, -1], [6, 7, 44, -1], [1, 5, -1, 45], [46, -1, 11, -1], [-1, 9, 3, 47],
+  [48, 7, 8, -1], [1, 49, -1, 18], [1, 5, -1, 50], [-1, 51, 3, 15], [-1, 9, 3, 52], [10, -1, 53, -1], [1, 54, -1, 18], [55, -1, 11, -1],
+  [1, 5, -1, 56], [6, 7, 57, -1], [10, -1, 58, -1], [59, 7, 8, -1], [60, -1, 11, -1], [-1, 61, 3, 15], [6, 7, 62, -1], [1, 63, -1, 18],
+  [10, -1, 64, -1], [-1, 65, 3, 66], [-1, 67, 3, 15], [1, 68, -1, 69], [1, 70, -1, 18], [-1, 7, 8, -1], [-1, 9, 3, 71], [6, 7, 72, -1],
+  [-1, -1, 3, 15], [16, 73, 8, -1], [-1, -1, 11, -1], [74, 7, 8, -1], [6, 75, 12, -1], [10, -1, -1, -1], [6, 76, -1, -1], [77, -1, 11, -1],
+  [-1, 78, 8, -1], [79, -1, 8, -1], [80, 76, -1, -1], [14, -1, 11, -1], [14, -1, 12, -1], [81, -1, -1, 18], [82, -1, 8, -1], [1, 17, -1, 13],
+  [1, 5, -1, 18], [1, 22, -1, 4], [1, 22, -1, 24],
+];
+
+// The relations the commutator can satisfy: its trace, and the automaton for the reduced words
+// (null: the group is free). The plane of cusps (cusps.js) is only known for free and nonfree.
+// rtol: the recipe picks the root R = ±√(tC + 2) by |tC + iQR| ≥ 2 + rtol. For a real commutator
+// trace in (−2, 2) both roots give exactly 2, and rounding decides: rtol = 1e-15 keeps the choice
+// the Ta = Tb = 2 gasket needs, −1e-9 takes +√ as depthfirstFSA.c happened to for its examples.
+export const RELATIONS = {
+  free: { tcomm: -2, fsa: null },
+  nonfree: { tcomm: 0, fsa: FSA, rtol: 1e-15 },
+  order3: { tcomm: -1, fsa: FSA3, rtol: -1e-9 },
+  // tr abAB = 2 − (2i·cos π/5)², the commutator of a square root of order 5
+  pent: { tcomm: 2 + 4 * Math.cos(Math.PI / 5) ** 2, fsa: FSA5, rtol: 1e-15 },
+};

@@ -39,19 +39,34 @@ The plane comes from the Newell normal through the weighted centroid. The new co
 All at regularity 1, with stiffness 2 unless stated. Numbers are from `node tests/realize.mjs --mode faces [--sym] --max-it 20000 …`.
 
 ```
-without symmetry                                     with symmetry averaging (every 10 rounds)
-string   rounds   ms  planar  reflex  edge× area×    rounds   ms  planar  reflex  edge× area×
-tttC        171   37  1.7e-1      0    1.5  286        67   37  1.7e-1      0    1.5  286
-gpD       20000 4144  1.5e-1    285    2.5  4.1       487  139  8.0e-2      0    1.8  1.9
-pgI        1903  356  3.8e-2    420    1.9  2.6       758  190  3.8e-2    420    1.9  2.6
-tktkI      3743 2357  6.5e-2    210    5.9  615      3672 3513  6.5e-2    210    5.9  615
-jsdJ29     1591  128  8.6e-2    144    1.8  2.7      1505  127  8.6e-2    144    1.8  2.7
-aoeU4     20000 3118  9.3e-2    116    2.6   63      7520 1218  7.6e-2    144    2.2   49
+without symmetry
+string   rounds    ms  planar  reflex  edge×  fedge×  turn  round  size×  slope
+tttC        171    33  1.7e-1       0    1.5     1.4  0.68   0.94    1.2   0.06
+gpD       20000  4281  1.5e-1     285    2.5     1.7  0.58   0.88    2.0      —
+pgI        1903   379  3.8e-2     420    1.9     1.5  0.66   0.95    1.5   0.35
+tktkI      3743  2500  6.5e-2     210    5.9     1.8  0.65   0.95    5.9   1.48
+jsdJ29     1591   136  8.6e-2     144    1.8     1.4  0.71   0.94    1.6      —
+aoeU4     20000  3280  9.3e-2     116    2.6     1.3  0.83   0.89    2.6   0.60
+
+with symmetry averaging (every 10 rounds)
+string   rounds    ms  planar  reflex  edge×  fedge×  turn  round  size×  slope
+tttC         67    30  1.7e-1       0    1.5     1.4  0.68   0.94    1.2   0.06
+gpD         487   137  8.0e-2       0    1.8     1.4  0.65   0.93    1.4      —
+pgI         758   190  3.8e-2     420    1.9     1.5  0.66   0.95    1.5   0.35
+cccC       2190   580  4.2e-2       0    1.9     1.4  0.80   0.99    1.9   1.30
+tktkI      3672  3712  6.5e-2     210    5.9     1.8  0.65   0.95    5.9   1.48
+kkkD       2540   737  5.7e-16    180    1.0     1.0  1.00   1.00    1.0      —
+jsdJ29     1505   133  8.6e-2     144    1.8     1.4  0.71   0.94    1.6      —
+aoeU4      7520  1271  7.6e-2     144    2.2     1.5  0.86   0.95    2.1   0.73
+tttttD      426  1267  5.5e-1    3060    2.8     2.0  0.46   0.76    2.1   0.07
 ```
+
+Balance columns are defined in [README.md](README.md#balance): fedge× and turn are the readability definition, round, size× and slope describe. `kkkD` with symmetry has 180 inward faces: its equilateral triangles cannot close up convexly. The table had `area×` until 2026-10-21.
 
 - **Symmetry averaging helps a lot here.** `gpD` goes from never settling and bumpy to settling in 487 rounds, convex. The list overall runs 2× faster. It is on by default in this mode.
 - **Faces are not flat at full regularity:** `planarMax` is 0.04–0.17 edge lengths. This is the residual tension the owner described: regular faces cannot all fit, so the error ends up as bending.
-- **Edge and area ratios are much more balanced than canonical's:** `tttC` area× is 286, against 512 for canonical, and edge× is 1.5 against 4.1. On `tttttD` the small faces stay round, where canonical makes slivers.
+- **Balanced by the readability definition everywhere** (edge ratio ≤ 2.0, turn ≥ 0.46), where canonical fails on `kkkD` (5.7) and `tttttD` (143). But on `tttttD` this comes from giving up convexity and flatness (360 inward faces, planar 0.55): the bent faces absorb the size bridging that canonical puts into weird adapters. It does not answer the goal-A question of a *convex, flat* readable `tttttD`.
+- **Sizes stay spread** (descriptive): `tktkI` size× 5.9 against canonical's 14, slope 1.48 against 2.2. The triangles are 0.30 of regular size and the decagons 1.8×. A similarity-regular target lets each face choose its own size. Since the definition allows size differences, this matters only for the look (goal B) or if a target-size variant turns out to help convexity.
 - **Stiffness helps only a little.** On `tttttD`, the worst spread falls from 0.88 (stiffness 0) to 0.66 (4) and 0.64 (16) edge lengths. The 360 inward faces stay, and the look barely changes. A regular 320-gon whose edges have the length of the triangle edges is simply huge, and no weighting changes that.
 - **Non-convexity is inherent at full regularity** wherever the regular corner angles at a vertex add up to 360° or more. In `tttttD`, triangles meet 96- and 320-gons, so those vertices must become saddles.
 
@@ -82,7 +97,7 @@ How to implement each:
   2. Set the lengths `ℓ_k = max(0, Re(e_k e^{-i(φ+2πk/n)}))`.
   3. Project the `ℓ` onto the closure condition `Σ ℓ_k ζᵏ = 0`.
   4. Rebuild the corners around the centroid.
-- **Target size:** the regular fit with `|a|` set from a target inradius or area. For instance, the area a regular n-gon would have at the global mean edge length, scaled by a "how much bigger may big faces be" exponent.
+- **Target size:** the regular fit with `|a|` set from a target inradius or area. For instance, the area a regular n-gon would have at the global mean edge length, scaled by a "how much bigger may big faces be" exponent. In the terms of [README.md](README.md#balance): aim at `s_f = 1` (slope 0) or `s_f = (n/n̄)^β` with a chosen slope β, and judge the result by `sizeRatio` and `degreeSlope`. A cheap first try: keep the fitted centre and turn, and replace `|a|` by `(1−μ)|a| + μ·r_target`.
 - **Mixtures:**
   - by degree: regular for small faces, tangential or flat for large ones,
   - by role: different targets per orbit or per tag, which is also a goal-B design dial.

@@ -14,7 +14,7 @@
 //   bits 0–15  the first 8 letters of the word (2 bits each), bits 16–17 the last letter,
 //   bits 18–31 the word length. The renderer can then recolour without running the search again.
 
-import { grandma, fixedPoints, FSA } from './group.js';
+import { grandma, fixedPoints, RELATIONS } from './group.js';
 
 export const MAX_LEVEL = 16383;
 
@@ -81,7 +81,9 @@ export function quincuncial(zr, zi, tol = 0.002) {
   return QO;
 }
 
-// p: { ta, tb, nonfree, altroot, levmax, eps (pixels), neck, view: {x0, y0, k, w, h}, bound, all }
+// p: { ta, tb, comm, altroot, symm, levmax, eps (pixels), neck, clip, view: {x0, y0, k, w, h}, bound, all }
+//   comm: the relation of the commutator, a key of RELATIONS. symm: symmetric inverse normalization.
+//   clip: branches that reach levmax are not drawn (for groups that only converge with a small levmax).
 //   view maps the plane to pixels: px = (re − x0)·k, py = (y0 − im)·k on a w × h canvas.
 //   bound: { m, disks } from measure(). disks[s] = [x, y, r] bounds the part of the limit set whose
 //   addresses start with the m letters s (base 4). Below a word W·s that part becomes W(disk);
@@ -97,10 +99,12 @@ export function quincuncial(zr, zi, tol = 0.002) {
 // Returns { segments, done, ms, levmaxHits }, and samples, the number of descents.
 export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infinity, checkTime = null } = {}) {
   const t0 = performance.now();
-  const gens = grandma(p.ta, p.tb, { nonfree: p.nonfree, altroot: p.altroot });
+  const gens = grandma(p.ta, p.tb, { comm: p.comm, altroot: p.altroot, symm: p.symm });
   const fix = fixedPoints(gens);
   const levmax = Math.max(1, Math.min(MAX_LEVEL, p.levmax | 0));
-  const nonfree = !!p.nonfree;
+  const FSA = (RELATIONS[p.comm] || RELATIONS.free).fsa;
+  const nonfree = !!FSA;
+  const clip = !!p.clip;
   const neck = !!p.neck;
   const all = !!p.all;
   const { x0, y0, k, w, h } = p.view;
@@ -305,7 +309,7 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
       const atMax = lev === levmax;
       if (atMax || (neck ? close(0, 2) && close(2, 1) : close(0, 1))) {
         if (atMax) levmaxHits++;
-        if (all || visible(0)) {
+        if (!(atMax && clip) && (all || visible(0))) {
           // with the neck test the whorl tip lies between: draw through it (closes the gasket's gaps)
           if (neck) { line(1, 2); line(2, 0); }
           else line(1, 0);
@@ -386,7 +390,7 @@ export function search(p, sink, { batch = 8192, flushMs = 60, timeLimit = Infini
         const atMax = lev === levmax;
         if (atMax || (neck ? close(0, 2) && close(2, 1) : close(0, 1))) {
           if (atMax) levmaxHits++;
-          if (visible(0)) {
+          if (!(atMax && clip) && visible(0)) {
             const old = mark(0) & mark(1) & (!neck || mark(2));
             if (!old) {
               if (neck) { line(1, 2); line(2, 0); }

@@ -5,7 +5,7 @@
 // number of nodes; for a non-discrete one the words never contract and the node budget runs out.
 // The node count rises towards the edge of the discrete region, which gives a natural shading.
 
-import { grandma, fixedPoints, FSA } from './group.js';
+import { grandma, fixedPoints, RELATIONS } from './group.js';
 
 // Two scales: a non-discrete group can close up at a coarse tolerance and only fall apart below it.
 // Halving ε multiplies the work of a discrete group by about 2^D, where D ≤ 2 is the dimension of
@@ -18,11 +18,11 @@ export function probe(ta, tb, group = {}, { eps = 0.04, maxNodes = 8000, levmax 
 }
 
 // Returns the number of nodes visited, or −1 if the budget ran out (or the recipe broke down).
-export function probeOnce(ta, tb, { nonfree = false, altroot = false, neck = true } = {},
+export function probeOnce(ta, tb, { comm = 'free', altroot = false, symm = false, neck = true } = {},
                       { eps = 0.04, maxNodes = 12000, levmax = 120 } = {}) {
   let gens, fix;
   try {
-    gens = grandma(ta, tb, { nonfree, altroot });
+    gens = grandma(ta, tb, { comm, altroot, symm });
     fix = fixedPoints(gens);
   } catch (e) { return -1; }
   const G = new Float64Array(32), F = new Float64Array(24);
@@ -30,6 +30,7 @@ export function probeOnce(ta, tb, { nonfree = false, altroot = false, neck = tru
   for (let t = 0; t < 3; t++) for (let g = 0; g < 4; g++) { F[(t * 4 + g) * 2] = fix[t][g][0]; F[(t * 4 + g) * 2 + 1] = fix[t][g][1]; }
   for (let j = 0; j < 32; j++) if (!isFinite(G[j])) return -1;
   for (let j = 0; j < 24; j++) if (!isFinite(F[j])) return -1;
+  const FSA = (RELATIONS[comm] || RELATIONS.free).fsa, nonfree = !!FSA;
 
   const W = new Float64Array((levmax + 1) * 8);
   const tags = new Int8Array(levmax + 2), state = new Int16Array(levmax + 2);

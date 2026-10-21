@@ -19,11 +19,12 @@ const WALK = 512; // steps before the walk returns to the seeds
 
 // Fixed points on the limit set, as [re, im, last letter]: those of loxodromic and parabolic words.
 // An elliptic word (real trace in (−2, 2)) turns about its fixed points, which lie off the limit set.
-// With the order-four commutator that rules out the commutators' fixed points.
-function seeds(gens, nonfree) {
+// With an elliptic commutator (the non-free relations) that rules out the commutators' fixed points.
+function seeds(gens) {
   const elliptic = M => { const t = trace(M); return Math.abs(t[1]) < 1e-9 && Math.abs(t[0]) < 2 - 1e-9; };
   const fix = fixedPoints(gens);
   const out = [];
+  const nonfree = elliptic(mmul(mmul(gens[0], gens[1]), mmul(gens[2], gens[3])));
   for (let i = 0; i < 4; i++) {
     if (!elliptic(gens[i])) out.push([...fix[1][i], i]);
     if (!nonfree) out.push([...fix[0][i], i], [...fix[2][i], i]);
@@ -44,11 +45,11 @@ function seeds(gens, nonfree) {
 // Returns { segments: points drawn, samples: points computed, done, ms, levmaxHits: 0 }.
 export function walk(p, sink, { batch = 8192, flushMs = 60 } = {}) {
   const t0 = performance.now();
-  const gens = grandma(p.ta, p.tb, { nonfree: p.nonfree, altroot: p.altroot });
+  const gens = grandma(p.ta, p.tb, { comm: p.comm, altroot: p.altroot, symm: p.symm });
   const G = new Float64Array(32);
   for (let g = 0; g < 4; g++) for (let j = 0; j < 8; j++) G[8 * g + j] = gens[g][j];
   for (let j = 0; j < 32; j++) if (!isFinite(G[j])) throw new Error('No group for these traces: the recipe divides by zero.');
-  const S = seeds(gens, !!p.nonfree);
+  const S = seeds(gens);
   if (!S.length) throw new Error('No point of the limit set to start from: all short words are elliptic.');
 
   const m = S.length;

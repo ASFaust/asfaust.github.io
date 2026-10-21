@@ -92,7 +92,7 @@ The page's look and structure follow `art/mandelbrot/`: theme toggle, Info dialo
   - `node tests/symmetry.mjs [-v]`: automorphism counts and point-group names for 36 shapes; symmetrize exactness.
   - `node tests/realize.mjs [--mode canonical|faces|planar] [--sym] [--random N] [--max-it N] [--regularity x] [--stiffness x] [strings…]`: the realization benchmark; metrics are explained in [realization/README.md](realization/README.md#measuring).
   - `node tests/screenshot.mjs <url> <out.png> [waitMs] [js…]`: headless Chrome over CDP (`google-chrome` with SwiftShader, so it is slow on big shapes). It prints console errors and the values of the given JS expressions; `sleep:ms` waits.
-- `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, and `metrics`.
+- `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, `metrics`, and `balance` (per-face roundness and size).
 
 ## Decisions and their reasons
 

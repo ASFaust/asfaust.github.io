@@ -3,7 +3,10 @@
 //
 // Columns: rounds and time of the final realization (after the build, which relaxes between
 // operators), then the metrics of tests/lib.mjs: planarity (max, relative to the mean edge),
-// faces pointing inward, reflex edges, longest/shortest edge, largest/smallest face.
+// faces pointing inward, reflex edges, longest/shortest edge, and balance: the worst longest/shortest
+// edge within one face, the smallest corner turn relative to a regular face's, the least round face,
+// largest/smallest face size against a regular polygon of its degree, and the slope of size
+// against degree.
 
 import { build, Realization } from '../js/pipeline.js';
 import { flatten } from '../js/canonical.js';
@@ -24,7 +27,7 @@ const strings = [...(args.length ? args : random ? [] : LIST), ...randomStrings(
 
 const f = (x, d = 1) => x.toExponential(d);
 console.log(`mode ${mode}${sym ? ', symmetric' : ''}${mode === 'faces' ? `, regularity ${regularity}, stiffness ${stiffness}` : ''}`);
-console.log('string        edges  rounds      ms   planar  inward reflex  edge×   area×');
+console.log('string        edges  rounds      ms   planar  inward reflex  edge×  fedge×  turn  round  size×  slope');
 let total = 0;
 for (const s of strings) {
   const { P } = build(s, mode);
@@ -35,6 +38,6 @@ for (const s of strings) {
   const ms = performance.now() - t0;
   total += ms;
   const m = metrics(P);
-  console.log(`${s.padEnd(12)} ${String(P.ne).padStart(6)} ${String(R.it).padStart(7)} ${ms.toFixed(0).padStart(7)}  ${f(m.planarMax)} ${String(m.inward).padStart(7)} ${String(m.reflex).padStart(6)} ${m.edgeRatio.toFixed(1).padStart(6)} ${m.areaRatio.toFixed(1).padStart(7)}`);
+  console.log(`${s.padEnd(12)} ${String(P.ne).padStart(6)} ${String(R.it).padStart(7)} ${ms.toFixed(0).padStart(7)}  ${f(m.planarMax)} ${String(m.inward).padStart(7)} ${String(m.reflex).padStart(6)} ${m.edgeRatio.toFixed(1).padStart(6)} ${m.faceEdgeMax.toFixed(1).padStart(7)} ${m.turnMin.toFixed(2).padStart(5)}   ${m.roundMin.toFixed(2)} ${m.sizeRatio.toFixed(1).padStart(6)} ${(isNaN(m.degreeSlope) ? '—' : m.degreeSlope.toFixed(2)).padStart(6)}`);
 }
 console.log(`total ${(total / 1000).toFixed(1)} s`);
