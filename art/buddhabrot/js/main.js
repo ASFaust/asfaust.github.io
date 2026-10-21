@@ -1,5 +1,5 @@
 // UI wiring: inputs ↔ settings, the generate/stop cycle with its progress display, buttons and keys.
-import { st, DEFAULTS, SLIDERS, SLIDER_IDS, NUMBER_IDS, setState, readHash, writeHash, fullBounds, clamp } from './state.js';
+import { st, DEFAULTS, GRADIENTS, SLIDERS, SLIDER_IDS, NUMBER_IDS, setState, readHash, writeHash, fullBounds, clamp } from './state.js';
 import { compute, killPool, nCores } from './compute.js';
 import { render as draw, drawHistogram, pooled, crop } from './display.js';
 import { createView } from './view.js';
@@ -15,7 +15,7 @@ var genId = 0, running = false;
 var result = null;            // { data: Float32Array, res, b: bounds, total }
 var bins = null;              // brightness histogram of the last image
 // The last whole-set render, whose brightness statistics a zoom borrows so that it keeps the whole set's look. Only
-// renders of the same distribution qualify: the settings in refKey() must match; the method, samples, seed and
+// renders of the same distribution qualify: the settings in refKey() must match; the samples, seed and
 // resolution may differ, since the display compares densities.
 var reference = null;         // { key, result }
 function refKey(p) { return JSON.stringify([p.sampler, p.max_iter, p.nearby_points, p.nearby_spread, p.refine_steps, p.balance, p.colour_mode, p.band_short, p.band_mid]); }
@@ -29,13 +29,11 @@ function syncInputs() {
     $('v-' + id).textContent = SLIDERS[k].fmt(st[k]);
   });
   Object.keys(NUMBER_IDS).forEach(function(k) { $('p-' + NUMBER_IDS[k]).value = st[k]; });
-  $('p-method').value = st.method;
   $('p-sampler').value = st.sampler;
-  var metro = st.method === 'metropolis', bisection = st.sampler === 'bisection';
+  var metro = !fullBounds(), bisection = st.sampler === 'bisection';
   document.querySelectorAll('.metro-only').forEach(function(el) { el.classList.toggle('hidden', !metro); });
   document.querySelectorAll('.bisection-only').forEach(function(el) { el.classList.toggle('hidden', !bisection); });
   document.querySelectorAll('.density-only').forEach(function(el) { el.classList.toggle('hidden', bisection); });
-  $('p-method').querySelector('[value="metropolis"]').disabled = bisection;
   document.querySelectorAll('.nearby-only').forEach(function(el) { el.classList.toggle('hidden', metro || !bisection); });
   $('samplesNote').textContent = metro ? 'Metropolis chains, each started at a sampled point whose orbit crosses the view'
     : bisection ? 'boundary points whose orbits are traced'
@@ -109,7 +107,7 @@ async function generate() {
     // A zoom without a whole-set render to borrow its brightness from (a page loaded straight into a zoom, or new
     // settings) gets one now, in the same run, so that Stop keeps the zoom.
     if (missing) {
-      var q = Object.assign({}, p, { method: 'direct', samples: REF_SAMPLES, resolution: refResolution(p.resolution) });
+      var q = Object.assign({}, p, { samples: REF_SAMPLES, resolution: refResolution(p.resolution) });
       ['xmin', 'xmax', 'ymin', 'ymax'].forEach(function(k) { q[k] = DEFAULTS[k]; });
       var ref = await compute(q, { stage: function(name, lo, hi, total) { setStage('Reference', lo, hi, total); }, progress: addProgress, live: function() { return id === genId; } });
       if (!ref || id !== genId) return;
@@ -155,6 +153,7 @@ function showStats(note) {
 function setRunning(on) {
   $('genBtn').disabled = on;
   $('newSeedBtn').disabled = on;
+  $('randomBtn').disabled = on;
   $('stopBtn').disabled = !on;
   $('viewBtn').disabled = on || !result;
   $('saveBtn').disabled = !result;
@@ -272,7 +271,6 @@ Object.keys(NUMBER_IDS).forEach(function(k) {
     writeHash();
   });
 });
-$('p-method').addEventListener('change', function() { setState(Object.assign({}, st, { method: this.value })); syncInputs(); writeHash(); });
 $('p-sampler').addEventListener('change', function() { setState(Object.assign({}, st, { sampler: this.value })); syncInputs(); writeHash(); });
 $('p-scale').addEventListener('change', function() { st.scale_mode = this.value; syncInputs(); scheduleRender(); writeHash(); });
 $('p-balance').addEventListener('input', function() { st.balance = +this.value; $('v-balance').textContent = st.balance.toFixed(2); writeHash(); });
@@ -308,7 +306,93 @@ function newSeed() {
   writeHash();
   generate();
 }
+// Random settings: a type A or a type B render over the whole set, within ranges that give a picture, so the button can
+// be pressed again and again. Type B gets equalization with an aggressive min clip, which carves the figure out of its
+// glow (owner, 2026-10-21). The resolution is kept.
+function randomSettings() {
+  var r = Math.random;
+  function pick(a) { return a[Math.floor(r() * a.length)]; }
+  function uni(lo, hi) { return +(lo + r() * (hi - lo)).toFixed(3); }
+  function logUni(lo, hi) { return +Math.exp(Math.log(lo) + r() * (Math.log(hi) - Math.log(lo))).toPrecision(2); }
+  var p = { seed: Math.floor(r() * 2147483647), resolution: st.resolution, gradient: GRADIENTS[pick(Object.keys(GRADIENTS))] };
+  if (r() < 0.5) {
+    // type A: fewer samples with more nearby points, so that a render stays around a second or two
+    var nearby = pick([0, 5, 20, 20, 50, 200]);
+    Object.assign(p, { sampler: 'bisection', nearby_points: nearby, nearby_spread: logUni(1e-5, 1e-2),
+      samples: Math.max(10, Math.round(logUni(300, 1500) / Math.max(1, nearby / 20))), refine_steps: pick([10, 20, 40, 80]),
+      balance: uni(0, 1), max_iter: pick([10000, 100000, 100000, 300000]), scale_mode: 'log',
+      min_clip: uni(0.05, 0.2), max_clip: uni(0.55, 0.8), midtone: uni(0.35, 0.55), blur_px: uni(0.2, 0.8) });
+  } else if (r() < 0.75) {
+    Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000, 3000000]), max_iter: pick([20, 40, 100, 300, 1000, 3000]),
+      scale_mode: 'equalize', min_clip: uni(0.3, 0.75), max_clip: 1, midtone: uni(0.4, 0.65) });
+  } else {
+    // type B coloured by orbit length (equalization would wash it out to white)
+    Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000]), max_iter: pick([1000, 5000, 20000]), colour_mode: 'length',
+      scale_mode: 'nth root', root: 3, min_clip: uni(0.05, 0.15), max_clip: uni(0.7, 0.85) });
+  }
+  return p;
+}
+// Wild settings ("I'm feeling lucky"): nearly every setting from nearly its whole range, and a gradient made up on the
+// spot. Rolls may be odd; that is the point. Two things are bounded. The work: samples are capped so that
+// samples × (refine steps + 1 + nearby points) × max iterations stays near what the defaults cost. And the clips, by
+// scaling, since fully random ones left about a third of the rolls black or flat: linear needs a low max clip, log and
+// roots a low min clip, and equalization takes aggressive ones.
+function wildSettings() {
+  var r = Math.random;
+  function pick(a) { return a[Math.floor(r() * a.length)]; }
+  function uni(lo, hi) { return +(lo + r() * (hi - lo)).toFixed(3); }
+  function logUni(lo, hi) { return +Math.exp(Math.log(lo) + r() * (Math.log(hi) - Math.log(lo))).toPrecision(2); }
+  function hex(h, s, l) {   // HSL (h in turns) → rrggbb
+    function f(n) { var k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }
+    return f(0) + f(8) + f(4);
+  }
+  // 2 to 5 stops; mostly from black and getting lighter, rarely any colours in any order
+  var n = 2 + Math.floor(r() * 4), dark = r() < 0.9, stops = [], i;
+  for (i = 0; i < n; i++) {
+    var t = i / (n - 1), pos = i === 0 ? 0 : i === n - 1 ? 1 : uni(t - 0.5 / n, t + 0.5 / n);
+    var light = dark ? (i === 0 && r() < 0.8 ? 0 : 0.08 + 0.9 * t) : uni(0.05, 0.95);
+    stops.push(hex(r(), uni(0.3, 1), light) + '@' + pos);
+  }
+  var mode = pick(['linear', 'nth root', 'nth root', 'log', 'log', 'equalize', 'equalize']), lo, hi, maxIter;
+  if (mode === 'linear') { lo = uni(0, 0.03); hi = uni(0.05, 0.4); }
+  else if (mode === 'equalize') { lo = uni(0, 0.8); hi = uni(Math.min(1, lo + 0.2), 1); }
+  else { lo = uni(0, 0.3); hi = uni(0.4, 1); }
+  var p = {
+    seed: Math.floor(r() * 2147483647), resolution: st.resolution, gradient: stops.join(','),
+    scale_mode: mode, root: uni(1.5, 8), min_clip: lo, max_clip: hi,
+    midtone: uni(0.25, 0.75), soft_points: r() < 0.7,
+    blur_px: logUni(0.2, 1.2)   // around 0.5 px, where sensible pictures sit; wider blurs only smeared
+  };
+  if (r() < 0.5) {
+    var nearby = pick([0, 0, 1, 5, 20, 100, 500, 2000]), refine = pick([0, 1, 3, 10, 20, 40, 80, 200]);
+    maxIter = Math.round(logUni(10, 1e6));
+    Object.assign(p, { sampler: 'bisection', nearby_points: nearby, nearby_spread: logUni(1e-6, 0.1), refine_steps: refine, balance: uni(0, 1),
+      samples: Math.max(1, Math.min(Math.round(logUni(5, 5000)), Math.floor(2e9 / ((refine + 1 + nearby) * maxIter)))) });
+  } else {
+    maxIter = Math.round(logUni(10, 1e5));
+    Object.assign(p, { sampler: 'grid', samples: Math.max(1e4, Math.min(Math.round(logUni(1e5, 3e6)), Math.floor(3e9 / maxIter))) });
+  }
+  p.max_iter = maxIter;
+  if (r() < 0.3) {
+    var bs = Math.max(1, Math.round(logUni(2, Math.max(3, maxIter / 4))));
+    Object.assign(p, { colour_mode: 'length', band_short: bs, band_mid: Math.round(logUni(bs + 1, Math.max(bs + 2, maxIter))),
+      colour_short: hex(r(), uni(0.5, 1), 0.55), colour_mid: hex(r(), uni(0.5, 1), 0.55), colour_long: hex(r(), uni(0.5, 1), 0.55),
+      channel_norm: pick(['separate', 'shared']) });
+  }
+  return p;
+}
+var RMODE = 'buddhabrot-random';
+try { $('p-rmode').value = localStorage.getItem(RMODE) === 'wild' ? 'wild' : 'sensible'; } catch (e) {}
+$('p-rmode').addEventListener('change', function() { try { localStorage.setItem(RMODE, this.value); } catch (e) {} });
+function randomize() {
+  if (running) return;
+  setState(Object.assign({}, DEFAULTS, $('p-rmode').value === 'wild' ? wildSettings() : randomSettings()));
+  syncInputs();
+  writeHash();
+  generate();
+}
 $('newSeedBtn').addEventListener('click', newSeed);
+$('randomBtn').addEventListener('click', randomize);
 $('genBtn').addEventListener('click', generate);
 $('stopBtn').addEventListener('click', stop);
 $('viewBtn').addEventListener('click', renderView);
@@ -334,6 +418,7 @@ document.addEventListener('keydown', function(e) {
   if ($('infoDialog').open) return;
   if (e.key === 'Enter' || e.key === 'g') generate();
   else if (e.key === 'n') newSeed();
+  else if (e.key === 'r') randomize();
   else if (e.key === 'Escape') stop();
 });
 

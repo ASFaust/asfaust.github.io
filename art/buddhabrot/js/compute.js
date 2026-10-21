@@ -2,6 +2,7 @@
 // No DOM here; main.js shows the progress.
 import { rng, mixSeed } from './rng.js';
 import { pick } from './grid.js';
+import { fullBounds } from './state.js';
 
 var workerURL = new URL('./worker.js', import.meta.url);
 export var nCores = Math.max(1, Math.min(32, navigator.hardwareConcurrency || 4));
@@ -138,7 +139,9 @@ export async function compute(p, ui) {
   // Orbits that cross a zoomed view mostly start outside it, so starting points always come from the whole set.
   // Both samplers start from the border grid. The grid sampler has a known density, and only escaping orbits count
   // with it; the bisection sampler's points are far closer to the set, with an unknown density.
-  var metro = p.method === 'metropolis', bisection = p.sampler === 'bisection', known = !bisection;
+  // The whole set is traced directly. A zoomed view uses Metropolis, which follows the orbits that cross it: traced
+  // directly, most samples would miss it. The bisection sampler never zooms (state.js).
+  var metro = !fullBounds(p), bisection = p.sampler === 'bisection', known = !bisection;
   var grid = await borderGrid(p.max_iter, ui);
   if (!grid) return null;
 

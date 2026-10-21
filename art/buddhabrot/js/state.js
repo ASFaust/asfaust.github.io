@@ -21,11 +21,8 @@ export var GRADIENTS = {
   sunset: '000000@0,1b1446@0.25,9c2f6e@0.5,f08a4b@0.75,fff1c9@1',
   'ember-ice': '000000@0,3a0d05@0.3,c0502a@0.55,8fd0e8@0.85,ffffff@1'
 };
-// matplotlib colormap names in desktop presets → the nearest gradient here
-var CMAPS = { gray: 'gray', hot: 'hot', cividis: 'night', twilight: 'dusk' };
 
 export var DEFAULTS = {
-  method: 'direct',
   sampler: 'bisection',
   samples: 600,
   nearby_points: 20,
@@ -65,9 +62,33 @@ export var DEFAULTS = {
 };
 export var KEYS = Object.keys(DEFAULTS);
 
-// Built-in presets only list what differs from the defaults.
+// Built-in presets only list what differs from the defaults. Type A first (bisection, few samples, long orbits), then
+// type B (grid sampler, many samples; equalized with an aggressive min clip, which carves the figure out of its glow),
+// colouring by orbit length, and a zoom.
+var GRID_B = { sampler: 'grid', samples: 2000000, scale_mode: 'equalize', max_clip: 1 };
+var NEBULA = { sampler: 'grid', samples: 3000000, max_iter: 5000, colour_mode: 'length', scale_mode: 'nth root', root: 3, min_clip: 0.1, max_clip: 0.8 };
 export var BUILTIN = {
-  'Default': {}
+  'Default': {},
+  'Gold head': { balance: 1, samples: 900, gradient: GRADIENTS.gold },
+  'Lapis filigree': { refine_steps: 20, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.lapis },
+  'Sodium lamp': { nearby_points: 5, nearby_spread: 1e-5, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.sodium },
+  'Coral': { samples: 300, nearby_points: 40, nearby_spread: 0.01, max_clip: 0.6, midtone: 0.4, gradient: GRADIENTS.reef },
+  'Amethyst bubbles': { samples: 60, nearby_points: 200, nearby_spread: 1e-4, max_iter: 200000, gradient: GRADIENTS.amethyst },
+  'Twelve orbits': { samples: 12, nearby_points: 2000, nearby_spread: 3e-5, max_iter: 200000, max_clip: 0.7, gradient: GRADIENTS.sunset },
+  'Patina': Object.assign({}, GRID_B, { max_iter: 1000, min_clip: 0.55, gradient: GRADIENTS.patina }),
+  'Ember and ice': Object.assign({}, GRID_B, { max_iter: 2000, min_clip: 0.65, midtone: 0.6, gradient: GRADIENTS['ember-ice'] }),
+  'Lapis': Object.assign({}, GRID_B, { max_iter: 3000, min_clip: 0.65, gradient: GRADIENTS.lapis }),
+  'Sunset': Object.assign({}, GRID_B, { max_iter: 300, min_clip: 0.65, gradient: GRADIENTS.sunset }),
+  'Aurora': Object.assign({}, GRID_B, { max_iter: 100, min_clip: 0.65, gradient: GRADIENTS.aurora }),
+  'Lace (40 iterations)': Object.assign({}, GRID_B, { samples: 3000000, max_iter: 40, min_clip: 0.7, gradient: GRADIENTS.sunset }),
+  'Ghost (20 iterations)': Object.assign({}, GRID_B, { samples: 3000000, max_iter: 20, min_clip: 0.1, gradient: GRADIENTS.gray }),
+  'Cloud': Object.assign({}, GRID_B, { max_iter: 200, min_clip: 0.6, midtone: 0.65, gradient: GRADIENTS.cloud }),
+  'Negative': Object.assign({}, GRID_B, { max_iter: 500, min_clip: 0.25, gradient: 'ffffff@0,000000@1' }),
+  'Nebulabrot': NEBULA,
+  'Deep Nebulabrot': Object.assign({}, NEBULA, { samples: 2000000, max_iter: 20000, band_short: 200, band_mid: 2000, min_clip: 0.05, max_clip: 0.75 }),
+  'Warm Nebulabrot': Object.assign({}, NEBULA, { colour_short: '7a1fd0', colour_mid: 'e04a2a', colour_long: 'ffd060' }),
+  'Head (zoom)': Object.assign({}, GRID_B, { samples: 100000, chain_length: 200, max_iter: 5000, min_clip: 0.3,
+    xmin: -1.9, xmax: -1.0, ymin: -0.45, ymax: 0.45, gradient: GRADIENTS.dusk })
 };
 
 export var st = Object.assign({}, DEFAULTS);
@@ -121,7 +142,7 @@ export function gradientString(stops) {
   return stops.slice().sort(function(a, b) { return a.p - b.p; }).map(function(s) { return s.c.slice(1) + '@' + +s.p.toFixed(4); }).join(',');
 }
 
-// Any object (URL hash, preset, desktop JSON) → a complete, valid settings object.
+// Any object (URL hash, preset) → a complete, valid settings object.
 export function sanitize(data) {
   var out = Object.assign({}, DEFAULTS);
   KEYS.forEach(function(k) {
@@ -149,19 +170,13 @@ export function sanitize(data) {
   out.max_clip = clamp(out.max_clip, 0, 1);
   out.midtone = clamp(out.midtone, 0.02, 0.98);
   out.blur_px = clamp(out.blur_px, 0.1, 5);
-  if (['direct', 'metropolis'].indexOf(out.method) < 0) out.method = DEFAULTS.method;
   if (['bisection', 'grid'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
-  // Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed render is mostly noise:
-  // the bisection sampler always draws the whole set.
+  // Zoomed views are rendered with Metropolis (compute.js), which needs a known density. Bisection has none, so the
+  // bisection sampler always draws the whole set.
   if (out.sampler === 'bisection') {
-    out.method = 'direct';
     ['xmin', 'xmax', 'ymin', 'ymax'].forEach(function(k) { out[k] = DEFAULTS[k]; });
   }
-  // desktop presets were scaled up to the maximum, never equalized
-  if ('cmap' in data && !('scale_mode' in data)) out.scale_mode = 'nth root';
   if (['linear', 'nth root', 'log', 'equalize'].indexOf(out.scale_mode) < 0) out.scale_mode = DEFAULTS.scale_mode;
-  // desktop presets name a matplotlib colormap
-  if ('cmap' in data && !('gradient' in data) && CMAPS[data.cmap]) out.gradient = GRADIENTS[CMAPS[data.cmap]];
   if (['gradient', 'length'].indexOf(out.colour_mode) < 0) out.colour_mode = DEFAULTS.colour_mode;
   if (['separate', 'shared'].indexOf(out.channel_norm) < 0) out.channel_norm = DEFAULTS.channel_norm;
   out.band_short = clamp(out.band_short, 1, 1e6);
@@ -175,7 +190,7 @@ export function sanitize(data) {
   return out;
 }
 
-export function fullBounds() { return ['xmin', 'xmax', 'ymin', 'ymax'].every(function(k) { return st[k] === DEFAULTS[k]; }); }
+export function fullBounds(p) { return ['xmin', 'xmax', 'ymin', 'ymax'].every(function(k) { return (p || st)[k] === DEFAULTS[k]; }); }
 
 // ---------- URL hash: every setting that differs from its default ----------
 export function writeHash() {

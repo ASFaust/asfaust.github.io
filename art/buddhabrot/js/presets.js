@@ -1,7 +1,7 @@
-// Presets: built-in ones, ones saved in this browser (localStorage), and JSON export and import.
-// Desktop-version JSON files load too; sanitize() translates them.
-import { st, KEYS, BUILTIN, sanitize } from './state.js';
-import { stamp, download } from './files.js';
+// Presets: built-in ones and ones saved in this browser (localStorage). The URL holds the settings too, so sharing
+// needs no files (JSON export and import were removed, 2026-10-21).
+import { st, KEYS, BUILTIN } from './state.js';
+import { stamp } from './files.js';
 
 var STORE = 'buddhabrot-presets';
 function savedPresets() {
@@ -64,26 +64,5 @@ export function initPresets(apply) {
     storePresets(saved);
     fill();
   });
-  $('exportBtn').addEventListener('click', function() {
-    var blob = new Blob([JSON.stringify(currentPreset(), null, 2)], { type: 'application/json' });
-    download(blob, 'buddhabrot_' + stamp() + '.json');
-  });
-  $('importBtn').addEventListener('click', function() { $('importFile').click(); });
-  $('importFile').addEventListener('change', function() {
-    var file = this.files[0];
-    this.value = '';
-    if (!file) return;
-    file.text().then(function(text) {
-      var data = JSON.parse(text);
-      if (!data || typeof data !== 'object') throw new Error('not an object');
-      var name = file.name.replace(/\.json$/i, '');
-      var saved = savedPresets();
-      saved[name] = sanitize(data);
-      storePresets(saved);
-      fill('s:' + name);
-      apply(data);
-    }).catch(function(err) { alert('Could not read preset: ' + err.message); });
-  });
-
   fill();
 }

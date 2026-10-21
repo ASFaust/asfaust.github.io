@@ -8,7 +8,7 @@ This is only the task list; [README.md](README.md) explains the code. When you f
 
 Label each experiment **type A** (artsy) or **type B** (classical), or both.
 
-- **Make the zoom work, look good and run efficiently** (B; later, owner). The "Method" dropdown and the Metropolis controls (mutations per chain, burn-in, large step, mutation radii) should disappear from the UI. Zoomed renders use Metropolis automatically, with settings chosen by the page. Part of this:
+- **Make the zoom work, look good and run efficiently** (B; later, owner). Zoomed renders already use Metropolis automatically (the Method setting is gone since 2026-10-21). Still open: the Metropolis controls (mutations per chain, burn-in, large step, mutation radii), shown only for zoomed views, should disappear too, with settings chosen by the page. Part of this:
   - measure time per noise level against brute force, in deep zooms,
   - choose chain length, burn-in (probably 0, now that chains start in their stationary distribution) and step sizes automatically,
   - a reference for pages loaded straight into a zoom (see below).
@@ -22,11 +22,16 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 ## Other open items
 
 - **Decide what "done" means, then drop "(WIP)".** The label is in the `<title>`, the top-bar `<h1>` and the home-page link (`repo/index.html`). The owner has not yet named the criteria.
-- **Generate some nice presets (do this last,** once sampling and colouring have settled). Two type A rows the owner starred on the round 2 sheet, besides the new default, are good candidates: 20 refine steps with 20 nearby points @ 1e-3, and 10 refine steps with 5 nearby points @ 1e-5. `BUILTIN` in `state.js` holds only "Default". Cover both types: type A (bisection, long orbits, nearby points; no orbit-length colouring) and type B (grid, many samples, possibly orbit-length colouring), plus a Metropolis zoom once the zoom works.
 - **"Spread" as a second artistic slider?** The image-crowding weighting (tried, dropped from the code) spread the figure out and lifted the lower lobes. → [sampling.md](sampling.md#head-and-body-balance-implemented-2026-10-21-the-first-purely-artistic-setting)
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-21.** The Method setting removed: zoomed views use Metropolis, the whole set the direct method (owner). The grid sampler is labelled "near the boundary (zoomable)".
+
+- **2026-10-21.** JSON export and import removed (the URL holds every setting), and with them the loading of desktop presets. Random gained a wild mode ("I'm feeling lucky"), chosen under Presets instead of with another button.
+
+- **2026-10-21, presets and Random.** Presets moved to the first panel. 20 built-in presets (type A, type B with aggressive min clips, Nebulabrots, a head zoom), picked from three rounds of renders. A Random button (key R).
 
 - **2026-10-21, review round 2 acted on** (sheet: https://claude.ai/artifact/VuuBD9KgNFouxx4ahMrCzb; picks also in its db, `review/round2`).
   - cloud is the deep sky `2f6fb8@0,6fa8dc@0.35,d8e6f2@0.75,ffffff@1`; lapis, sodium, reef, sunset and ember-ice added; orchid, ion and verdigris dropped.

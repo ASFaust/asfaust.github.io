@@ -34,6 +34,7 @@
       <div class="controls">
         <button id="genBtn" title="Render with the current settings and seed (Enter or G)">Generate</button>
         <button id="newSeedBtn" title="Render again with a new random seed (N)">New seed</button>
+        <button id="randomBtn" title="Render with random settings, sensible or wild as chosen under Presets (R)">Random</button>
         <button id="stopBtn" disabled>Stop</button>
         <button id="viewBtn" class="density-only" disabled title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
         <button id="resetBtn" disabled>Reset zoom</button>
@@ -44,26 +45,50 @@
     </section>
 
     <div class="sidebar">
-    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, N renders a new seed, Escape stops. The URL always holds the current settings, so you can share it.</p>
+    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, N renders a new seed, R random settings, Escape stops. The URL always holds the current settings, so you can share it.</p>
 
     <div class="panels">
+      <details open>
+        <summary>Presets</summary>
+        <div class="params">
+          <div class="param">
+            <label for="p-preset"><span>Load preset</span></label>
+            <small>loading a preset starts a new render</small>
+            <select id="p-preset"></select>
+          </div>
+          <div class="param">
+            <label for="p-rmode"><span>Random button</span></label>
+            <small>sensible: random settings that give a classic picture; wild: anything goes, from the samplers to the gradient (R)</small>
+            <select id="p-rmode">
+              <option value="sensible">sensible</option>
+              <option value="wild">wild: I'm feeling lucky</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-pname"><span>Save current settings</span></label>
+            <small>stored in this browser</small>
+            <div class="row">
+              <input type="text" id="p-pname" placeholder="Preset name">
+              <button id="savePresetBtn" type="button">Save</button>
+            </div>
+          </div>
+          <div class="param wide">
+            <div class="preset-actions">
+              <button id="deletePresetBtn" type="button" disabled>Delete selected</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
       <details open>
         <summary>Sampling</summary>
         <div class="params">
           <div class="param">
-            <label for="p-method"><span>Method</span></label>
-            <small>direct traces every sample; Metropolis follows the orbits that cross the view, for zoomed renders, and needs the “near the boundary” sampler</small>
-            <select id="p-method">
-              <option value="direct">direct</option>
-              <option value="metropolis">metropolis</option>
-            </select>
-          </div>
-          <div class="param">
             <label for="p-sampler"><span>Sampler</span></label>
-            <small>where the starting points c come from</small>
+            <small>where the starting points c come from. Only the second can zoom: zoomed views follow the orbits that cross them (Metropolis), which needs a known density</small>
             <select id="p-sampler">
               <option value="bisection">bisection: very close to the boundary</option>
-              <option value="grid">near the boundary: even, known density</option>
+              <option value="grid">near the boundary (zoomable)</option>
             </select>
           </div>
           <div class="param">
@@ -240,33 +265,6 @@
         </div>
       </details>
 
-      <details>
-        <summary>Presets</summary>
-        <div class="params">
-          <div class="param">
-            <label for="p-preset"><span>Load preset</span></label>
-            <small>loading a preset starts a new render</small>
-            <select id="p-preset"></select>
-          </div>
-          <div class="param">
-            <label for="p-pname"><span>Save current settings</span></label>
-            <small>stored in this browser</small>
-            <div class="row">
-              <input type="text" id="p-pname" placeholder="Preset name">
-              <button id="savePresetBtn" type="button">Save</button>
-            </div>
-          </div>
-          <div class="param wide">
-            <small>Desktop-version JSON presets load too; their gray and hot colormaps carry over, cividis becomes night and twilight becomes dusk.</small>
-            <div class="preset-actions">
-              <button id="deletePresetBtn" type="button" disabled>Delete selected</button>
-              <button id="exportBtn" type="button">Export JSON</button>
-              <button id="importBtn" type="button">Import JSON</button>
-              <input type="file" id="importFile" accept=".json,application/json" class="hidden">
-            </div>
-          </div>
-        </div>
-      </details>
     </div>
     </div>
   </main>

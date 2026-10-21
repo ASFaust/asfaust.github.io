@@ -10,7 +10,7 @@ It is a port of the owner's desktop app **Buddhabrot Explorer** (`/home/andi/cod
 - **Inside/outside pairs.** Like the desktop app, the web page takes its pairs from a coarse Mandelbrot grid (the border grid), but it bisects them much closer to the set, and the grid's resolution is fixed, not a control.
 - **New in the web page:** the Metropolis method for zoomed views, the grid sampler ("near the boundary", with a known density), histogram equalization, the gradient editor, colouring by orbit length, and the clip bar with its midtone (a levels tool).
 - **Dropped:** the desktop pre-invert and post-invert options. "Reverse" in the gradient editor covers post-invert.
-- **Desktop presets still load.** Their matplotlib colormap names map to the page's gradients (gray and hot; cividis becomes night, twilight becomes dusk). Without a `scale_mode` of their own they get nth root, since the desktop app never equalized.
+- **Desktop presets no longer load.** JSON export and import were removed (owner, 2026-10-21): the URL holds every setting, so a link is the way to share one, and with them went the translation of desktop presets in `sanitize()`.
 
 The Info dialog in `index.html` explains the maths for visitors; keep it in sync with the code.
 
@@ -35,12 +35,12 @@ js/view.js        zoom and pan of the finished image (CSS transform); region() m
                   (main.js lays the sharp detail canvas over a zoomed preview)
 js/gradient.js    gradient editor (draggable stops, picker, presets, reverse)
 js/bar.js         slider with one to three handles, from art/mandelbrot/js/bar.js plus a third (midpoint) handle: the clip bar
-js/presets.js     built-in and localStorage presets, JSON export and import
+js/presets.js     built-in and localStorage presets
 js/files.js       stamp() for file names, download()
 js/rng.js         mulberry32 rng(seed), mixSeed(seed, salt, i)
 tests/chrome.mjs       headless Chrome over the DevTools protocol, shared by the two scripts below
 tests/screenshot.mjs   headless Chrome: screenshot, console errors, values of JS expressions
-tests/regression.mjs   canvas-hash regression check over six URLs; hashes in tests/hashes-<cores>.json
+tests/regression.mjs   canvas-hash regression check over seven URLs; hashes in tests/hashes-<cores>.json
 tests/distribution.js  expression for screenshot.mjs: does Metropolis reproduce its sampler? (L1 against brute force)
 tests/balance.js       expression for screenshot.mjs: share of the image in the head and body bands, per balance value
 ```
@@ -53,11 +53,11 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
    - **`bisection`** (density unknown; type A). The main thread pairs an inside and an outside corner of mixed cells, picked at random with the head/body family weights of `balance`, and `refine` jobs bisect each pair randomly for up to `refine_steps` steps (stopping at 1e-10) and keep the outside end. See [sampling.md](sampling.md#the-bisection-sampler-type-a).
    - **`grid`** ("near the boundary", known density; type B) draws points from the blurred cell weights. See [sampling.md](sampling.md#the-grid-sampler-option-2-implemented-2026-10-21).
 2. **Histograms.** Each tracing worker gets `histInit`, which creates its own histogram. The number of tracing workers is capped so that all histograms fit into 768 MB.
-   - **Direct method** (`method: 'direct'`): `trace` jobs trace every sample.
+   - **Direct method** (the whole set): `trace` jobs trace every sample.
      - Orbits are recorded until `|z|` exceeds `bail`, the distance of the view's farthest corner from 0 (at least 2), so that the corners get points too.
      - With the bisection sampler, the samples escape by construction. Their Gaussian "nearby" points count only if they escape too; one that does not is redrawn, up to 8 times.
      - With the grid sampler, only escaping orbits count.
-   - **Metropolis method** (grid sampler only):
+   - **Metropolis method** (any zoomed view, so the grid sampler only; chosen by `compute()` from the bounds, there is no setting):
      - `seed` keeps the starting points whose orbits reach the view, with their hit counts `f`.
      - Each chain's start is drawn with probability proportional to `f`, so the chain starts in its stationary distribution.
      - `metro` runs the chains with target `p·f`. It splats expected values: each orbit adds weight `a/f` to each of its `f` points in the view, so the histogram is a `Float64Array`. The grid sampler's density reaches every worker once, with `histInit`.
@@ -87,6 +87,7 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
 - **Band limits stay fixed** (50 and 500 iterations), not relative to `max_iter` (owner, 2026-10-21).
 - **The owner likes:**
   - colourful gradients with two hues (patina), over one-hue ones,
+  - aggressive min clips on type B (0.55–0.7) under equalization, which carve the figure out of its glow. Under log or root scaling a high min clip blacks the image out instead, since their brightness values sit low,
   - the diverging-only nearby points,
   - the grid sampler for type B,
   - a quick "New seed" button.
@@ -96,9 +97,13 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
 - **Axes.** Image rows follow the real axis (`xmin` at the top, `xmax` at the bottom); columns follow the imaginary axis (`ymin` on the left). This puts the figure upright. The histogram index is `(fx | 0) * res + (fy | 0)`.
 - **Nearby spread** (`nearby_spread`) is the standard deviation σ of the nearby cloud in the complex plane, on a log slider from 10⁻⁶ to 0.1, shown as "3.2 × 10⁻⁴". It replaced `nearby_distance` (= 1/σ) on 2026-10-21.
 - **The seed** sits in the Sampling panel, and the "New seed" button (key N) next to Generate picks a random one and renders, for flipping through type A renders. Generate keeps the seed.
-- **Settings keys** are snake_case and match the desktop app's preset JSON (`max_iter`, `soft_points`, …). The web-only keys are `method`, `sampler`, `balance`, `nearby_spread`, `chain_length`, `burn_in`, `large_step`, `mutation_min`, `mutation_max`, `gradient`, `midtone`, and the orbit-length colouring keys `colour_mode`, `band_short`, `band_mid`, `colour_short`, `colour_mid`, `colour_long` and `channel_norm`.
-- **Validation.** `st` is changed in place: `setState(data)` sanitizes `data` and assigns the result to `st`, so every module sees the same object. `sanitize()` is the only validation: it clamps every number, falls back to the default for any unknown option, and enforces one rule: **the bisection sampler means the direct method on the default bounds.** Bisection has no known density, so it cannot drive Metropolis, and without Metropolis a zoomed view is mostly noise. Unknown keys are ignored.
-- **No backward compatibility while the page is in development** (owner, 2026-10-21). Rename and remove settings freely; old URLs and saved presets may break. Desktop-app presets still load through `sanitize()`, since importing them is a feature.
+- **Random** (key R) renders the whole set with random settings; the resolution is kept. A choice under Presets (`p-rmode`, remembered in localStorage) picks the kind, so that the button row under the image stays short:
+  - **sensible** (`randomSettings()` in `main.js`): half type A, a quarter type B with equalization and an aggressive min clip (0.3–0.75), a quarter type B coloured by orbit length. Every roll gives a picture.
+  - **wild**, "I'm feeling lucky" (`wildSettings()`): nearly every setting from nearly its whole range, and a gradient made up on the spot. The blur stays around 0.5 px (0.2–1.2, log-uniform), where every sensible picture sits (owner). Bounded are the work (samples capped by samples × (refine + 1 + nearby) × max iterations ≤ 2·10⁹ for bisection, 3·10⁹ / max iterations for grid) and the clips, by scaling. Fully random clips left about a third of the rolls black or flat; with the bounds, about 2 in 16 are nearly dark and a few blown out to white.
+- **Presets** are the first sidebar panel. `BUILTIN` in `state.js` holds 20, each listing only what differs from the defaults: six type A, nine type B, three Nebulabrots and a Metropolis zoom of the head. The slowest takes about 7 s on 32 threads.
+- **Settings keys** are snake_case and keep the desktop app's names (`max_iter`, `soft_points`, …). The web-only keys are `sampler`, `balance`, `nearby_spread`, `chain_length`, `burn_in`, `large_step`, `mutation_min`, `mutation_max`, `gradient`, `midtone`, and the orbit-length colouring keys `colour_mode`, `band_short`, `band_mid`, `colour_short`, `colour_mid`, `colour_long` and `channel_norm`.
+- **Validation.** `st` is changed in place: `setState(data)` sanitizes `data` and assigns the result to `st`, so every module sees the same object. `sanitize()` is the only validation: it clamps every number, falls back to the default for any unknown option, and enforces one rule: **the bisection sampler means the default bounds.** Zoomed views always use Metropolis (owner, 2026-10-21: automatically for zooms, never otherwise), which needs a known density, and bisection has none. The sampler list calls the grid sampler "zoomable". Unknown keys are ignored.
+- **No backward compatibility while the page is in development** (owner, 2026-10-21). Rename and remove settings freely; old URLs and saved presets may break.
 - **Input element ids.** `p-<id>` is a setting's input and `v-<id>` its shown value. `SLIDER_IDS` and `NUMBER_IDS` in `state.js` map each setting to its id.
 - **Sliders that span decades** store a position from 0 to 1000 and map it through `SLIDERS[key].from/to`, which are logarithmic and use the desktop app's ranges.
 - **Gradients** are strings of `rrggbb@position` stops, sorted by position. The display uses a 1024-entry lookup table, blended in **OKLab** (owner's pick, 2026-10-21; the editor's bar uses CSS `linear-gradient(in oklab …)` to match). The presets (`GRADIENTS`) keep to 2 to 5 stops so that they stay easy to edit, start at black except cloud (a sky), and the owner wants them colourful: two hues, like patina, rather than one.
@@ -120,7 +125,7 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
 - **Experiments** call `compute()` and the display functions directly inside the page, through `import()` in a `screenshot.mjs` expression. `compute.js` exports `GRID` (grid size and blur) and `borderGrid()` for that. `tests/distribution.js` and `tests/balance.js` are examples.
 - **Head/body check for changes to the bisection sampler:** `tests/balance.js`, with reference values in its comment.
 - **Distribution check for sampler changes.** Load `compute()` with `import()` inside the page and compare a Metropolis render of a zoomed view with brute-force renders, using L1 distance on histograms normalized to sum 1. Script: `node tests/screenshot.mjs 'http://127.0.0.1:8765/art/buddhabrot/#sampler=grid' /tmp/x.png 2000 "$(cat tests/distribution.js)"`, which takes about 10 s; the comments in the file explain the numbers.
-- **Regression check for refactors:** `node tests/regression.mjs record` before the change, `node tests/regression.mjs` after it (exit code 1 on a difference). It serves `repo/` itself on a free port, so no server needs to run, renders six URLs that cover every path (bisection, nearby points, grid, equalize, orbit-length colouring, a Metropolis zoom with its background reference) and compares hashes of the canvas pixels. About 35 s. The hashes depend on the core count, so they are stored per count, in `tests/hashes-<cores>.json`; record again after a change that alters images on purpose. Only the preview canvas is hashed, not the detail canvas or a saved PNG.
+- **Regression check for refactors:** `node tests/regression.mjs record` before the change, `node tests/regression.mjs` after it (exit code 1 on a difference). It serves `repo/` itself on a free port, so no server needs to run, renders seven URLs that cover every path (bisection, nearby points, grid, equalize, orbit-length colouring, the midtone, a Metropolis zoom with its background reference) and compares hashes of the canvas pixels. About 35 s. The hashes depend on the core count, so they are stored per count, in `tests/hashes-<cores>.json`; record again after a change that alters images on purpose. Only the preview canvas is hashed, not the detail canvas or a saved PNG.
 - **Layout check:** run it at 1400×900, 900×600 and 390×844. `document.documentElement.scrollHeight` must equal `innerHeight`, and the sidebar's `scrollWidth` must equal its `clientWidth`.
 
 ## Decisions and their reasons

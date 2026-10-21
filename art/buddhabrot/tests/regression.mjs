@@ -18,7 +18,7 @@ const CASES = {
   grid: '#sampler=grid&samples=50000&max_iter=1000&scale_mode=equalize',
   length: '#sampler=grid&samples=50000&max_iter=1000&colour_mode=length&channel_norm=shared',
   midtone: '#sampler=grid&samples=50000&max_iter=1000&midtone=0.35&colour_mode=length',
-  metropolis: '#sampler=grid&method=metropolis&samples=2000&xmin=-0.5&xmax=0&ymin=0.4&ymax=0.9&resolution=400'
+  metropolis: '#sampler=grid&samples=2000&xmin=-0.5&xmax=0&ymin=0.4&ymax=0.9&resolution=400'
 };
 const HASH = 'const c=document.getElementById("canvas");const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let h=0;for(let i=0;i<d.length;i++)h=(Math.imul(h,31)+d[i])|0;c.width+":"+h';
 const DONE = '!document.getElementById("stopBtn").disabled ? false : !!document.getElementById("stats").textContent';
