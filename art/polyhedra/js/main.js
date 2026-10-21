@@ -12,7 +12,7 @@ const $ = id => document.getElementById(id);
 
 const DEFAULTS = {
   text: 'tkD', mode: 'canonical', regularity: 1, stiffness: 2, symmetric: true,
-  style: 'solid', material: 'matte', ao: true, colouring: 'origin', palette: 'generated', custom: [],
+  style: 'solid', material: 'matte', ao: 0.6, aoSize: 1, colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, ink: 'auto', fov: 30, spin: false,
 };
 const MAX_SWATCHES = 16;
@@ -32,7 +32,8 @@ function sanitize(s) {
     symmetric: typeof s.symmetric === 'boolean' ? s.symmetric : DEFAULTS.symmetric,
     style: ONE(s.style, STYLES, DEFAULTS.style),
     material: ONE(s.material, MATERIALS, DEFAULTS.material),
-    ao: typeof s.ao === 'boolean' ? s.ao : DEFAULTS.ao,
+    ao: NUM(s.ao, 0, 1, DEFAULTS.ao),
+    aoSize: NUM(s.aoSize, 0.2, 4, DEFAULTS.aoSize),
     colouring: ONE(s.colouring, COLOURINGS, DEFAULTS.colouring),
     palette: ONE(s.palette, Object.keys(PALETTES), DEFAULTS.palette),
     custom: Array.isArray(s.custom) ? s.custom.filter(isHex).slice(0, MAX_SWATCHES) : [],
@@ -46,7 +47,7 @@ function sanitize(s) {
 }
 
 const KEYS = {
-  text: 'n', mode: 'm', regularity: 'rg', stiffness: 'k', symmetric: 'sym', style: 'st', material: 'mat', ao: 'ao',
+  text: 'n', mode: 'm', regularity: 'rg', stiffness: 'k', symmetric: 'sym', style: 'st', material: 'mat', ao: 'ao', aoSize: 'aos',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', ink: 'ink', fov: 'fov', spin: 'spin',
 };
 
@@ -303,8 +304,10 @@ function showLook() {
   for (const id of ['faces-regularity', 'faces-stiffness', 'faces-symmetric']) $(id).classList.toggle('hidden', st.mode !== 'faces');
   $('p-symmetric').checked = st.symmetric;
   $('p-material').value = st.material;
-  $('p-ao').checked = st.ao;
-  $('p-ao').disabled = st.style !== 'solid';
+  $('p-ao').value = st.ao; $('v-ao').textContent = st.ao ? st.ao.toFixed(2) : 'off';
+  $('p-aosize').value = st.aoSize; $('v-aosize').textContent = st.aoSize.toFixed(1) + ' edges';
+  for (const id of ['p-ao', 'p-aosize']) $(id).disabled = st.style !== 'solid';
+  $('p-aosize').disabled ||= st.ao === 0;
   $('p-palette').value = st.palette;
   for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', st.palette !== 'generated');
   $('p-regularity').value = st.regularity; $('v-regularity').textContent = st.regularity.toFixed(2);
@@ -320,7 +323,7 @@ function showLook() {
   // the hue means nothing without chroma
   $('p-hue').disabled = st.chroma === 0;
   viewer.set({
-    style: st.style, material: st.material, ao: st.ao, colouring: st.colouring, palette: currentPalette(),
+    style: st.style, material: st.material, ao: st.ao, aoSize: st.aoSize, colouring: st.colouring, palette: currentPalette(),
     edge: st.edge, ink: st.ink, fov: st.fov, spin: st.spin,
     dark: document.documentElement.getAttribute('data-theme') === 'dark',
   });
@@ -339,9 +342,9 @@ function currentPalette() {
   return palLinear;
 }
 
-// One colour input per palette entry. Editing one turns the palette into a custom one. The inputs
-// are only rebuilt when their number or colours change, so a colour dialog stays open while it is
-// in use.
+// One colour picker per palette entry. Editing one turns the palette into a custom one. The pickers
+// are only rebuilt when their number or colours change, so an open picker stays open while it is in
+// use.
 let swatchKey = '';
 function showSwatches() {
   const hex = paletteNow(), key = st.palette + ':' + hex.join();
@@ -350,12 +353,11 @@ function showSwatches() {
   if (key === swatchKey) return;
   swatchKey = key;
   const box = $('swatches');
-  const inputs = [...box.querySelectorAll('input')];
+  const inputs = [...box.querySelectorAll('oklch-picker')];
   hex.forEach((c, i) => {
     let el = inputs[i];
     if (!el) {
-      el = document.createElement('input');
-      el.type = 'color';
+      el = document.createElement('oklch-picker');
       el.title = `Colour ${i + 1}`;
       el.addEventListener('input', () => {
         const list = paletteNow().slice();
@@ -380,7 +382,8 @@ function bindLook() {
   });
   look('p-style', 'style', el => el.value);
   look('p-material', 'material', el => el.value);
-  look('p-ao', 'ao', el => el.checked);
+  look('p-ao', 'ao', el => +el.value);
+  look('p-aosize', 'aoSize', el => +el.value);
   look('p-palette', 'palette', el => {
     // a fresh custom palette starts from what is shown
     if (el.value === 'custom' && !st.custom.length) st.custom = paletteHex({ ...st, palette: st.palette }, Math.min(MAX_SWATCHES, viewer.classes())).slice();

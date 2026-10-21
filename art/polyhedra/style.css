@@ -143,11 +143,8 @@ dialog.info::backdrop { background: rgba(0, 0, 0, 0.55); }
 .info-head button { border: none; font-size: 15px; padding: 0.2rem 0.4rem; color: var(--color-text-secondary); }
 dialog.info .notes { padding: 1.25rem 1.25rem 0.5rem; }
 
-/* palette swatches: native colour inputs as small squares */
+/* palette swatches: colour pickers (../../js/oklch-picker.js) as small squares */
 .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-top: 0.45rem; }
 .swatches span { display: contents; }
-.swatches input[type="color"] { width: 1.8rem; height: 1.8rem; padding: 0; border: 1px solid var(--color-border-secondary); border-radius: 4px; background: none; cursor: pointer; }
-.swatches input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
-.swatches input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
-.swatches input[type="color"]::-moz-color-swatch { border: none; border-radius: 2px; }
+.swatches oklch-picker { width: 1.8rem; height: 1.8rem; }
 .swatches button { padding: 0 0.5rem; height: 1.8rem; }

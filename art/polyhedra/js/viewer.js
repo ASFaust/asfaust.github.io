@@ -82,17 +82,20 @@ export class Viewer {
     this.group.add(this.backs, this.faces);
 
     // Ambient occlusion: a screen-space pass (GTAO) between the scene and the output. It is used
-    // for the solid style only; the others are see-through, which it does not handle.
+    // for the solid style only; the others are see-through, which it does not handle. Its radius
+    // follows the mean edge length (placeAO), so creases darken the same at every subdivision;
+    // the denoiser blurs widely but not across faces (high normalPhi), which hides the sampling
+    // pattern without smearing the shading of one face onto the next.
     this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.gtao = new GTAOPass(this.scene, this.camera, 1, 1);
-    this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1, thickness: 1, scale: 1.2, samples: 16 });
-    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    this.gtao.updateGtaoMaterial({ distanceExponent: 2, distanceFallOff: 1, scale: 1, samples: 32 });
+    this.gtao.updatePdMaterial({ lumaPhi: 6, depthPhi: 2, normalPhi: 8, radius: 12, radiusExponent: 1.5, rings: 3, samples: 24 });
     this.composer.addPass(this.gtao);
     this.composer.addPass(new OutputPass());
 
     this.opts = {
-      style: 'solid', material: 'matte', ao: false, colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
+      style: 'solid', material: 'matte', ao: 0, aoSize: 1, colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, fov: 30, spin: false, ink: 'auto', dark: false,
     };
     this.faceOrbit = null;
@@ -193,6 +196,7 @@ export class Viewer {
     this.faces.geometry.computeBoundingSphere();
     this.meanEdge = len / m.fv.length;
     this.uniforms.uWidth.value = this.opts.edge * 0.08 * this.meanEdge;
+    this.placeAO();
     this.request();
   }
 
@@ -227,7 +231,15 @@ export class Viewer {
     else this.uniforms.uInk.value.set(ink === 'light' ? 0xeeeeea : 0x1c1c20);
     if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette)) this.recolour();
     if (prev.fov !== o.fov) this.resize();
+    this.placeAO();
     this.request();
+  }
+
+  // the occlusion reaches aoSize mean edge lengths; ao is its strength
+  placeAO() {
+    const r = Math.max(1e-3, this.opts.aoSize * this.meanEdge);
+    this.gtao.updateGtaoMaterial({ radius: r, thickness: r });
+    this.gtao.blendIntensity = this.opts.ao;
   }
 
   recolour() {
@@ -314,7 +326,7 @@ export class Viewer {
   }
 
   draw() {
-    if (this.opts.ao && this.opts.style === 'solid') this.composer.render();
+    if (this.opts.ao > 0 && this.opts.style === 'solid') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }
 

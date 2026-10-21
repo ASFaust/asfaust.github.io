@@ -14,6 +14,7 @@
     })();
   </script>
   <link rel="stylesheet" href="style.css">
+  <script src="../../js/oklch-picker.js"></script>
   <!-- the vendored three.js add-ons import 'three' by name -->
   <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
@@ -129,9 +130,15 @@
               <option value="iridescent">Iridescent</option>
             </select>
           </div>
-          <div class="param check">
-            <label><input type="checkbox" id="p-ao"> <span>Ambient occlusion</span></label>
-            <small>darkens creases and hollows; solid style only</small>
+          <div class="param">
+            <label for="p-ao"><span>Ambient occlusion</span><span id="v-ao"></span></label>
+            <small>how much creases and hollows darken; solid style only</small>
+            <input type="range" id="p-ao" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-aosize"><span>Occlusion reach</span><span id="v-aosize"></span></label>
+            <small>how far from a crease the darkening reaches</small>
+            <input type="range" id="p-aosize" min="0.2" max="4" step="0.1">
           </div>
           <div class="param">
             <label for="p-colouring"><span>Colour faces by</span></label>
