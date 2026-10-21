@@ -18,7 +18,7 @@ var bins = null;              // brightness histogram of the last image
 // renders of the same distribution qualify: the settings in refKey() must match; the samples, seed and
 // resolution may differ, since the display compares densities.
 var reference = null;         // { key, result }
-function refKey(p) { return JSON.stringify([p.sampler, p.max_iter, p.nearby_points, p.nearby_spread, p.refine_steps, p.balance, p.colour_mode, p.band_short, p.band_mid]); }
+function refKey(p) { return JSON.stringify([p.sampler, p.max_iter, p.nearby_points, p.nearby_spread, p.refine_steps, p.balance, p.colour_mode, p.band_short, p.band_mid, p.skip_points]); }
 function isWhole(b) { return ['xmin', 'xmax', 'ymin', 'ymax'].every(function(k) { return b[k] === DEFAULTS[k]; }); }
 
 // ---------- inputs ← settings ----------
@@ -306,8 +306,8 @@ function newSeed() {
   generate();
 }
 // Random settings: a type A or a type B render over the whole set, within ranges that give a picture, so the button can
-// be pressed again and again. Type B gets equalization with an aggressive min clip, which carves the figure out of its
-// glow (owner, 2026-10-21). The resolution is kept.
+// be pressed again and again. Type B gets equalization with a low min clip and a high midtone, a soft falloff into the
+// glow (owner, 2026-10-22). The resolution is kept.
 function randomSettings() {
   var r = Math.random;
   function pick(a) { return a[Math.floor(r() * a.length)]; }
@@ -323,11 +323,11 @@ function randomSettings() {
       min_clip: uni(0.05, 0.2), max_clip: uni(0.55, 0.8), midtone: uni(0.35, 0.55), blur_px: uni(0.2, 0.8) });
   } else if (r() < 0.75) {
     Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000, 3000000]), max_iter: pick([20, 40, 100, 300, 1000, 3000]),
-      scale_mode: 'equalize', min_clip: uni(0.3, 0.75), max_clip: 1, midtone: uni(0.4, 0.65) });
+      scale_mode: 'equalize', min_clip: uni(0.05, 0.25), max_clip: 1, midtone: uni(0.72, 0.9) });
   } else {
-    // type B coloured by orbit length (equalization would wash it out to white)
+    // type B coloured by orbit length: equalized with a high midtone, which keeps the channels from adding up to white
     Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000]), max_iter: pick([1000, 5000, 20000]), colour_mode: 'length',
-      scale_mode: 'nth root', root: 3, min_clip: uni(0.05, 0.15), max_clip: uni(0.7, 0.85) });
+      scale_mode: 'equalize', min_clip: uni(0.05, 0.2), max_clip: 1, midtone: uni(0.8, 0.9), channel_norm: r() < 0.7 ? 'separate' : 'shared' });
   }
   return p;
 }

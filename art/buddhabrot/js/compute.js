@@ -179,7 +179,12 @@ export async function compute(p, ui) {
   // Orbits are recorded until they leave the circle around 0 that holds the whole view, not only until |z| > 2, so
   // that the view's corners beyond radius 2 get the escaping orbits' last points too and do not stay black.
   var bail = Math.max(2, Math.hypot(Math.max(-b.xmin, b.xmax), Math.max(-b.ymin, b.ymax)));
-  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands } });
+  // Each orbit's first p.skip_points points are left out (default 1). The first is c itself, so recording it draws the
+  // sampler's own density: 8 % of a small zoom's weight, 0.7 % of the whole set's. Later points carry that density too,
+  // mapped, wherever orbits return close to c (every p-th point near a minibrot of period p); that is why the density
+  // must be smooth (grid.js), which skipping cannot replace.
+  var skip = p.skip_points;
+  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands, skip: skip } });
   await runJobs(inits, nTrace);
 
   // Samples count orbits in both methods: a zoom runs samples / chain length chains.

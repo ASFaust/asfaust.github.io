@@ -101,6 +101,11 @@
             <small>longer orbits reach deeper into the set</small>
             <input type="number" id="p-iter" min="2" max="1000000" step="1">
           </div>
+          <div class="param">
+            <label for="p-skip"><span>Skip first points</span></label>
+            <small>each orbit's first points are left out. The first is c itself, so it only shows where the samples were drawn; later points carry less of that</small>
+            <input type="number" id="p-skip" min="0" max="20" step="1">
+          </div>
           <div class="param nearby-only">
             <label for="p-nearby"><span>Nearby points per sample</span><span id="v-nearby"></span></label>
             <small>extra starting points scattered around each sample; their orbits are similar but shifted, which softens the few spots a long orbit keeps revisiting. Only those that escape count.</small>
@@ -217,7 +222,7 @@
           </div>
           <div class="param wide length-only">
             <label for="p-chnorm"><span>Channel brightness</span></label>
-            <small>each channel stretched on its own gives the classic colours; shared keeps the true mix of orbit lengths. Histogram equalization stretches every channel fully, so the sum turns white: use another scaling here.</small>
+            <small>each channel stretched on its own gives the classic colours; shared keeps the true mix of orbit lengths. With histogram equalization, keep the midtone high (◆ on the clip bar, around 0.84), or the stretched channels add up to white.</small>
             <select id="p-chnorm">
               <option value="separate">each on its own (classic)</option>
               <option value="shared">shared (true mix)</option>

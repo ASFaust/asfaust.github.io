@@ -106,6 +106,16 @@ At the best chain length: a large step of 0.01 scored about the same as 0.05; 0.
 - Minibrot: 0.215 → 0.117 between seeds at about the same time; it renders symmetric with any seed. Seahorse 0.01: 0.294 in 0.6 s, against 0.308 in 0.4 s before. `tests/distribution.js`: unbiased (L1 to brute force 0.012 against Metropolis's own 0.017, scale 0.994).
 - **A note for experiments:** run them on a page loaded with `#samples=1`. Otherwise the page's own startup render shares the worker pool with the experiment, and their messages get mixed up (one run failed that way).
 
+**The checkerboard and the noise floor (2026-10-22, owner's 100-million-orbit render of that minibrot).** Balanced now, but with a faint checkerboard and still noisy.
+- **The checkerboard was the sampler.** Every orbit's first point is c itself, so recording it drew the sampler's density: the grid's cells (0.0024 wide, about 70 px in a 0.07-wide view at 2000 px). Rendered alone, the first points of the minibrot zoom form a blocky field with the minibrot cut out; they carried 8 % of its weight, 0.7 % of the whole set's (a thin outline of the set). **They are left out now** (`skip: 1` in `histInit`), for both samplers. Whole-set renders barely change: 0.31/255 mean difference for the default, 0.05/255 for type A. It does not change the noise (0.124 against 0.117 between seeds, within noise).
+- **Metropolis is not at its limit.** Same view, 128 px, two seeds: Metropolis 2M orbits 0.114 in 1.2 s, 20M 0.044 in 7.8 s; direct 20M 0.149 in 6.8 s, 100M 0.071 in 33 s. Error² × time: Metropolis 15, direct about 160, so Metropolis is about 10× as efficient, and its error falls as 1/√time with no plateau.
+- **The visible noise is Monte Carlo per pixel.** At 2000 px a view has 244× the pixels of these 128 px tests, so each pixel gets that many times fewer hits. Remedies: more orbits, lower resolution, the display blur, or the ideas in the backlog (mirroring, adaptive smoothing).
+
+**Bands, and a smooth density (2026-10-22).** With the first point gone, the owner saw bent bands in the minibrot zoom. Imaging each orbit point alone (difference of renders skipping n and n + 1 points): points 2 and 3 never land in that view, point 4 carries 8.6 % of its weight. The minibrot has period 3, so every third point returns near c and brings the sampler's density along, bent by the roughly quadratic return map. Skipping more points cannot help (points 7, 10, … return too), so:
+- **The grid density is now a quadratic B-spline** (`grid.js`): a cell picked by weight, a uniform point in it, plus two uniform offsets of up to half a cell per axis; `weight()` evaluates the same spline over 3 × 3 cells. Checked: sampled and evaluated densities agree (L1 0.038, at the noise floor; mass 1.000); `tests/distribution.js` unbiased (scale 1.000). The first-point image changed from a blocky field to a smooth glow.
+- **Arcs remain, fainter.** Enlarged, the point-4 image still shows concentric arcs with the B-spline (the owner saw them too). Likely the slow ripple of the cell weights themselves (the boundary mask is blurred by only 2 cells). With `GRID.blur` 8 the halo looked smoother, and whole-set renders look the same and take the same time at blur 2, 4 and 8. **Open:** a side-by-side zoom at blur 2 against 8, and the zoom efficiency at blur 8, were started but not finished; decide then whether to raise `GRID.blur`.
+- **"Skip first points"** became a setting (`skip_points`, default 1), at the owner's request.
+
 **Still open: zooms look grey and noisy at the default 2 million orbits** (seahorse 0.1 wide, 2000 px). Two causes, seen separately: whole-set brightness puts a region that is bright everywhere into the upper ranks, which equalization with the default clip renders as flat grey (min clip 0.85 brings the structure back); and each orbit adds only its few points inside the view, so 2000 px get few hits each (20 million orbits, 4 s, are cleaner; 700 px too).
 
 ## Densities for the starting points
@@ -200,7 +210,7 @@ The owner's complaint: with few bisection samples, the body fills while the head
   - **shared:** every channel uses the statistics of the all-orbits channel, which keeps the true mix.
 
 **Findings** (grid sampler 4 M samples and bisection 200 k samples, `max_iter` 2000).
-- **Equalization washes out to white in both channel modes.** It stretches every channel fully, so the sum saturates. The other scalings keep the colours, and the UI says so.
+- **Equalization washes out to white in both channel modes** at the default midtone: it stretches every channel fully, so the sum saturates. **With a high midtone (0.837) it does not** (2026-10-22) and gives the crispest Nebulabrots; the presets use it. Root or log with a high midtone come out dull.
 - **Root scaling, separate:** the classic Nebulabrot, with a blue halo, a white body and an orange core.
 - **Shared:** a warm-gold mix with the grid sampler, and nearly pure red with bisection, whose near-boundary samples escape late. This is honest, but monotone.
 - **Nested and disjoint bands look nearly the same,** so only the classic nested form was kept.

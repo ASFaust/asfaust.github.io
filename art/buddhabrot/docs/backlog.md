@@ -8,7 +8,13 @@ This is only the task list; [README.md](README.md) explains the code. When you f
 
 Label each experiment **type A** (artsy) or **type B** (classical), or both.
 
-- **Make zooms look good** (B). Zooms use Metropolis automatically, with measured settings (done 2026-10-21). Open: at the default 2 million orbits a zoom is grey and noisy (whole-set brightness flattens it; few hits per pixel). Ideas: more orbits by default in zooms, or a zoom-aware clip; measure before choosing. → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
+- **Make zooms look good** (B). Zooms use Metropolis automatically, with measured settings and adaptive seeding (done 2026-10-21); the checkerboard is gone (2026-10-22). Open: zooms are noisy at 2000 px. Metropolis is about 10× as efficient as direct sampling and not at a limit; the noise is Monte Carlo per pixel. Ideas, none tried:
+  - **Mirroring:** the Buddhabrot is symmetric across the real axis, so each orbit's mirror image is as likely as the orbit. Splatting both doubles the samples for free wherever the view overlaps its mirror (a 2× speed-up for views on the real axis, like the minibrots). Needs the grid's density symmetric: its vertices are half a cell off the axis, so it is off by a cell.
+  - **Adaptive smoothing:** blur more where counts are low and less where they are high, so faint regions lose their grain without blurring dense detail.
+  - **Bright single specks in empty regions:** orbits with few hits in the view get their whole weight on those few pixels.
+  → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
+
+- **Raise `GRID.blur`?** Faint arcs remain in minibrot zooms after the smooth density; blur 8 looked smoother in a first test. Finish the comparison (sampling.md, "Bands, and a smooth density"). Method: render a view skipping n and n + 1 points and image the difference.
 
 ## Colouring and normalization
 
@@ -22,6 +28,10 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-22.** Soft clips (min 0.113, midtone 0.837) for the defaults, the type B presets and sensible Random; equalized Nebulabrots with a high midtone, plus "Golden Nebulabrot". The grid sampler's density became a smooth B-spline (bands in zooms). "Skip first points" setting.
+
+- **2026-10-22.** The checkerboard in zooms was the grid sampler's cells, drawn by every orbit's first point (c itself); the first point is now left out. Measured that Metropolis is about 10× as efficient as direct sampling in a small zoom.
 
 - **2026-10-21, samples, defaults, Metropolis.**
   - Samples up to 10⁸, processed in batches of 5 million (renders up to 5 million unchanged).

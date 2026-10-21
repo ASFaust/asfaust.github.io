@@ -13,7 +13,7 @@ import { launch, evaluate, sleep } from './chrome.mjs';
 
 // The settings each case relies on, pinned: the defaults changed on 2026-10-21 (a gray type B), and the cases should
 // keep testing what they tested. A case's own keys come after these and win.
-const PINNED = 'sampler=bisection&samples=600&max_iter=100000&scale_mode=log&min_clip=0.143&max_clip=0.778&gradient=000000@0,b4140a@0.35,ffb928@0.7,ffffff@1';
+const PINNED = 'sampler=bisection&samples=600&max_iter=100000&scale_mode=log&min_clip=0.143&max_clip=0.778&midtone=0.5&gradient=000000@0,b4140a@0.35,ffb928@0.7,ffffff@1';
 const CASES = {
   default: '',
   typeA: '#' + PINNED,

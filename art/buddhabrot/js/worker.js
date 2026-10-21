@@ -2,9 +2,10 @@
 // messages; compute.js sends the jobs. Messages, each answered with progress messages and then one
 // { cmd: 'done', … } (or { cmd: 'error', message }):
 //   { cmd: 'refine', pairs, steps, maxIter, seed }                               → { pts }: one boundary point per inside/outside pair
-//   { cmd: 'histInit', res, b, maxIter, bail, weighted, grid, bands }            → starts an empty histogram; orbits are recorded
+//   { cmd: 'histInit', res, b, maxIter, bail, weighted, grid, bands, skip }      → starts an empty histogram; orbits are recorded
 //                                                                                  until |z| > bail; grid for metro;
-//                                                                                  bands [short, mid]: one histogram per orbit-length band
+//                                                                                  bands [short, mid]: one histogram per orbit-length band;
+//                                                                                  skip: leave out each orbit's first skip points
 //   { cmd: 'trace', pts, escapingOnly, nearby, sigma, seed }                     → adds the orbits of pts
 //   { cmd: 'seed', pts }                                                         → { pts, f }: those whose orbits reach the view, and their hits
 //   { cmd: 'metro', pts, steps, burn, large, rmin, rmax, seed }                  → runs one Metropolis chain per point
@@ -13,7 +14,7 @@
 import { rng } from './rng.js';
 import { pick, weight } from './grid.js';
 
-var hist = null, res = 0, bx0 = 0, by0 = 0, sx = 0, sy = 0, histIter = 0, bail2 = 4, grid = null, bands = null;
+var hist = null, res = 0, bx0 = 0, by0 = 0, sx = 0, sy = 0, histIter = 0, bail2 = 4, grid = null, bands = null, skip = 0;
 var orbitLen = 0;   // set by trace() and hits(): the iteration at which the orbit escaped, or histIter if it did not
 
 // Offset into hist of the band for an orbit of length len. With bands [short, mid], the orbits up to short iterations
@@ -44,6 +45,7 @@ function trace(cr, ci, buf) {
     zi = 2 * zr * zi + ci;
     zr = t;
     if (zr * zr + zi * zi > bail2) { orbitLen = k + 1; return n; }
+    if (k < skip) continue;
     var fx = (zr - bx0) * sx, fy = (zi - by0) * sy;
     if (fx >= 0 && fx < res && fy >= 0 && fy < res) buf[n++] = (fx | 0) * res + (fy | 0);
   }
@@ -63,6 +65,7 @@ function hits(cr, ci, buf) {
     zi = 2 * zr * zi + ci;
     zr = t;
     if (zr * zr + zi * zi > bail2) { orbitLen = k + 1; return n; }
+    if (k < skip) continue;
     var fx = (zr - bx0) * sx, fy = (zi - by0) * sy;
     if (fx >= 0 && fx < res && fy >= 0 && fy < res) buf[n++] = (fx | 0) * res + (fy | 0);
   }
@@ -114,6 +117,7 @@ self.onmessage = function(e) {
       bail2 = d.bail * d.bail;
       grid = d.grid;
       bands = d.bands;
+      skip = d.skip || 0;
       var size = res * res * (bands ? 3 : 1);
       hist = d.weighted ? new Float64Array(size) : new Uint32Array(size);
       postMessage({ cmd: 'done' });

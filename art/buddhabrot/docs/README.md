@@ -78,7 +78,7 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
 
 ## Defaults and the owner's preferences
 
-- **The defaults are a standard type B Buddhabrot in grey** (owner, 2026-10-21): grid sampler, 2 million samples, `max_iter` 2000, 2000 px, equalization with clip 0.5–1, gray gradient, blur 0.32. About 2 s on 32 threads.
+- **The defaults are a standard type B Buddhabrot in grey** (owner, 2026-10-21): grid sampler, 2 million samples, `max_iter` 2000, 2000 px, equalization with clip 0.113–1 and midtone 0.837, gray gradient, blur 0.32. About 2 s on 32 threads.
   - The bisection settings in `DEFAULTS` (10 refine steps, 20 nearby points with spread 10⁻³) are the owner's type A picks from the review sheets, judged over four seeds; they apply once the sampler is switched.
   - The former type A defaults (bisection, 600 samples, `max_iter` 10⁵, log scaling, hot, clip 0.143–0.778) are `TYPE_A` in `state.js`, the base of the type A presets, and the preset "Embers (type A)". The contact sheet that picked them: https://claude.ai/artifact/8DtXzuTi62u3Mrf9wxreM5.
 - **Type A:** bisection, few samples, very long orbits, optionally nearby points; splotchy and artsy. **Type B:** many samples, classical, used for zooms; the grid sampler. Details and the owner's example URLs are in [sampling.md](sampling.md#two-types-of-render).
@@ -87,20 +87,21 @@ tests/balance.js       expression for screenshot.mjs: share of the image in the 
 - **Band limits stay fixed** (50 and 500 iterations), not relative to `max_iter` (owner, 2026-10-21).
 - **The owner likes:**
   - colourful gradients with two hues (patina), over one-hue ones,
-  - aggressive min clips on type B (0.55–0.7) under equalization, which carve the figure out of its glow. Under log or root scaling a high min clip blacks the image out instead, since their brightness values sit low,
+  - on type B, a low min clip with a high midtone (0.113 / 0.837; owner, 2026-10-22): a soft falloff into the glow, nicer than the aggressive min clips (0.55–0.7) used before. With equalization it also keeps orbit-length colouring from washing out to white,
   - the diverging-only nearby points,
   - the grid sampler for type B,
   - a quick "New seed" button.
 
 ## Conventions
 
+- **Skip first points** (`skip_points`, default 1): each orbit's first points are not recorded. The first is c itself, so it would draw the sampler's density (a checkerboard of grid cells in zooms; sampling.md).
 - **Axes.** Image rows follow the real axis (`xmin` at the top, `xmax` at the bottom); columns follow the imaginary axis (`ymin` on the left). This puts the figure upright. The histogram index is `(fx | 0) * res + (fy | 0)`.
 - **Nearby spread** (`nearby_spread`) is the standard deviation σ of the nearby cloud in the complex plane, on a log slider from 10⁻⁶ to 0.1, shown as "3.2 × 10⁻⁴". It replaced `nearby_distance` (= 1/σ) on 2026-10-21.
 - **The seed** sits in the Sampling panel, and the "New seed" button (key N) next to Generate picks a random one and renders, for flipping through type A renders. Generate keeps the seed.
 - **Random** (key R) renders the whole set with random settings; the resolution is kept. A choice under Presets (`p-rmode`, remembered in localStorage) picks the kind, so that the button row under the image stays short:
   - **sensible** (`randomSettings()` in `main.js`): half type A, a quarter type B with equalization and an aggressive min clip (0.3–0.75), a quarter type B coloured by orbit length. Every roll gives a picture.
   - **wild**, "I'm feeling lucky" (`wildSettings()`): nearly every setting from nearly its whole range, and a gradient made up on the spot. The blur stays around 0.5 px (0.2–1.2, log-uniform), where every sensible picture sits (owner). Bounded are the work (samples capped by samples × (refine + 1 + nearby) × max iterations ≤ 2·10⁹ for bisection, 3·10⁹ / max iterations for grid) and the clips, by scaling. Fully random clips left about a third of the rolls black or flat; with the bounds, about 2 in 16 are nearly dark and a few blown out to white.
-- **Presets** are the first sidebar panel. `BUILTIN` in `state.js` holds 20, each listing only what differs from the defaults: six type A, nine type B, three Nebulabrots and a Metropolis zoom of the head. The slowest takes about 7 s on 32 threads.
+- **Presets** are the first sidebar panel. `BUILTIN` in `state.js` holds 22, each listing only what differs from the defaults: the default, seven type A (from `TYPE_A`), nine type B, four Nebulabrots and a Metropolis zoom of the head. The slowest takes about 7 s on 32 threads.
 - **Settings keys** are snake_case and keep the desktop app's names (`max_iter`, `soft_points`, …). The web-only keys are `sampler`, `balance`, `nearby_spread`, `gradient`, `midtone`, and the orbit-length colouring keys `colour_mode`, `band_short`, `band_mid`, `colour_short`, `colour_mid`, `colour_long` and `channel_norm`.
 - **Validation.** `st` is changed in place: `setState(data)` sanitizes `data` and assigns the result to `st`, so every module sees the same object. `sanitize()` is the only validation: it clamps every number, falls back to the default for any unknown option, and enforces one rule: **the bisection sampler means the default bounds.** Zoomed views always use Metropolis (owner, 2026-10-21: automatically for zooms, never otherwise), which needs a known density, and bisection has none. The sampler list calls the grid sampler "zoomable". Unknown keys are ignored.
 - **No backward compatibility while the page is in development** (owner, 2026-10-21). Rename and remove settings freely; old URLs and saved presets may break.
