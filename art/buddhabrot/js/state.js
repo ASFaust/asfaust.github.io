@@ -70,9 +70,9 @@ var TYPE_A = { sampler: 'bisection', samples: 600, max_iter: 100000, scale_mode:
 var GRID_B = { sampler: 'grid', samples: 2000000, scale_mode: 'equalize', max_clip: 1 };
 var GLOW = { min_clip: 0.2, midtone: 0.75 };
 function typeA(o) { return Object.assign({}, TYPE_A, o); }
-// Equalization used to wash colouring by orbit length out to white (each channel stretched fully, then added up); the high
-// midtone darkens each channel first, and the result is crisper than root scaling.
-var NEBULA = { sampler: 'grid', samples: 3000000, max_iter: 5000, colour_mode: 'length', scale_mode: 'equalize', max_clip: 1 };
+// Colouring by orbit length: equalized with no min clip and a high midtone (0.92), which keeps the glow soft and lets only
+// the brightest edges reach white once the channels add up (display.js; owner's reference picture, 2026-10-22).
+var NEBULA = { sampler: 'grid', samples: 3000000, max_iter: 5000, colour_mode: 'length', scale_mode: 'equalize', min_clip: 0, max_clip: 1, midtone: 0.92 };
 export var BUILTIN = {
   'Default': {},
   'Embers (type A)': typeA({}),
@@ -93,7 +93,7 @@ export var BUILTIN = {
   'Negative': Object.assign({}, GRID_B, { max_iter: 500, gradient: 'ffffff@0,000000@1' }),
   'Nebulabrot': NEBULA,
   'Golden Nebulabrot': Object.assign({}, NEBULA, { channel_norm: 'shared' }),
-  'Deep Nebulabrot': Object.assign({}, NEBULA, { samples: 2000000, max_iter: 20000, band_short: 200, band_mid: 2000, min_clip: 0.05, midtone: 0.9 }),
+  'Deep Nebulabrot': Object.assign({}, NEBULA, { samples: 2000000, max_iter: 20000, band_short: 200, band_mid: 2000, midtone: 0.93 }),
   'Warm Nebulabrot': Object.assign({}, NEBULA, { colour_short: '7a1fd0', colour_mid: 'e04a2a', colour_long: 'ffd060' }),
   'Head (zoom)': Object.assign({}, GRID_B, { samples: 20000000, max_iter: 5000,
     xmin: -1.9, xmax: -1.0, ymin: -0.45, ymax: 0.45, gradient: GRADIENTS.dusk })
@@ -108,12 +108,6 @@ export function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 function logFrom(t, lo, hi) { return Math.pow(10, Math.log10(lo) + t * (Math.log10(hi) - Math.log10(lo))); }
 function logTo(v, lo, hi) { return (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)); }
 export var SLIDERS = {
-  samples: {
-    // up to 10⁸: clean renders take minutes, for those willing to wait (compute.js works through them in batches)
-    from: function(t) { return Math.round(Math.min(1e8, Math.max(1, logFrom(t, 1, 1e8)))); },
-    to: function(v) { return logTo(Math.max(1, Math.min(1e8, v)), 1, 1e8); },
-    fmt: function(v) { return v.toLocaleString('en-US'); }
-  },
   nearby_points: {
     from: function(t) { return t === 0 ? 0 : Math.round(Math.min(1e5, logFrom(t, 1, 1e5))); },
     to: function(v) { return v <= 0 ? 0 : logTo(Math.min(1e5, v), 1, 1e5); },
@@ -136,9 +130,9 @@ export var SLIDERS = {
   }
 };
 // setting → element id suffix: p-… is the input, v-… the value shown next to a slider
-export var SLIDER_IDS = { samples: 'samples', nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs' };
-export var NUMBER_IDS = { band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', skip_points: 'skip', resolution: 'res', refine_steps: 'refine', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
-var INT_KEYS = { max_iter: 1, skip_points: 1, resolution: 1, refine_steps: 1, seed: 1, band_short: 1, band_mid: 1 };
+export var SLIDER_IDS = { nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs' };
+export var NUMBER_IDS = { samples: 'samples', band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', skip_points: 'skip', resolution: 'res', refine_steps: 'refine', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
+var INT_KEYS = { samples: 1, max_iter: 1, skip_points: 1, resolution: 1, refine_steps: 1, seed: 1, band_short: 1, band_mid: 1 };
 
 export function parseGradient(str) {
   var stops = String(str).split(',').map(function(part) {
@@ -161,7 +155,8 @@ export function sanitize(data) {
     else if (typeof d === 'number') { v = Number(v); if (isFinite(v)) out[k] = INT_KEYS[k] ? Math.round(v) : v; }
     else out[k] = String(v);
   });
-  out.samples = clamp(out.samples, 1, 1e8);
+  // no upper limit: compute.js works through any count in batches (its random streams repeat only after 2·10¹⁰ samples)
+  out.samples = Math.max(1, out.samples);
   out.nearby_points = clamp(out.nearby_points, 0, 1e5);
   out.nearby_spread = clamp(out.nearby_spread, 1e-6, 0.1);
   out.max_iter = clamp(out.max_iter, 2, 1e6);

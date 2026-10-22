@@ -153,8 +153,10 @@ function setRunning(on) {
   $('genBtn').disabled = on;
   $('newSeedBtn').disabled = on;
   $('randomBtn').disabled = on;
+  $('wildBtn').disabled = on;
   $('stopBtn').disabled = !on;
   $('viewBtn').disabled = on || !result;
+  $('viewBtn').classList.toggle('hidden', !view.zoomed());
   $('saveBtn').disabled = !result;
   if (!on) $('genBtn').textContent = 'Generate';
   view.apply();
@@ -232,6 +234,8 @@ var view = createView(stage, canvas, function() { return !!result; }, function()
   // a new stage size may call for a different preview block
   if (result && canvas.width !== preview(result).res) scheduleRender();
   $('resetBtn').disabled = running || (!view.zoomed() && fullBounds());
+  // only a magnified image has a view of its own to render
+  $('viewBtn').classList.toggle('hidden', !view.zoomed());
 });
 // First undo the magnification; once there is none, go back to the whole set and render it.
 function resetZoom() {
@@ -325,9 +329,9 @@ function randomSettings() {
     Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000, 3000000]), max_iter: pick([20, 40, 100, 300, 1000, 3000]),
       scale_mode: 'equalize', min_clip: uni(0.05, 0.25), max_clip: 1, midtone: uni(0.72, 0.9) });
   } else {
-    // type B coloured by orbit length: equalized with a high midtone, which keeps the channels from adding up to white
+    // type B coloured by orbit length: equalized with a high midtone and little or no min clip, as in the Nebulabrot presets
     Object.assign(p, { sampler: 'grid', samples: pick([1000000, 2000000]), max_iter: pick([1000, 5000, 20000]), colour_mode: 'length',
-      scale_mode: 'equalize', min_clip: uni(0.05, 0.2), max_clip: 1, midtone: uni(0.8, 0.9), channel_norm: r() < 0.7 ? 'separate' : 'shared' });
+      scale_mode: 'equalize', min_clip: uni(0, 0.08), max_clip: 1, midtone: uni(0.88, 0.95), channel_norm: r() < 0.7 ? 'separate' : 'shared' });
   }
   return p;
 }
@@ -380,18 +384,24 @@ function wildSettings() {
   }
   return p;
 }
-var RMODE = 'buddhabrot-random';
-try { $('p-rmode').value = localStorage.getItem(RMODE) === 'wild' ? 'wild' : 'sensible'; } catch (e) {}
-$('p-rmode').addEventListener('change', function() { try { localStorage.setItem(RMODE, this.value); } catch (e) {} });
-function randomize() {
+function randomize(wild) {
   if (running) return;
-  setState(Object.assign({}, DEFAULTS, $('p-rmode').value === 'wild' ? wildSettings() : randomSettings()));
+  setState(Object.assign({}, DEFAULTS, wild ? wildSettings() : randomSettings()));
   syncInputs();
   writeHash();
   generate();
 }
+// The sample count is typed in; these buttons fill in round counts.
+[1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7].forEach(function(n) {
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = n >= 1e6 ? n / 1e6 + 'M' : n >= 1e3 ? n / 1e3 + 'k' : String(n);
+  b.addEventListener('click', function() { st.samples = n; syncInputs(); writeHash(); });
+  $('samplesQuick').appendChild(b);
+});
 $('newSeedBtn').addEventListener('click', newSeed);
-$('randomBtn').addEventListener('click', randomize);
+$('randomBtn').addEventListener('click', function() { randomize(false); });
+$('wildBtn').addEventListener('click', function() { randomize(true); });
 $('genBtn').addEventListener('click', generate);
 $('stopBtn').addEventListener('click', stop);
 $('viewBtn').addEventListener('click', renderView);
@@ -417,7 +427,8 @@ document.addEventListener('keydown', function(e) {
   if ($('infoDialog').open) return;
   if (e.key === 'Enter' || e.key === 'g') generate();
   else if (e.key === 'n') newSeed();
-  else if (e.key === 'r') randomize();
+  else if (e.key === 'r') randomize(false);
+  else if (e.key === 'l') randomize(true);
   else if (e.key === 'Escape') stop();
 });
 

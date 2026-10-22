@@ -73,6 +73,11 @@
 
     .link-meta { font-size: 13px; color: var(--color-text-secondary); display: flex; gap: 1rem; justify-content: space-between; }
     .link-meta .domain { font-size: 12px; white-space: nowrap; }
+    .link-meta a { color: var(--color-text-secondary); }
+    .link-meta a:hover { color: var(--color-text-primary); }
+
+    .pub-authors { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 0.2rem; }
+    .pub-authors strong { color: var(--color-text-primary); font-weight: 500; }
 
     .contact-hint { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 0.8rem; }
     .contact { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 17px; color: var(--color-text-secondary); min-height: 1.6em; margin-bottom: 0.6rem; white-space: pre; overflow: hidden; }
@@ -120,6 +125,53 @@
     <h1>About</h1>
     <p class="tagline">Andreas Faust</p>
     <p class="about">I was born in 1995 in Germany and studied computer science.</p>
+
+    <h2 class="section-gap">Publications</h2>
+    <ul class="link-list">
+      <li>
+        <div class="link-title">Efficient Respiratory Sound Denoising with a Distilled Spiking Network</div>
+        <div class="pub-authors"><strong>A. Faust</strong>, S. Nitzsche, J. Becker</div>
+        <div class="link-meta">
+          <span>IEEE BioCAS 2026, Incheon &middot; Winning entry of the BioCAS 2026 Grand Challenge</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">Beyond Leaky Integrate-and-Fire: Evolving Spiking Neuron Models for Efficient Machine Learning</div>
+        <div class="pub-authors">S. Nitzsche, <strong>A. Faust</strong>, J. Krausse, S. Sinn, B. Pachideh, J. Becker</div>
+        <div class="link-meta">
+          <span>IEEE BioCAS 2026, Incheon</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">
+          <a href="https://arxiv.org/abs/2606.19369">Zero-Inflated Gaussian Distributions Enable Parameter-Space Sparsity in Estimation-of-Distribution Algorithms</a>
+        </div>
+        <div class="pub-authors"><strong>A. Faust</strong>, S. Nitzsche, J. Becker</div>
+        <div class="link-meta">
+          <span>Preprint, <a href="https://arxiv.org/abs/2606.19369">arXiv:2606.19369</a>, 2026</span>
+        </div>
+      </li>
+      <li>
+        <div class="link-title">An Optimization Framework for Automated Assessment of Biological Plausibility of Spiking Neurons</div>
+        <div class="pub-authors">S. Nitzsche, A. Ionita, <strong>A. Faust</strong>, B. Ionescu, J. Becker</div>
+        <div class="link-meta">
+          <span>ECML PKDD 2025 Workshops, Springer CCIS vol. 2840, pp. 364&ndash;379, 2026</span>
+        </div>
+      </li>
+    </ul>
+
+    <h2 class="section-gap">Elsewhere</h2>
+    <ul class="link-list">
+      <li>
+        <div class="link-title">
+          <a href="https://www.youtube.com/@asfaust312">YouTube</a>
+        </div>
+        <div class="link-meta">
+          <span>My channel</span>
+          <span class="domain">youtube.com/@asfaust312</span>
+        </div>
+      </li>
+    </ul>
 
     <h2 class="section-gap">Contact</h2>
     <p class="contact-hint">Slide until it makes sense.</p>

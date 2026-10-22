@@ -147,7 +147,7 @@ export class Realizer {
 // The point of the edge between vertices a and b closest to the origin. Hart uses the whole line
 // through the edge; but when that point lies beyond an end, as for the apex of a very flat
 // pyramid, pushing it out to the sphere pushes the apex further out, and the apex runs away.
-function tangentPoint(p, a, b) {
+export function tangentPoint(p, a, b) {
   const dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
   const s = Math.min(1, Math.max(0, -(dx * p[a] + dy * p[a + 1] + dz * p[a + 2]) / (dx * dx + dy * dy + dz * dz || 1)));
   return [p[a] + s * dx, p[a + 1] + s * dy, p[a + 2] + s * dz];

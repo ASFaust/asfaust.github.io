@@ -19,15 +19,23 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 ## Colouring and normalization
 
 - **Orbit-length colouring, follow-up:** a gradient per channel instead of a single colour? (Band limits stay fixed, owner's verdict.) → [sampling.md](sampling.md#colouring-by-orbit-length-implemented-2026-10-21)
+- **Nebulabrot colours:** the reference's yellow-green body is not reached; the palette hardly matters while each channel is stretched on its own. "Shared" is always warm (nested channels). Ideas: a gain per channel, or disjoint bands under shared brightness. → [sampling.md](sampling.md#colouring-by-orbit-length-implemented-2026-10-21)
 - **Make equalization less dependent on sparse samples.** The background reference (200,000 grid samples) is sparse enough that equalization with the default clip turns the body of a zoom white; a whole-set render with the same samples does the same. → [sampling.md](sampling.md#normalization-across-zoom-and-resolution-implemented-2026-10-21)
 
 ## Other open items
 
-- **Decide what "done" means, then drop "(WIP)".** The label is in the `<title>`, the top-bar `<h1>` and the home-page link (`repo/index.html`). The owner has not yet named the criteria.
 - **"Spread" as a second artistic slider?** The image-crowding weighting (tried, dropped from the code) spread the figure out and lifted the lower lobes. → [sampling.md](sampling.md#head-and-body-balance-implemented-2026-10-21-the-first-purely-artistic-setting)
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-22, UI and colour mixing (owner's list).**
+  - Samples: a number field with no upper limit and buttons 1 … 10M, instead of the log slider.
+  - Under the image only Generate, New seed and Stop ("Render this view" while magnified); Info in the top bar; Save PNG and Reset zoom at the top of the controls; Random as two buttons, Sensible (R) and Wild (L), in the Presets panel, with no dropdown.
+  - "(WIP)" removed from the page title and the home-page link.
+  - Orbit-length colours add up as light with a film shoulder instead of clipped sRGB bytes; Nebulabrot presets and the sensible Random retuned (min clip 0, midtone 0.92). Regression hashes re-recorded (only `length` and `midtone` changed).
+  - Measured what equalization with a high midtone does, and why equalized images look blown out (not OKLab clipping).
+  - A percentile white point for linear, root and log: measured and dropped. The brightest pixel is steady for type B (± 4 % at 2 M samples), and for type A log scaling hides its variation (owner also against baking in a percentile).
 
 - **2026-10-22.** Soft clips (min 0.113, midtone 0.837) for the defaults, the type B presets and sensible Random; equalized Nebulabrots with a high midtone, plus "Golden Nebulabrot". The grid sampler's density became a smooth B-spline (bands in zooms). "Skip first points" setting.
 

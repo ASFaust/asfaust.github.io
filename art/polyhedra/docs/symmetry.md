@@ -56,7 +56,7 @@ The matrices come from the shape *as built* (positions after the build, before t
 
 - **Stats line:** "Ih, 120 symmetries".
 - **Colouring:** "Symmetry orbit", one colour per face orbit.
-- **Realization:** always kept (the "Keep the symmetry" checkbox was removed 2026-10-21); the readable optimizer averages in its own variables.
+- **Realization:** kept unless the "Keep symmetry" switch is off (removed 2026-10-21, back as a global switch on the owner's request 2026-10-22, recorded per step as `/a` in the URL); the readable optimizer averages in its own variables. Stellate never averages: its result shows the automorphisms by other matrices than its start ([realization/regular-faces.md](realization/regular-faces.md#stellate-affine-star-faces-2026-10-22)). Whiten commutes with rotations, so it keeps the symmetry; the Gram–Schmidt it replaced did not.
 
 ## Open
 

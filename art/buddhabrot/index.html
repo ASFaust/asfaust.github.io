@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Buddhabrot Explorer (WIP)</title>
+  <title>Buddhabrot Explorer</title>
   <script src="../../js/oklch-picker.js"></script>
   <script>
     (function() {
@@ -19,7 +19,8 @@
 <body>
   <nav class="site-nav">
     <a href="../../index.html">&larr; Home</a>
-    <h1>Buddhabrot Explorer (WIP)</h1>
+    <h1>Buddhabrot Explorer</h1>
+    <button class="nav-info" id="infoBtn" title="What is this, and how does it work?">Info</button>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
   </nav>
 
@@ -34,18 +35,18 @@
       <div class="controls">
         <button id="genBtn" title="Render with the current settings and seed (Enter or G)">Generate</button>
         <button id="newSeedBtn" title="Render again with a new random seed (N)">New seed</button>
-        <button id="randomBtn" title="Render with random settings, sensible or wild as chosen under Presets (R)">Random</button>
         <button id="stopBtn" disabled>Stop</button>
-        <button id="viewBtn" class="density-only" disabled title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
-        <button id="resetBtn" disabled>Reset zoom</button>
-        <button id="saveBtn" disabled>Save PNG</button>
-        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
+        <button id="viewBtn" class="hidden" title="Set the bounds to the zoomed region and render it at full resolution">Render this view</button>
       </div>
       <div class="stats" id="stats"></div>
     </section>
 
     <div class="sidebar">
-    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, N renders a new seed, R random settings, Escape stops. The URL always holds the current settings, so you can share it.</p>
+    <div class="actions">
+      <button id="saveBtn" disabled title="Save the image at its full resolution">Save PNG</button>
+      <button id="resetBtn" disabled title="Undo the magnification; once there is none, go back to the whole set">Reset zoom</button>
+    </div>
+    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Zooming only magnifies the finished image; “Render this view” computes the zoomed region anew. Enter or G generates, N renders a new seed, R random settings, L wild ones, Escape stops. The URL always holds the current settings, so you can share it.</p>
 
     <div class="panels">
       <details open>
@@ -57,12 +58,12 @@
             <select id="p-preset"></select>
           </div>
           <div class="param">
-            <label for="p-rmode"><span>Random button</span></label>
-            <small>sensible: random settings that give a classic picture; wild: anything goes, from the samplers to the gradient (R)</small>
-            <select id="p-rmode">
-              <option value="sensible">sensible</option>
-              <option value="wild">wild: I'm feeling lucky</option>
-            </select>
+            <label><span>Random settings</span></label>
+            <small>sensible gives a classic picture (R); wild lets anything go, from the samplers to the gradient (L)</small>
+            <div class="row">
+              <button id="randomBtn" type="button" class="grow">Sensible</button>
+              <button id="wildBtn" type="button" class="grow">Wild: I'm feeling lucky</button>
+            </div>
           </div>
           <div class="param">
             <label for="p-pname"><span>Save current settings</span></label>
@@ -92,9 +93,10 @@
             </select>
           </div>
           <div class="param">
-            <label for="p-samples"><span>Samples</span><span id="v-samples"></span></label>
+            <label for="p-samples"><span>Samples</span></label>
             <small id="samplesNote">boundary points whose orbits are traced</small>
-            <input type="range" id="p-samples" min="0" max="1000" step="1">
+            <input type="number" id="p-samples" min="1" step="1">
+            <div class="quick" id="samplesQuick" aria-label="Fill in a sample count"></div>
           </div>
           <div class="param">
             <label for="p-iter"><span>Max iterations</span></label>
@@ -222,7 +224,7 @@
           </div>
           <div class="param wide length-only">
             <label for="p-chnorm"><span>Channel brightness</span></label>
-            <small>each channel stretched on its own gives the classic colours; shared keeps the true mix of orbit lengths. With histogram equalization, keep the midtone high (◆ on the clip bar, around 0.84), or the stretched channels add up to white.</small>
+            <small>each channel stretched on its own gives the classic colours. Shared keeps the true mix, which is always warm: every channel includes the shorter orbits, so red outweighs green, and green blue. The colours add up as light and fade into white; with histogram equalization, keep the midtone high (◆ on the clip bar, around 0.92) so that only the brightest parts get there.</small>
             <select id="p-chnorm">
               <option value="separate">each on its own (classic)</option>
               <option value="shared">shared (true mix)</option>

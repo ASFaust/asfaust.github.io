@@ -2,7 +2,7 @@
 
 **Serves:** goal B: shapes whose faces are (affine-)regular polygons, often non-convex, which is what makes them interesting (owner, 2026-10-21: "nonconvexity and symmetry" are the two axes of artsy). See [README.md](README.md).
 
-**Status:** in the page as the "Regular faces" button (with a regularity field, default 1) and the "Affine faces" button. **Code:** `js/faces.js` (`FaceRelaxer`, targets `'regular'` and `'affine'`), driven by `js/pipeline.js`. Like every optimizer, they start from wherever the vertices are, so they can be chained (`canonical,regular,flat`); the symmetry is always kept.
+**Status:** in the page as the "Regular faces" button (with a regularity field, default 1), "Affine faces", "Star faces", "Stellate", "Face mean", "Equal edges", and the Mix, which runs several targets with weights. **Code:** `js/faces.js` (`FaceRelaxer`, one target or several with `weights`), driven by `js/pipeline.js`. Like every optimizer, they start from wherever the vertices are, so they can be chained (`canonical,regular,flat`); the symmetry is kept unless the Keep symmetry switch is off (Stellate never averages).
 
 **Origin:** the owner's optimizer from PolyOp, there called detached faces, the one that worked best for them. It is not in the PolyOp repository. Renamed (2026-10-21) for what it tries to do: make all faces regular polygons, which it often achieves. The affine target is the per-face projection `P_F` of [nozono.md](nozono.md).
 
@@ -21,6 +21,12 @@ Alternating projections: one projection per face, then a reconciliation. Each ro
 **Regular** (`regularity` α): project the corners onto the face's plane (Newell normal through the centroid), take complex coordinates `z_k` in it, centred on the centroid, and fit the regular polygon `a·ζᵏ`, `ζ = e^{2πi/n}`. With equal weights the least-squares fit is just the Fourier coefficient `a = (1/n) Σ z_k conj(ζᵏ)`. The copy is `flat + α(regular − flat)`: α = 0 only flattens, 1 makes the face regular.
 
 **Affine**: the orthogonal projection of the corners onto Fourier modes 0, ±1, in 3D: `y_j = c + a cos θ_j + b sin θ_j` with `c` the mean, `a = (2/n) Σ x cos θ`, `b = (2/n) Σ x sin θ`. The result is flat by itself, an evenly spaced polygon on an ellipse (the limit of the midpoint iteration). Triangles are always affine-regular, so they only follow their neighbours; quadrilaterals become parallelograms.
+
+**Stellate**: affine with mode k of the star `{n/k}` for mode 1 ([below](#stellate-affine-star-faces-2026-10-22)). **Mean**: every copy at the face's centroid ([Face mean](#face-mean-2026-10-21)). **Flat** (in the mix): the regular target at regularity 0, only projected onto the plane.
+
+**Over edges and vertices** (2026-10-22), the same detach-and-merge with other elements: **equal edges**, each edge scaled about its midpoint to the mean edge length; **tangent edges**, each edge moved along its point nearest the centre until that point is at the mean distance (Hart's tangency step as a target, so tangent + flat is a canonical iteration without momentum); **sphere**, each vertex to the mean radius.
+
+**Mixing** (the page's Mix): every vertex goes to `Σ_t w_t Σ copies / Σ_t w_t · copies_t(v)`, averaged projections, which settles where the weighted pulls balance. One target at weight 1 is the single button, bit for bit.
 
 **Flat faces** (the page's other per-face button) is not this scheme but the canonical iteration's planarity step alone (`Realizer` in mode `'planar'`, [canonical.md](canonical.md#planar-mode)): each vertex moves towards the planes of its faces, which keeps the shape close to where it was. Regular faces at regularity 0 does nearly the same by projection and merge.
 
@@ -69,6 +75,8 @@ Affine faces:
 
 ## Adjustments and random starts (2026-10-21)
 
+*Replaced on 2026-10-22 by one switch, Whiten (symmetric whitening, `whiten()` in `frame.js`), which commutes with rotations and so never breaks the symmetry; Face mean gives the same shapes with it, in fewer rounds ([../user-experience.md](../user-experience.md#2-one-whiten-switch-instead-of-three-done-symmetrically)). Old links still replay with the three adjustments. The findings below were made with them.*
+
 The page can apply, after every round, centre, orthogonalise (Gram–Schmidt on the x, y, z columns: a shear) and normalise (each centred column scaled to the mean spread of the three), and can start from random points (`js/frame.js`). All three are affine maps, so they **commute with the affine-faces step** (owner's prediction, confirmed): every fixed point of affine faces stays one (`ozJ45`, `tttC` identical with and without).
 
 - **But the combination has new resting points.** In a global collapse an affine round acts on the whole shape as a squash along one axis, and normalise undoes exactly that, so the combined round stands still at a shape whose faces are *not* affine-regular. Normalise prevents the global collapses (`dA5` turn 0.00 → 0.75, `jP6` 0.00 → 0.58), with faces bent by 0.1 edge lengths. It does not help local collapse (`jsdJ29` turn 0.04 → 0.07).
@@ -110,6 +118,38 @@ What a "nice" face is decides everything. Implemented: flat, regular, star, affi
 - **From random starts, without symmetry, it finds the uniform star polyhedra exactly**: `D 5:2` gives the great stellated dodecahedron (seed 2: spread 0, edge ratio 1, all radii 1, 30 reflex edges), `tD 10:3` gives the great stellated truncated dodecahedron (`{10/3}` + triangles; 3 of 3 seeds). Other seeds end bent (`D 5:2` seeds 1 and 3: spread 0.10, planar 0.16), and `aD 5:2` gave non-uniform solutions (radii 0.92–1.07).
 - **Why keeping the symmetry stops it**: the symmetry matrices are fitted to the convex shape, but the star solid realizes the same graph automorphisms by a different 3D representation, the Galois conjugate. Its coordinates lie in another eigenspace of the adjacency matrix: Rayleigh quotients of the x, y, z columns are √5 for the dodecahedron and −√5 for the great stellated one (`tD`: 2.83 against −0.47). So a symmetric star needs a start in that other eigenspace, which is the spectral optimizer's "browse eigenvector triples" ([spectral.md](spectral.md)), and the matrices fitted to that start.
 - `I 3:2` is only the triangles turned over, so not a star; the great icosahedron has ordinary triangles as faces and a star only as its vertex figure, so no face target can reach it.
+
+## Stellate: affine star faces (2026-10-22)
+
+In the page as the "Stellate" button (owner's request: a stellation without browsing the spectral list). Affine faces with Fourier modes 0, ±k (k from `starK`) instead of 0, ±1, plus symmetric whitening every round: linear, so subspace iteration towards layouts with affine-star faces. The button shakes the shape first (0.1 edge lengths, seed 1), since an exactly convex face has no mode-k content; does not average over the symmetries, since the stellation shows them by other matrices than the start; and flips a mirror image (negative density). From the built shapes it reaches the same results as the prototype from random points: `D` density 7 (135 rounds), `tD` 13 (122), `tI` 7 (1,499), all flat, equal edges, `Ih`. From random starts it finds the great stellated dodecahedron (`D`), great stellated truncated dodecahedron (`tD`) and truncated great icosahedron (`tI`) with flat faces and equal edges, and flat stellations of `cD` (density 7) and `P5`; then Star faces finishes `A5` and `P5` exactly. Nothing happens from an exactly convex start (no mode-k content); no stellation where most faces have no star (`tkD`, `jD`). Full table and the proposed "Stellate" button: [../user-experience.md](../user-experience.md#5-stellate-affine-star-faces-prototyped-works).
+
+## Equal edges and the mix (2026-10-22)
+
+`node tests/realize.mjs --sym --max-it 20000 --mode … --weights …` on `tkD tttC ozJ45 jsdJ29 ckmU5` (some also `tttttD`):
+
+```
+                         string  rounds  planar  inward reflex  edge×  fedge×  turn
+canonical,edges          tkD        105  2.0e-2       0      0    1.0     1.0  0.83
+                         tttC       232  3.5e-1       0     24    1.0     1.0  0.23
+                         ozJ45     1421  3.3e-1      32    320    1.0     1.0  0.40
+canonical,mix edges+flat tkD        903  6.4e-7       0      0    1.0     1.0  0.74
+                         tttC      2108  1.5e-6       0     24    1.0     1.0  0.00
+                         ozJ45     7060  7.1e-7       0    248    1.0     1.0  0.25
+                         jsdJ29   20000  1.5e-2      16     96    1.0     1.0  0.04
+canonical,mix tangent+regular
+                         tkD         52  5.9e-3       0      0    1.1     1.1  0.93
+                         tttC       140  1.8e-1       0      0    1.5     1.3  0.67
+                         jsdJ29     382  4.9e-2       0      0    2.0     1.5  0.60
+mix mean+edges /w        ckmU5      475  7.9e-1       0    340    7.3     6.1  0.14
+(mean /w alone           ckmU5      311  1.1e+0       0    400   23.1    12.2  0.22)
+```
+
+- **Equal edges alone** gets every edge equal (ratio 1.0) and bends the faces (planar 0.02–1.1).
+- **Flat + equal edges gives equilateral polyhedra with flat faces**: `tkD` comes out convex, exactly flat (6e-7) and equilateral, an equilateral Goldberg polyhedron, which no single button makes. `tttC` and `ozJ45` are flat and equilateral but fold (24 and 248 reflex edges), and `tttC` has a corner that goes straight (turn 0.00). `jsdJ29` does not settle.
+- **Tangent + regular** is a canonical shape pulled towards regular faces: convex on `tkD`, `tttC`, `jsdJ29`, with `tttC`'s edge ratio 1.5 against canonical's 4.1, at the price of faces bent by 0.006–0.18. A goal-A-ish blend; Flat faces afterwards is the obvious next step (not measured).
+- **Tangent + flat** matches canonical where canonical works (`tkD`, `tttC`, `jsdJ29`, `ozJ45` convex and flat), more slowly, since it has no momentum. It tangles on `ckmU5` like canonical ([canonical.md](canonical.md#failure-modes)), also from the Face mean start: the tangle is in the targets, not in Hart's step sizes.
+- **Face mean + equal edges, whitened**, on `ckmU5`: edge ratio 7.3 against 23 for face mean alone, still no inward faces, faces bent 0.8.
+- **Regular + flat at 1 : 1** is regular faces at 0.5, as the maths says (tested to 1e-6 in `tests/optimizers.mjs` at 0.4 : 0.6).
 
 ## Open questions
 

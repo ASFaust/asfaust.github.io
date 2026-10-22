@@ -47,6 +47,9 @@ body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; bac
   line-height: 1;
 }
 .theme-toggle:hover { color: var(--color-text-primary); }
+/* Info sits in the top bar rather than under the image, to save a row of buttons on phones */
+.site-nav .nav-info { border: none; padding: 0.2rem; font-size: 13px; color: var(--color-text-secondary); }
+.site-nav .nav-info:hover { color: var(--color-text-primary); }
 .lede { font-family: var(--font-serif); font-size: 17px; line-height: 1.7; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
 
 .app { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; padding: 0 1rem; display: flex; flex-direction: column; }
@@ -60,7 +63,7 @@ body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; bac
   /* the viewer is a size container: the stage is the largest square that leaves room for the buttons */
   .viewer { flex: 1; min-width: 0; container: viewer / size; justify-content: center; padding-bottom: 0.5rem; }
   .viewer .stage { width: min(100cqw, 100cqh - 5rem); }
-  /* six buttons wrap to two rows in a narrow viewer */
+  /* the buttons wrap to two rows in a narrow viewer */
   @container viewer (max-width: 560px) { .viewer .stage { width: min(100cqw, 100cqh - 7.8rem); } }
   .sidebar { flex: none; width: clamp(280px, 34vw, 440px); border-top: none; border-left: 1px solid var(--color-border-secondary); padding: 0 0.5rem 1rem 1rem; }
 }
@@ -155,3 +158,10 @@ dialog.info::backdrop { background: rgba(0, 0, 0, 0.55); }
 .info-head h2 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; }
 .info-head button { border: none; font-size: 15px; padding: 0.2rem 0.4rem; color: var(--color-text-secondary); }
 dialog.info .notes { padding: 1.25rem 1.25rem 0.5rem; }
+
+/* Save PNG and Reset zoom, at the top of the controls column: the button row under the image stays one line on phones */
+.actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.actions > button, .row > button.grow { flex: 1; }
+/* round sample counts that fill in the field */
+.quick { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+.quick button { flex: 1; font-size: 11px; padding: 0.2rem 0.3rem; font-family: var(--font-mono); }

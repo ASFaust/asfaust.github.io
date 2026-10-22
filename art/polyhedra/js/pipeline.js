@@ -7,8 +7,10 @@ import { seed } from './seeds.js';
 import { flatten, Realizer } from './canonical.js';
 import { FaceRelaxer } from './faces.js';
 import { Readable } from './readable.js';
-import { symmetrize } from './symmetry.js';
-import { adjust } from './frame.js';
+import { automorphisms, symmetrize } from './symmetry.js';
+import { check, topology } from './mesh.js';
+import { adjust, whiten, randomPositions, shake, shapeDistance } from './frame.js';
+import { spectralStarts, density, SPECTRAL_MAX } from './spectral.js';
 
 // relaxing after each operator, so the next one starts from a good shape
 export const STEP_TOL = 1e-3, STEP_MAX = 2000;
@@ -20,11 +22,16 @@ export const TOL = 1e-6, STILL = 1e-8, MAX_IT = 60000;
 const SYM_EVERY = 10;
 
 // The optimizers the page offers. Each starts from wherever the vertices are, so they can be used
-// one after another. The inits put the vertices somewhere to start from.
-export const OPTIMIZERS = ['canonical', 'readable', 'regular', 'star', 'affine', 'mean', 'flat'];
+// one after another. The inits put the vertices somewhere to start from; shake moves them a little
+// from where they are. Inits and shake take no rounds.
+export const OPTIMIZERS = ['canonical', 'readable', 'regular', 'star', 'affine', 'mean', 'flat', 'stellate', 'edges', 'mix'];
 export const INITS = ['built', 'random', 'spectral'];
-// the optimizers of faces.js: detached faces with a per-face target
-const FACES = ['regular', 'star', 'affine', 'mean'];
+export const INSTANT = [...INITS, 'shake'];
+// the optimizers of faces.js: detached faces (and edges) with targets
+const FACES = ['regular', 'star', 'affine', 'mean', 'stellate', 'edges', 'mix'];
+// Stellate starts from the current shape shaken by this much (in mean edge lengths), from a fixed
+// seed: an exactly convex face has nothing of a star in it, so without the shake nothing happens.
+const STELLATE_SHAKE = 0.1, STELLATE_SEED = 1;
 
 // Parses and builds the polyhedron, relaxing canonically between operators (not after the last), so
 // that each operator starts from a good shape: without it long strings start from degenerate
@@ -58,16 +65,29 @@ export function relaxCanonical(P, tol = STEP_TOL, max = STEP_MAX) {
 // by themselves, and averaging fights their momentum (2× slower); readable keeps its own.
 export class Realization {
   // rawPos: the operators' construction without any relaxation, a possible start for readable;
-  // flags: the adjustments of frame.js to apply after every round (not to readable, which keeps
-  // its own variables)
-  constructor(P, flat, opt, { regularity = 1, pointedness = 0.3, maps = null, rawPos = null, flags = null } = {}) {
+  // flags: the adjustment of frame.js to apply after every round, whiten, or the old centre,
+  // orthogonalise and normalise (not to readable, which keeps its own variables); weights: the
+  // targets of a mix
+  constructor(P, flat, opt, { regularity = 1, pointedness = 0.3, weights = null, maps = null, rawPos = null, flags = null } = {}) {
     this.P = P;
     this.opt = opt;
-    this.R = FACES.includes(opt) ? new FaceRelaxer(P.pos, flat, { target: opt, regularity, pointedness })
+    if (opt === 'stellate') {
+      // Linear, so it needs whitening, and it leaves the start's symmetry: the stellation shows the
+      // automorphisms by other matrices than the convex shape, so averaging with the convex ones
+      // would pull it back. Where the strongest eigenspace is a single irreducible one (D, tD, tI)
+      // the result is exactly symmetric anyway.
+      flags = { whiten: true };
+      maps = null;
+      shake(P.pos, flat.edges, STELLATE_SEED, STELLATE_SHAKE);
+      this.faces = P.faces;
+    }
+    this.R = FACES.includes(opt) ? new FaceRelaxer(P.pos, flat, {
+      target: opt, regularity, pointedness, weights: opt === 'mix' ? weights : opt === 'edges' ? { edges: 1 } : null,
+    })
       : opt === 'readable' ? new Readable(P, { maps, rawPos })
       : new Realizer(P.pos, flat, opt === 'flat' ? 'planar' : 'canonical');
     this.maps = maps && maps.length > 1 && FACES.includes(opt) ? maps : null;
-    this.flags = opt === 'readable' || !flags || !(flags.centre || flags.orthogonalise || flags.normalise) ? null : flags;
+    this.flags = opt === 'readable' || !flags || !(flags.centre || flags.orthogonalise || flags.normalise || flags.whiten) ? null : flags;
     if (this.flags) this.old = new Float64Array(P.pos.length);
     this.it = 0;
     this.moved = Infinity;
@@ -80,7 +100,7 @@ export class Realization {
       const p = this.P.pos, old = this.old;
       old.set(p);
       this.R.step();
-      adjust(p, this.flags);
+      if (this.flags.whiten) whiten(p); else adjust(p, this.flags);
       let m = 0, r = 0;
       for (let i = 0; i < p.length; i += 3) {
         m = Math.max(m, Math.hypot(p[i] - old[i], p[i + 1] - old[i + 1], p[i + 2] - old[i + 2]));
@@ -90,7 +110,12 @@ export class Realization {
     }
     this.it++;
     if (this.maps && this.it % SYM_EVERY === 0) symmetrize(this.P.pos, this.maps);
-    if (this.it % 50 === 0) this.err = this.R.error();
+    if (this.it % 50 === 0) {
+      this.err = this.R.error();
+      // a mirror image of a stellation winds the other way round; reflections commute with the
+      // round, so turning it the right way out changes nothing else
+      if (this.faces && density(this.faces, this.P.pos) < 0) for (let i = 0; i < this.P.pos.length; i += 3) this.P.pos[i] = -this.P.pos[i];
+    }
     return this.moved;
   }
   get done() {
@@ -102,4 +127,128 @@ export class Realization {
     if (this.it % 50 !== 0) return false;
     return this.err.planar < TOL && this.err.tangent < TOL;
   }
+}
+
+// One polyhedron and the chain of steps run on it, shared by the worker and the tests: the build,
+// the automorphisms, and every step, which may be an init (built, random, spectral), a shake, or
+// an optimizer run to its end or to the round it was stopped at. A step is
+// { opt, regularity, pointedness, weights, seed, index, matrix, flags, keep, it }; keep: false runs
+// it without averaging over the symmetries.
+export class Session {
+  constructor(text, { maxEdges = Infinity, onStage } = {}) {
+    const { P, parsed } = build(text, { maxEdges, onStage });
+    const bad = check(P);
+    if (bad) throw new Error('the result is not a polyhedron: ' + bad);
+    this.text = text;
+    this.P = P;
+    this.parsed = parsed;
+    this.built = Float64Array.from(P.pos);
+    this.flat = flatten(P);
+    this.maps = null;
+    // a random start has no symmetry, so the optimizers stop keeping it until the next 'built' or
+    // 'spectral'; a spectral start is exactly symmetric, though often under other matrices than the
+    // shape as built, which symmetrize() refits every time
+    this.symmetric = true;
+    // the spectral starts of each matrix, computed when first asked for
+    this.starts = new Map();
+    // the operators' construction without relaxation, for readable, built when first needed
+    this.raw = null;
+  }
+
+  // The operators and the canonical relaxation keep symmetric shapes symmetric, so the matrices
+  // fitted to the shape as built are good enough to name the group.
+  symmetries() {
+    const sym = automorphisms(this.P, topology(this.P));
+    this.maps = sym.maps;
+    return sym;
+  }
+
+  // An init or a shake, in place. A spectral init returns { spectral: what the page shows }.
+  instant(step, onStage) {
+    const P = this.P;
+    if (step.opt === 'built') { P.pos.set(this.built); this.symmetric = true; return {}; }
+    if (step.opt === 'random') { randomPositions(P.pos, step.seed); this.symmetric = false; return {}; }
+    if (step.opt === 'shake') {
+      shake(P.pos, this.flat.edges, step.seed);
+      // the noise averaged over the symmetries keeps them; without, it breaks them. The matrices
+      // are fitted to the shaken shape, so one pass leaves about 1e-5; the next ones make it exact.
+      if (this.symmetric && step.keep !== false && this.maps && this.maps.length > 1) for (let k = 0; k < 3; k++) symmetrize(P.pos, this.maps);
+      return {};
+    }
+    if (P.nv > SPECTRAL_MAX) return { spectral: { tooBig: true } };
+    const kind = step.matrix || 'adjacency';
+    if (!this.starts.has(kind)) { if (onStage) onStage('eigenvectors'); this.starts.set(kind, spectralStarts(P, this.maps, kind)); }
+    const list = this.starts.get(kind);
+    if (!list.length) return { spectral: { index: 0, count: 0 } };
+    // past the last start it wraps round, so the stepper can go on
+    const index = ((Math.round(step.index || 1) - 1) % list.length + list.length) % list.length + 1, s = list[index - 1];
+    P.pos.set(s.pos);
+    this.symmetric = true;
+    return { spectral: { index, count: list.length, values: s.values, dims: s.dims, density: s.density, group: s.group } };
+  }
+
+  realization(step) {
+    // the readable optimizer may need the operators' construction without relaxation
+    if (step.opt === 'readable' && !this.raw) this.raw = build(this.text, { relax: false }).P.pos;
+    return new Realization(this.P, this.flat, step.opt, {
+      regularity: step.regularity, pointedness: step.pointedness, weights: step.weights, flags: step.flags,
+      maps: this.symmetric && step.keep !== false ? this.maps : null, rawPos: this.raw,
+    });
+  }
+
+  // runs one step to its end, or to its stop round
+  run(step) {
+    if (INSTANT.includes(step.opt)) return this.instant(step);
+    const R = this.realization(step), limit = step.it ?? Infinity;
+    while (!R.done && R.it < limit) R.step();
+    return R;
+  }
+
+  state() { return { pos: Float64Array.from(this.P.pos), symmetric: this.symmetric }; }
+  restore(s) { this.P.pos.set(s.pos); this.symmetric = s.symmetric; }
+}
+
+// Two shapes count as the same when shapeDistance (frame.js: up to position, size and rotation)
+// is below this; invisible on screen.
+export const SAME_SHAPE = 1e-3;
+
+// The shortest chain found that gives the same shape as steps, for a link to share: steps that
+// later ones undo are dropped. Converged optimizers forget most of where they started, so first
+// the shortest tail of the chain that still gives the shape (with the init kept), then each
+// remaining step on its own, earliest first, then the init. Every candidate is replayed, from the
+// state before the first step it changes. Returns the steps kept, in order. onProgress(tries) is
+// called before every replay.
+export function prune(S, steps, onProgress = () => {}) {
+  const built = S.state();
+  const init = steps.length && INITS.includes(steps[0].opt) ? [steps[0]] : [], rest = steps.slice(init.length);
+  let tries = 0;
+  // runs list from state, recording the state after each step in states
+  const replay = (from, list, states = []) => {
+    onProgress(++tries);
+    S.restore(from);
+    for (const t of list) { S.run(t); states.push(S.state()); }
+    return S.state().pos;
+  };
+  S.restore(built);
+  for (const t of init) S.run(t);
+  const start = S.state();
+  let states = [];
+  const target = replay(start, rest, states);
+  const same = pos => shapeDistance(pos, target) < SAME_SHAPE;
+
+  let keep = rest;
+  if (rest.length && same(start.pos)) keep = [];
+  for (let j = rest.length - 1; j >= 1 && keep.length > 1; j--) {
+    const st = [];
+    if (same(replay(start, rest.slice(j), st))) { keep = rest.slice(j); states = st; break; }
+  }
+  for (let i = 0; i < keep.length && keep.length > 1;) {
+    const st = [];
+    if (same(replay(i ? states[i - 1] : start, keep.slice(i + 1), st))) {
+      keep = keep.slice(0, i).concat(keep.slice(i + 1));
+      states = states.slice(0, i).concat(st);
+    } else i++;
+  }
+  if (init.length && same(replay(built, keep))) return keep;
+  return [...init, ...keep];
 }

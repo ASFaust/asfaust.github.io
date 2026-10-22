@@ -1,13 +1,15 @@
 // Benchmark of the realizations: how long they take and how good the result is.
-// node tests/realize.mjs [--mode chain] [--sym] [--flags con] [--random N] [--max-it N] [--regularity x] [--pointedness t] [strings...]
+// node tests/realize.mjs [--mode chain] [--sym] [--flags w] [--weights regular=1,flat=0.5] [--random N] [--max-it N] [--regularity x] [--pointedness t] [strings...]
 //
 // The chain is optimizers run one after another from the shape as built, as the page's buttons do:
-// canonical, readable, regular, star, affine, mean, flat, comma-separated (default canonical);
+// canonical, readable, regular, star, affine, mean, flat, stellate, edges, mix (with --weights),
+// shake (seed 1), comma-separated (default canonical);
 // "random" puts the vertices at random points (seed 1) and drops the symmetry from there on;
 // "spectral:i" puts them at the i-th spectral start (js/spectral.js) and keeps the symmetry,
 // "spectral:i:facemean" the same from another matrix. --sym keeps the
 // symmetry in regular and affine faces (the page always does). --flags applies the page's
-// per-round adjustments to every optimizer step: c centre, o orthogonalise, n normalise.
+// per-round adjustment to every optimizer step: w whiten (or the old c centre, o orthogonalise,
+// n normalise).
 //
 // Columns: rounds and time of the last step (after the build, which relaxes between operators,
 // and the earlier steps, which are not timed), then the metrics of tests/lib.mjs: planarity (max, relative to the mean edge),
@@ -21,7 +23,7 @@ import { flatten } from '../js/canonical.js';
 import { topology } from '../js/mesh.js';
 import { automorphisms } from '../js/symmetry.js';
 import { metrics, randomStrings } from './lib.mjs';
-import { randomPositions } from '../js/frame.js';
+import { randomPositions, shake } from '../js/frame.js';
 import { spectralStarts } from '../js/spectral.js';
 
 const args = process.argv.slice(2);
@@ -34,7 +36,8 @@ const sym = flag('--sym');
 const regularity = +opt('--regularity', 1);
 const pointedness = +opt('--pointedness', 0.3);
 const fl = opt('--flags', '');
-const flags = { centre: fl.includes('c'), orthogonalise: fl.includes('o'), normalise: fl.includes('n') };
+const flags = { centre: fl.includes('c'), orthogonalise: fl.includes('o'), normalise: fl.includes('n'), whiten: fl.includes('w') };
+const weights = Object.fromEntries(opt('--weights', '').split(',').filter(Boolean).map(kv => { const [k, v] = kv.split('='); return [k, +v]; }));
 const chain = mode.split(',');
 const LIST = ['tI', 'tttC', 'gpD', 'pgI', 'cccC', 'tktkI', 'dkdkdkdkI', 'tttttD', 'kkkD', 'jsdJ29', 'aoeU4'];
 const strings = [...(args.length ? args : random ? [] : LIST), ...randomStrings(random)];
@@ -50,6 +53,7 @@ for (const s of strings) {
   let R, ms, symmetric = true;
   for (const o of chain) {
     if (o === 'random') { randomPositions(P.pos, 1); symmetric = false; continue; }
+    if (o === 'shake') { shake(P.pos, flatten(P).edges, 1); continue; }
     if (o.startsWith('spectral')) {
       const [, idx, kind] = o.split(':');
       const starts = spectralStarts(P, maps || automorphisms(P, topology(P)).maps, kind || 'adjacency'), i = (+idx || 1) - 1;
@@ -58,7 +62,7 @@ for (const s of strings) {
       continue;
     }
     const rawPos = o === 'readable' ? build(s, { relax: false }).P.pos : null;
-    R = new Realization(P, flatten(P), o, { regularity, pointedness, rawPos, flags, maps: symmetric && (sym || o === 'readable') ? maps : null });
+    R = new Realization(P, flatten(P), o, { regularity, pointedness, weights, rawPos, flags, maps: symmetric && (sym || o === 'readable') ? maps : null });
     const t0 = performance.now();
     while (!R.done && R.it < maxIt) R.step();
     ms = performance.now() - t0;

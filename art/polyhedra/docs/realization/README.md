@@ -20,7 +20,7 @@ For *any* graph the page can produce, give a shape that is a faithful, good-look
 - **Baseline:** the canonical polyhedron ([canonical.md](canonical.md)). It meets every hard requirement, but it is badly unbalanced on graphs with very unequal faces (`tttttD`, `kkkD`) and slow to converge on them.
 
 ### Goal B: artsy shapes
-For a graph plus some style controls, give a shape that looks interesting. The two axes (owner, 2026-10-21): **non-convexity and symmetry**. Regular faces and affine faces aim at it directly: regular or affine-regular faces, which the graph can usually only have by folding ([regular-faces.md](regular-faces.md)). The controls are the buttons themselves: an init (as built, or random points), then optimizers chained and stopped part-way, each with optional per-round adjustments (centre, orthogonalise, normalise).
+For a graph plus some style controls, give a shape that looks interesting. The two axes (owner, 2026-10-21): **non-convexity and symmetry**. Regular faces and affine faces aim at it directly: regular or affine-regular faces, which the graph can usually only have by folding ([regular-faces.md](regular-faces.md)). The controls are the buttons themselves: an init (as built, random points, or a spectral layout), then optimizers and shakes chained and stopped part-way, each with the switches whiten and keep symmetry, and the Mix of several targets with weights ([../user-experience.md](../user-experience.md)).
 - **Allowed:** non-convex shapes, slightly bent faces, stellations, self-intersections when they look good.
 - **Required:**
   - controllable: the chain of optimizers, where each is stopped, and regularity, decide the shape,
@@ -153,8 +153,8 @@ An optimizer is a class with:
 ### Artsy deformations (small ideas, no file yet)
 These move vertices without changing the graph:
 - **Scrape-off morph**, `scrape_off(t)` from PolyOp: one parameter going from truncate (t < 0.5) to ambo. It needs the old and new graphs mapped onto each other, so it fits better as an operator with a parameter.
-- **Stop early**: now done by clicking the running optimizer. Adding noise and relaxing a little is not done.
-- **Spherical projection**: put every vertex on the unit sphere; the faces then bend.
+- **Stop early**: now done by clicking the running optimizer. Adding noise and relaxing a little: the Shake button (2026-10-22).
+- **Spherical projection**: put every vertex on the unit sphere; the faces then bend. Now the Mix's sphere target (2026-10-22), which can be weighted against flat or regular.
 - **Per-face extrusion and insets**: these change the geometry but not the graph, if done as a displacement.
 - **Ramped regularity**: now done by chaining Regular faces at rising regularity (0.3, then 0.6, then 1).
 

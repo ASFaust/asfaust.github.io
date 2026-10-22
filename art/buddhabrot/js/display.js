@@ -225,6 +225,18 @@ function mapper(result, st, ref) {
 
 function rgb(hex) { return [0, 2, 4].map(function(o) { return parseInt(hex.substr(o, 2), 16); }); }
 
+// Colouring by orbit length: the summed linear light x of a pixel component becomes the sRGB byte of 1 − e^(−x), read
+// from a table over x in [0, SHOULDER_MAX], fine enough that its first step stays under one sRGB level. MIX_EXPOSURE
+// scales the colours first: one channel at full brightness then reaches 78 % of white in linear light, and two or three together
+// approach it (docs/sampling.md, 2026-10-22).
+var MIX_EXPOSURE = 1.5, SHOULDER_MAX = 8, SHOULDER_N = 65536, SHOULDER_STEP = (SHOULDER_N - 1) / SHOULDER_MAX, shoulder = null;
+function shoulderTable() {
+  if (shoulder) return shoulder;
+  shoulder = new Uint8Array(SHOULDER_N);
+  for (var j = 0; j < SHOULDER_N; j++) shoulder[j] = toByte(1 - Math.exp(-j / SHOULDER_STEP));
+  return shoulder;
+}
+
 // Draws result onto canvas with the display settings st. ref, if given, is the result whose brightness statistics
 // set the normalization: the whole-set render, so that a zoom keeps its look. Colouring by orbit length needs a result
 // computed with bands (and a reference with them); otherwise the gradient colours the whole image. Returns the 256
@@ -257,8 +269,12 @@ export function render(canvas, result, st, ref) {
       px[i] = table[(clip(u) * 1023 + 0.5) | 0];
     }
   } else {
-    // the channel colours add up, in sRGB, and saturate at white
-    var cols = [rgb(st.colour_short), rgb(st.colour_mid), rgb(st.colour_long)];
+    // The channel colours add up as light (linear RGB), and the sum passes a film-like shoulder, 1 − e^(−x), that fades
+    // bright sums into white. Adding sRGB bytes and clipping each at 255 blew the body out into flat white and yellow.
+    var cols = [rgb(st.colour_short), rgb(st.colour_mid), rgb(st.colour_long)].map(function(c) {
+      return c.map(function(v) { return MIX_EXPOSURE * toLinear(v); });
+    });
+    var enc = shoulderTable();
     for (i = 0; i < N; i++) {
       var r = 0, g = 0, b = 0;
       for (var k = 0; k < 3; k++) {
@@ -267,7 +283,8 @@ export function render(canvas, result, st, ref) {
         r += tk * cols[k][0]; g += tk * cols[k][1]; b += tk * cols[k][2];
         if (k === 2) bins[uk >= 1 ? 255 : (uk * 256) | 0]++;
       }
-      px[i] = (255 << 24 | Math.min(255, b) << 16 | Math.min(255, g) << 8 | Math.min(255, r)) >>> 0;
+      px[i] = (255 << 24 | enc[Math.min(SHOULDER_N - 1, (b * SHOULDER_STEP + 0.5) | 0)] << 16 |
+        enc[Math.min(SHOULDER_N - 1, (g * SHOULDER_STEP + 0.5) | 0)] << 8 | enc[Math.min(SHOULDER_N - 1, (r * SHOULDER_STEP + 0.5) | 0)]) >>> 0;
     }
   }
   ctx.putImageData(im, 0, 0);

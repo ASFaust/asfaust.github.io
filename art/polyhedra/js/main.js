@@ -2,7 +2,8 @@ import { parse, describe, estimate } from './notation.js';
 import { OPS } from './operators.js';
 import { seed, JOHNSON_NAMES, MAX_N } from './seeds.js';
 import { Viewer, STYLES, COLOURINGS, INKS, MATERIALS } from './viewer.js';
-import { OPTIMIZERS, INITS } from './pipeline.js';
+import { OPTIMIZERS, INITS, INSTANT } from './pipeline.js';
+import { TARGETS } from './faces.js';
 import { SPECTRAL_MAX, MATRICES } from './spectral.js';
 import { PALETTES, paletteHex, linearOf, isHex } from './palettes.js';
 import { obj, stl, download } from './export.js';
@@ -51,7 +52,7 @@ const KEYS = {
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', ink: 'ink', fov: 'fov', spin: 'spin',
 };
 
-function writeHash() {
+function hashText(st) {
   const parts = ['n=' + encodeURIComponent(st.text)];
   for (const [k, short] of Object.entries(KEYS)) {
     if (k === 'text' || st[k] === DEFAULTS[k]) continue;
@@ -59,8 +60,9 @@ function writeHash() {
     if (k === 'custom') { if (st.palette === 'custom') parts.push('pc=' + st.custom.map(c => c.slice(1)).join(',')); continue; }
     parts.push(short + '=' + (typeof st[k] === 'boolean' ? +st[k] : st[k]));
   }
-  history.replaceState(null, '', '#' + parts.join('&'));
+  return parts.join('&');
 }
+function writeHash() { history.replaceState(null, '', '#' + hashText(st)); }
 
 function readHash() {
   const h = location.hash.replace(/^#/, '');
@@ -81,15 +83,22 @@ function readHash() {
 }
 
 // The chain of steps applied since the shape was built, in the URL as
-// "random:83121,affine/n,regular:0.8/co@340": a random start with its seed (or "spectral:3", the
-// third spectral start, "spectral:3:facemean" from another matrix than the adjacency), then optimizers, each with its regularity (star: its pointedness) after a
-// colon, its adjustments after a slash (c centre, o orthogonalise,
-// n normalise) and after an at sign the round at which it was stopped, so that the chain replays
-// to exactly the same shape. "built" is the empty chain: the shape as built.
+// "random:83121,affine/w,shake:5120,regular:0.8/wa@340": a random start with its seed (or
+// "spectral:3", the third spectral start, "spectral:3:facemean" from another matrix than the
+// adjacency), then optimizers and shakes, each with its regularity (star, stellate: its
+// pointedness; shake: its seed) after a colon, its switches after a slash (w whiten, a without
+// the symmetry; c centre, o orthogonalise, n normalise in old links) and after an at sign the round
+// at which it was stopped, so that the chain replays to exactly the same shape. A mix lists its
+// weights: "mix:regular=1+flat=0.5+pt=0.25/w", pt the pointedness when star or stellate is in it.
+// "built" is the empty chain: the shape as built.
+const POINTED = ['star', 'stellate'];
+const weightsText = t => TARGETS.filter(k => t.weights[k] > 0).map(k => k + '=' + t.weights[k]).join('+')
+  + (POINTED.some(k => t.weights[k] > 0) && t.pointedness !== 0.3 ? '+pt=' + t.pointedness : '');
 function stepsText(steps) {
   if (!steps.length) return 'built';
-  return steps.map(t => t.opt + (t.opt === 'random' ? ':' + t.seed : t.opt === 'spectral' ? ':' + t.index + (t.matrix && t.matrix !== 'adjacency' ? ':' + t.matrix : '')
-    : t.opt === 'regular' && t.regularity !== 1 ? ':' + t.regularity : t.opt === 'star' && t.pointedness !== 0.3 ? ':' + t.pointedness : '')
+  return steps.map(t => t.opt + (t.opt === 'random' || t.opt === 'shake' ? ':' + t.seed : t.opt === 'spectral' ? ':' + t.index + (t.matrix && t.matrix !== 'adjacency' ? ':' + t.matrix : '')
+    : t.opt === 'mix' ? ':' + weightsText(t)
+    : t.opt === 'regular' && t.regularity !== 1 ? ':' + t.regularity : POINTED.includes(t.opt) && t.pointedness !== 0.3 ? ':' + t.pointedness : '')
     + (t.flags ? '/' + t.flags : '') + (t.it !== undefined ? '@' + t.it : '')).join(',');
 }
 
@@ -98,18 +107,33 @@ const OLD = { faces: 'regular', planar: 'flat' };
 function parseSteps(text, rg) {
   const steps = [];
   for (const tok of text.split(',')) {
-    const m = tok.match(/^([a-z]+)(?::([\d.]+))?(?::([a-z]+))?(?:\/([con]+))?(?:@(\d+))?$/);
+    const x = tok.match(/^mix:([a-z]+=[\d.]+(?:\+[a-z]+=[\d.]+)*)(?:\/([conwa]+))?(?:@(\d+))?$/);
+    if (x) {
+      const step = { opt: 'mix', weights: {}, pointedness: 0.3 };
+      for (const kv of x[1].split('+')) {
+        const [k, v] = kv.split('=');
+        if (k === 'pt') step.pointedness = NUM(v, 0, 0.5, 0.3);
+        else if (TARGETS.includes(k) && +v > 0) step.weights[k] = NUM(v, 0, 1, 1);
+      }
+      if (!Object.keys(step.weights).length) continue;
+      if (x[2]) step.flags = flagsText(x[2]);
+      if (x[3] !== undefined) step.it = +x[3];
+      steps.push(step);
+      continue;
+    }
+    const m = tok.match(/^([a-z]+)(?::([\d.]+))?(?::([a-z]+))?(?:\/([conwa]+))?(?:@(\d+))?$/);
     if (!m) continue;
     if (m[1] === 'built' || m[1] === 'raw') { steps.length = 0; continue; }
     if (m[1] === 'random') { steps.length = 0; steps.push({ opt: 'random', seed: Math.floor(+m[2]) || 1 }); continue; }
     if (m[1] === 'spectral') { steps.length = 0; steps.push({ opt: 'spectral', index: Math.floor(+m[2]) || 1, matrix: ONE(m[3], MATRICES, 'adjacency') }); continue; }
     const opt = OLD[m[1]] || m[1];
-    if (!OPTIMIZERS.includes(opt)) continue;
+    if (opt === 'shake') { steps.push({ opt, seed: Math.floor(+m[2]) || 1, ...(m[4] ? { flags: flagsText(m[4]) } : {}) }); continue; }
+    if (!OPTIMIZERS.includes(opt) || opt === 'mix') continue;
     // the old faces mode started from a canonical shape
     if (m[1] === 'faces') steps.push({ opt: 'canonical' });
     const step = { opt };
     if (opt === 'regular') step.regularity = NUM(m[2] ?? (m[1] === 'faces' ? rg : undefined), 0, 1, 1);
-    if (opt === 'star') step.pointedness = NUM(m[2], 0, 0.5, 0.3);
+    if (POINTED.includes(opt)) step.pointedness = NUM(m[2], 0, 0.5, 0.3);
     if (m[4]) step.flags = flagsText(m[4]);
     if (m[5] !== undefined) step.it = +m[5];
     steps.push(step);
@@ -141,12 +165,14 @@ function progress(x) {
 let nextId = 1;
 const withId = t => (t.id ? t : Object.assign(t, { id: nextId++ }));
 const message = t => ({
-  id: t.id, opt: t.opt, regularity: t.regularity ?? 1, pointedness: t.pointedness ?? 0.3, seed: t.seed, index: t.index, matrix: t.matrix, it: t.it,
-  flags: { centre: !!t.flags?.includes('c'), orthogonalise: !!t.flags?.includes('o'), normalise: !!t.flags?.includes('n') },
+  id: t.id, opt: t.opt, regularity: t.regularity ?? 1, pointedness: t.pointedness ?? 0.3, weights: t.weights, seed: t.seed, index: t.index, matrix: t.matrix, it: t.it,
+  flags: { centre: !!t.flags?.includes('c'), orthogonalise: !!t.flags?.includes('o'), normalise: !!t.flags?.includes('n'), whiten: !!t.flags?.includes('w') },
+  keep: !t.flags?.includes('a'),
 });
-// the adjustments as letters, in a fixed order, or undefined for none
-const flagsText = s => [...'con'].filter(c => s.includes(c)).join('') || undefined;
-const flagsNow = () => flagsText(($('p-centre').checked ? 'c' : '') + ($('p-orthogonalise').checked ? 'o' : '') + ($('p-normalise').checked ? 'n' : ''));
+// the switches as letters, in a fixed order, or undefined for none: w whiten, a without the
+// symmetry (c, o, n: the adjustments of old links)
+const flagsText = s => [...'conwa'].filter(c => s.includes(c)).join('') || undefined;
+const flagsNow = () => flagsText(($('p-whiten').checked ? 'w' : '') + ($('p-keep').checked ? '' : 'a'));
 let running = null;   // the step the worker is running, or null
 let err0 = null, stage0;
 
@@ -161,6 +187,7 @@ function run() {
   writeHash();
 
   if (worker) worker.terminate();
+  stopShare();
   worker = new Worker(workerURL, { type: 'module' });
   const id = ++job;
   const slow = setTimeout(() => { if (id === job && !mesh) showStatus('Building…'); }, 150);
@@ -168,7 +195,7 @@ function run() {
   symmetry = null;
   setRunning(null);
   $('mode-note').textContent = '';
-  showRecipe();
+  showHistory();
   worker.onmessage = e => {
     if (id !== job) return;
     const m = e.data;
@@ -190,22 +217,31 @@ function run() {
     } else if (m.type === 'start') {
       setRunning(st.steps.find(t => t.id === m.id) || { id: m.id, opt: 'built' });
       err0 = null;
-      if (!INITS.includes(running.opt)) $('mode-note').textContent = LABEL[running.opt] + '…';
+      if (!INSTANT.includes(running.opt)) $('mode-note').textContent = LABEL[running.opt] + '…';
       else if (running.opt === 'spectral') $('mode-note').textContent = 'Computing the eigenvectors…';
     } else if (m.type === 'pos') {
       positions = m.pos;
       showPositions();
-      if (running && !INITS.includes(running.opt)) progress(progressOf(running.opt, m));
+      if (running && !INSTANT.includes(running.opt)) progress(progressOf(running.opt, m));
     } else if (m.type === 'done') {
       const t = st.steps.find(t => t.id === m.id);
+      if (t) t.done = true;
       if (t && m.stopped) { t.it = m.it; writeHash(); }
       // the worker wraps the index round past the last start
       if (t && m.spectral?.index && m.spectral.index !== t.index) { t.index = m.spectral.index; writeHash(); }
       if (m.spectral?.index) $('p-spectral').value = m.spectral.index;
+      if (m.spectral) $('spectral-count').textContent = m.spectral.count ? 'of ' + m.spectral.count : '';
       progress(1);
       $('mode-note').textContent = realizationNote(t, m);
       setRunning(null);
-      showRecipe();
+      showHistory();
+      if (shareWanted && !running) startShare();
+    } else if (m.type === 'restored') {
+      progress(1);
+      setRunning(null);
+      const t = st.steps.at(-1);
+      $('mode-note').textContent = t ? `Back to the shape after ${stepLabel(t)}.` : 'Back to the shape as built.';
+      showHistory();
     } else if (m.type === 'error') {
       clearTimeout(slow);
       showStatus('');
@@ -220,7 +256,7 @@ function run() {
 
 // how far along a step is, on a log scale from its first error to the goal
 function progressOf(opt, m) {
-  const [err, goal] = opt === 'regular' || opt === 'star' || opt === 'affine' || opt === 'mean' ? [Math.max(m.moved, 1e-12), 1e-8]
+  const [err, goal] = ['regular', 'star', 'affine', 'mean', 'stellate', 'edges', 'mix'].includes(opt) ? [Math.max(m.moved, 1e-12), 1e-8]
     : opt === 'readable' && m.err.stage === 'optimize' ? [Math.max(m.moved, 1e-12), 1e-6]
     : [Math.max(m.err.planar || 0, m.err.tangent || 0, 1e-12), 1e-6];
   // the readable optimizer changes what it measures when it starts optimizing
@@ -228,48 +264,100 @@ function progressOf(opt, m) {
   return Math.min(0.99, Math.max(0.02, Math.log(err0 / err) / Math.log(err0 / goal)));
 }
 
+// The step a button asks for, from the fields and switches as they are now.
+function stepNow(opt) {
+  if (opt === 'random') return { opt, seed: 1 + Math.floor(Math.random() * 999999) };
+  if (opt === 'shake') return { opt, seed: 1 + Math.floor(Math.random() * 999999), ...($('p-keep').checked ? {} : { flags: 'a' }) };
+  if (opt === 'spectral') return { opt, index: Math.round(NUM($('p-spectral').value, 1, 9999, 1)), matrix: ONE($('p-matrix').value, MATRICES, 'adjacency') };
+  if (opt === 'built') return { opt };
+  const t = { opt };
+  if (opt === 'regular') t.regularity = NUM($('p-regularity').value, 0, 1, 1);
+  if (POINTED.includes(opt) || opt === 'mix') t.pointedness = NUM($('p-pointedness').value, 0, 0.5, 0.3);
+  if (opt === 'mix') t.weights = Object.fromEntries(Object.entries(mixWeights).filter(([, w]) => w > 0));
+  // stellate always whitens, and leaves the symmetry to the maths (pipeline.js)
+  const flags = opt === 'stellate' ? undefined : flagsNow();
+  if (flags) t.flags = flags;
+  return t;
+}
+const sameStep = (a, b) => !!a && !!b && a.opt === b.opt && a.regularity === b.regularity && a.pointedness === b.pointedness
+  && a.flags === b.flags && (a.opt !== 'mix' || weightsText(a) === weightsText(b));
+
 // One button: an init starts the chain again; an optimizer runs from the current shape, or stops
-// if it is the one running with the same settings.
+// if it is the one running with the same settings; a shake moves the current shape a little.
 function optimize(opt) {
   if (!worker || !mesh) return;
-  const regularity = NUM($('p-regularity').value, 0, 1, 1), pointedness = NUM($('p-pointedness').value, 0, 0.5, 0.3), flags = flagsNow();
-  const same = t => t && t.opt === opt && (opt !== 'regular' || t.regularity === regularity)
-    && (opt !== 'star' || t.pointedness === pointedness) && t.flags === flags;
-  if (running && !INITS.includes(opt) && same(running)) {
+  const t = stepNow(opt);
+  if (opt === 'mix' && !Object.keys(t.weights).length) return;
+  if (running && !INSTANT.includes(opt) && sameStep(running, t)) {
     worker.postMessage({ type: 'stop' });
     return;
   }
   if (INITS.includes(opt)) {
-    const t = withId(opt === 'random' ? { opt, seed: 1 + Math.floor(Math.random() * 999999) }
-      : opt === 'spectral' ? { opt, index: Math.round(NUM($('p-spectral').value, 1, 9999, 1)), matrix: ONE($('p-matrix').value, MATRICES, 'adjacency') } : { opt });
+    withId(t);
     st.steps = opt === 'built' ? [] : [t];
     worker.postMessage({ type: 'run', step: message(t) });
   } else {
     const last = st.steps.at(-1);
     // the same optimizer again, after it finished, would only confirm where it is
-    if (same(last) && last.it === undefined) return;
-    if (st.steps.length >= MAX_STEPS) { $('mode-note').textContent = `At most ${MAX_STEPS} steps in a row; an init starts again.`; return; }
-    const t = withId({ opt, ...(opt === 'regular' ? { regularity } : {}), ...(opt === 'star' ? { pointedness } : {}), ...(flags ? { flags } : {}) });
-    st.steps.push(t);
+    if (opt !== 'shake' && sameStep(last, t) && last.it === undefined) return;
+    if (st.steps.length >= MAX_STEPS) { $('mode-note').textContent = `At most ${MAX_STEPS} steps in a row; go back in the list of steps, or an init starts again.`; return; }
+    st.steps.push(withId(t));
     worker.postMessage({ type: 'run', step: message(t) });
   }
   writeHash();
-  showRecipe();
+  showHistory();
+}
+
+// Back to the shape after step t (null: as built), at once: the worker keeps the state after every
+// step it finished. The steps after t are dropped.
+function goBack(t) {
+  if (!worker || !mesh) return;
+  const i = t ? st.steps.indexOf(t) : -1;
+  if (t && !t.done) { if (running === t) worker.postMessage({ type: 'stop' }); return; }
+  if (i === st.steps.length - 1 && !running) return;
+  st.steps = st.steps.slice(0, i + 1);
+  worker.postMessage({ type: 'goto', id: t ? t.id : 0 });
+  writeHash();
+  showHistory();
 }
 
 function setRunning(t) {
   running = t;
-  for (const b of document.querySelectorAll('.opts button')) b.classList.toggle('running', !!t && b.dataset.opt === t.opt);
+  for (const b of document.querySelectorAll('.opts button[data-opt]')) b.classList.toggle('running', !!t && b.dataset.opt === t.opt);
+  showHistory();
 }
 
-const LABEL = { canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', star: 'Star faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces', random: 'Random', spectral: 'Spectral' };
-const FLAG = { c: 'centred', o: 'orthogonalised', n: 'normalised' };
-function showRecipe() {
-  const steps = st.steps.map(t => LABEL[t.opt] + (t.opt === 'regular' && t.regularity !== 1 ? ' ' + t.regularity : '')
-    + (t.opt === 'star' ? ' ' + t.pointedness : '') + (t.opt === 'spectral' ? ` ${t.index} (${MATRIX[t.matrix || 'adjacency']})` : '')
+const LABEL = {
+  canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', star: 'Star faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces',
+  stellate: 'Stellate', edges: 'Equal edges', mix: 'Mix', shake: 'Shake', random: 'Random', spectral: 'Spectral', built: 'As built',
+};
+const MIX_LABEL = {
+  flat: 'Flat', regular: 'Regular', star: 'Star', affine: 'Affine', stellate: 'Stellate', mean: 'Face mean', edges: 'Equal edges', tangent: 'Tangent edges', sphere: 'Sphere',
+};
+const FLAG = { c: 'centred', o: 'orthogonalised', n: 'normalised', w: 'whitened', a: 'no symmetry' };
+function stepLabel(t) {
+  return LABEL[t.opt] + (t.opt === 'regular' && t.regularity !== 1 ? ' ' + t.regularity : '')
+    + (POINTED.includes(t.opt) && t.pointedness !== 0.3 ? ' ' + t.pointedness : '') + (t.opt === 'spectral' ? ` ${t.index} (${MATRIX[t.matrix || 'adjacency']})` : '')
+    + (t.opt === 'mix' ? ' ' + TARGETS.filter(k => t.weights[k] > 0).map(k => MIX_LABEL[k].toLowerCase() + ' ' + t.weights[k]).join(', ') : '')
     + (t.flags ? ', ' + [...t.flags].map(c => FLAG[c]).join(', ') : '')
-    + (t.it !== undefined ? ` (stopped after ${t.it.toLocaleString('en')} rounds)` : ''));
-  $('recipe').textContent = steps.length ? 'Applied: ' + steps.join(' → ') : 'Applied: nothing, as built.';
+    + (t.it !== undefined ? `, stopped at ${t.it.toLocaleString('en')}` : '');
+}
+
+// The chain as a row of buttons: each goes back to the shape after it.
+function showHistory() {
+  const box = $('history'), list = [];
+  if (!INITS.includes(st.steps[0]?.opt)) list.push(null);
+  list.push(...st.steps);
+  box.replaceChildren(...list.map((t, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = t ? stepLabel(t) : 'As built';
+    b.classList.toggle('current', i === list.length - 1);
+    b.classList.toggle('running', !!t && running === t);
+    b.title = !t || t.done ? 'Go back to the shape after this step; the steps after it are dropped' : running === t ? 'Running: click to stop it here' : 'Not run yet';
+    b.addEventListener('click', () => goBack(t));
+    return b;
+  }));
 }
 
 // The worker sends positions faster than a big shape can be redrawn; only the latest counts.
@@ -289,6 +377,7 @@ const sci = x => x.toExponential(0).replace('e-', '·10⁻').replace(/\d+$/, d =
 function realizationNote(t, m) {
   const { it, err } = m;
   if (t && t.opt === 'random') return 'Every vertex at a random point; the faces are tangled and bent. An optimizer brings order.';
+  if (t && t.opt === 'shake') return 'Every vertex moved a little at random' + (t.flags?.includes('a') ? ', the symmetry broken.' : ', the same way in every symmetric copy, so the symmetry stays.') + ' The next optimizer starts from here.';
   if (t && t.opt === 'spectral') return spectralNote(m.spectral, t.matrix);
   if (!t || !err) return 'Vertices where the operators put them; faces need not be flat.';
   const rounds = `${it.toLocaleString('en')} rounds`;
@@ -296,7 +385,13 @@ function realizationNote(t, m) {
     const whitened = t.flags?.includes('o') && t.flags.includes('n');
     return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}.` + (whitened ? '' : ' Without Orthogonalise and Normalise the shape tends to flatten into a plane or a line.');
   }
-  if (t.opt === 'regular' || t.opt === 'star' || t.opt === 'affine') {
+  if (t.opt === 'stellate') {
+    const d = Math.round(m.density ?? 1), whole = Math.abs((m.density ?? 1) - d) < 0.01;
+    return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}; ` + (!whole ? `its faces are not flat (density ${m.density.toFixed(2)}).`
+      : d > 1 ? `it winds ${d} times round its centre: a stellation. Star faces next makes the faces regular stars.`
+      : 'it winds once round its centre: no stellation. Faces without a star polygon (triangles, squares, hexagons) give it nothing to work with.');
+  }
+  if (['regular', 'star', 'affine', 'edges', 'mix'].includes(t.opt)) {
     // a convex face has nothing of a star in it, so the star target cannot leave a convex shape
     const hint = t.opt === 'star' && err.spread > 0.01 ? ' Star faces needs a start that is stellated already: try the spectral layouts that wind more than once.' : '';
     return `${t.it !== undefined || it >= 60000 ? 'Stopped' : 'Settled'} after ${rounds}; the copies of a vertex disagree by up to ${err.spread.toFixed(3)} edge lengths.` + hint;
@@ -340,6 +435,102 @@ function spectralNote(s, matrix = 'adjacency') {
   const wind = !whole ? `its faces are not flat (density ${s.density.toFixed(2)})`
     : d === 1 ? 'it winds once round its centre, as a convex shape does' : `it winds ${d} times round its centre: a stellation`;
   return `Layout ${s.index} of ${s.count}, from eigenvalue${s.values.length > 1 ? 's' : ''} ${ev} of ${MATRIX_LONG[matrix]}; symmetry ${s.group}; ${wind}. Change the number for the others.`;
+}
+
+// ---------- sharing ----------
+
+// A link to share holds the chain, which button mashing fills with steps that undo each other. Share
+// first lets a second worker look for a shorter chain that gives the same shape, up to rotation
+// (pipeline.js, prune), then copies that link. A running step is stopped first, so that the link
+// holds where it is.
+let pruner = null, shareWanted = false;
+function stopShare() {
+  if (pruner) pruner.terminate();
+  pruner = null;
+  shareWanted = false;
+}
+function share() {
+  if (!mesh) return;
+  stopShare();
+  shareWanted = true;
+  if (running) { worker.postMessage({ type: 'stop' }); $('share-note').textContent = 'Stopping the running step…'; return; }
+  startShare();
+}
+function startShare() {
+  shareWanted = false;
+  const steps = st.steps.map(t => ({ ...t }));
+  if (steps.length <= 1) return finishShare(steps, steps.length);
+  pruner = new Worker(workerURL, { type: 'module' });
+  $('share-note').textContent = 'Looking for a shorter chain that gives the same shape…';
+  pruner.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'stage') $('share-note').textContent = `Looking for a shorter chain that gives the same shape: ${m.text}…`;
+    else if (m.type === 'pruned') { stopShare(); finishShare(steps.filter(t => m.keep.includes(t.id)), steps.length); }
+    else if (m.type === 'error') { stopShare(); finishShare(steps, steps.length); }
+  };
+  pruner.postMessage({ type: 'prune', text: st.text, maxEdges: MAX_EDGES, steps: steps.map(message) });
+}
+async function finishShare(kept, total) {
+  const url = location.origin + location.pathname + '#' + hashText({ ...st, steps: kept });
+  const what = !kept.length ? 'the shape as built is the same' : kept.length < total ? `${kept.length} of the ${total} steps give the same shape` : 'every step counts';
+  const note = $('share-note'), a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.textContent = 'the link';
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ url, title: 'Conway polyhedra: ' + st.text });
+    else await navigator.clipboard.writeText(url);
+    note.replaceChildren(`Copied ${kept.length < total ? 'a shorter link' : 'the link'} (${what}): `, a, '.');
+  } catch {
+    note.replaceChildren(`Copy `, a, ` (${what}).`);
+  }
+}
+
+// ---------- the mix ----------
+
+// The weights of the mix as the sliders show them; only the targets in use have a slider.
+let mixWeights = {};
+function showMix() {
+  const rows = TARGETS.filter(k => k in mixWeights).map(k => {
+    const row = document.createElement('div'), name = document.createElement('span'), range = document.createElement('input');
+    const value = document.createElement('span'), remove = document.createElement('button');
+    row.className = 'mix-row';
+    name.textContent = MIX_LABEL[k];
+    range.type = 'range'; range.min = 0; range.max = 1; range.step = 0.05; range.value = mixWeights[k];
+    range.setAttribute('aria-label', MIX_LABEL[k] + ' weight');
+    value.textContent = (+mixWeights[k]).toFixed(2);
+    range.addEventListener('input', () => { mixWeights[k] = +range.value; value.textContent = (+range.value).toFixed(2); });
+    range.addEventListener('change', mixChanged);
+    remove.type = 'button'; remove.textContent = '×'; remove.title = 'Take it out of the mix';
+    remove.addEventListener('click', () => { delete mixWeights[k]; showMix(); mixChanged(); });
+    row.append(name, range, value, remove);
+    return row;
+  });
+  $('mix-rows').replaceChildren(...rows);
+  $('mix-add').replaceChildren(...TARGETS.filter(k => !(k in mixWeights)).map(k => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = '+ ' + MIX_LABEL[k];
+    b.addEventListener('click', () => { mixWeights[k] = 1; showMix(); mixChanged(); });
+    return b;
+  }));
+}
+// While a mix runs, or was the last step, a changed weight runs the new mix on from the shape
+// as it is, so a slider can be played with; the step before is kept, stopped where it was.
+function mixChanged() {
+  const t = running || st.steps.at(-1);
+  if (t?.opt === 'mix' && Object.values(mixWeights).some(w => w > 0)) optimize('mix');
+}
+// The weights that do what the last optimizer did, to start a mix from.
+function mixFromLast() {
+  const t = st.steps.filter(t => !INSTANT.includes(t.opt)).at(-1);
+  if (!t) return;
+  const r = x => Math.round(20 * x) / 20;
+  const w = t.opt === 'mix' ? { ...t.weights }
+    : t.opt === 'regular' ? (t.regularity >= 1 ? { regular: 1 } : t.regularity <= 0 ? { flat: 1 } : { regular: r(t.regularity), flat: r(1 - t.regularity) })
+    : t.opt === 'canonical' ? { tangent: 1, flat: 1 }
+    : TARGETS.includes(t.opt) ? { [t.opt]: 1 } : null;
+  if (!w) { $('mode-note').textContent = `${LABEL[t.opt]} has no counterpart in the mix.`; return; }
+  mixWeights = w;
+  if (t.pointedness !== undefined) $('p-pointedness').value = t.pointedness;
+  showMix();
 }
 
 // ---------- the shape panel ----------
@@ -563,11 +754,17 @@ $('p-n').addEventListener('change', () => {
   setText(opsPart() + v + n);
 });
 $('p-named').addEventListener('change', () => { if ($('p-named').value) setText($('p-named').value); });
-for (const b of document.querySelectorAll('.opts button')) b.addEventListener('click', () => optimize(b.dataset.opt));
+for (const b of document.querySelectorAll('.opts button[data-opt]')) b.addEventListener('click', () => optimize(b.dataset.opt));
 $('p-regularity').addEventListener('keydown', e => { if (e.key === 'Enter') optimize('regular'); });
 $('p-pointedness').addEventListener('keydown', e => { if (e.key === 'Enter') optimize('star'); });
-// stepping the number browses the spectral starts
+// stepping the number browses the spectral starts; touch screens show no arrows on number fields,
+// hence the buttons
 $('p-spectral').addEventListener('change', () => optimize('spectral'));
+const stepSpectral = d => { $('p-spectral').value = Math.max(1, Math.round(NUM($('p-spectral').value, 1, 9999, 1)) + d); optimize('spectral'); };
+$('spectral-prev').addEventListener('click', () => stepSpectral(-1));
+$('spectral-next').addEventListener('click', () => stepSpectral(1));
+$('shareBtn').addEventListener('click', share);
+$('mix-from').addEventListener('click', mixFromLast);
 // another matrix has another list, which starts again from its smoothest layout
 $('p-matrix').addEventListener('change', () => { $('p-spectral').value = 1; optimize('spectral'); });
 $('swatch-add').addEventListener('click', () => {
@@ -607,6 +804,16 @@ st = readHash() || sanitize({});
 $('p-regularity').value = st.steps.filter(t => t.opt === 'regular').at(-1)?.regularity ?? 1;
 $('p-pointedness').value = st.steps.filter(t => t.opt === 'star').at(-1)?.pointedness ?? 0.3;
 $('p-spectral').value = st.steps.find(t => t.opt === 'spectral')?.index ?? 1;
+// the switches and the mix start as the last step left them
+{
+  const t = st.steps.filter(t => !INSTANT.includes(t.opt) && t.opt !== 'stellate').at(-1);
+  $('p-whiten').checked = !!t?.flags?.includes('w');
+  $('p-keep').checked = !t?.flags?.includes('a');
+  const mix = st.steps.filter(t => t.opt === 'mix').at(-1);
+  if (mix) mixWeights = { ...mix.weights };
+  if (POINTED.some(k => st.steps.at(-1)?.opt === k || mix?.weights[k])) $('p-pointedness').value = (POINTED.includes(st.steps.at(-1)?.opt) ? st.steps.at(-1) : mix).pointedness ?? 0.3;
+  showMix();
+}
 $('p-matrix').value = st.steps.find(t => t.opt === 'spectral')?.matrix ?? 'adjacency';
 showLook();
 $('p-notation').value = st.text;

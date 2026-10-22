@@ -218,6 +218,42 @@ The owner's complaint: with few bisection samples, the body fills while the head
 - **Owner: no orbit-length colouring for type A;** it doesn't look good there. Use it for type B.
 - **Memory.** Three bands triple the histogram memory, and the tracing workers are capped accordingly.
 
+**Mixing as light, and the reference picture (2026-10-22).** The owner's reference for a Nebulabrot is `/home/andi/code/github-website/nebularef.png` (outside the repo): a navy background, a blue-violet halo, a cream to yellow-green body, mauve bulbs, and white only on the brightest edges. Experiments ran offline on the dumped band histograms (6 M grid samples, `max_iter` 5000), in Python.
+- **The old mix blew out** because it added sRGB bytes and clipped each at 255: with each channel stretched, the body summed to flat white and yellow. Adding the colours **in linear light with a film shoulder, 1 − e^(−1.5x) per component**, fades bright sums into white and keeps the structure; the page does this now (`display.js`).
+- **Clips for it:** equalization, min clip 0, midtone 0.92 (0.93 for Deep). The old 0.113 / 0.837 left a white fog with the new mix. The presets and the sensible Random use these.
+- **A shoulder on luminance only** (keeping the hue) looked almost the same as per-component, so the simpler per-component one stayed.
+- **The palette hardly matters with separate channels:** six palettes (softer blues, lime, teal, violet, pink) gave nearly the same picture, since each channel is stretched to the same distribution and the colour only comes from where the channels differ. The reference's yellow-green body is not reached.
+- **Power scaling came closest to the reference's look:** density^1.3 per channel with the white point at the channel's 99th percentile, mixed with the shoulder, gives the navy glow fading smoothly into the background, which equalization (black background, a glow with an edge) does not. The page has no such scaling (see "What equalization with a high midtone does" below); not built, the owner's call.
+- **Shared channel brightness is always warm, by construction.** The channels are nested, so at every pixel all orbits ≥ short + medium ≥ short; under one normalization red ≥ green ≥ blue everywhere, and no pixel can be blue. That is why "shared" and "separate" look completely different. Disjoint bands would allow a blue halo under shared brightness, but nested and disjoint looked the same again under separate (2026-10-22, as on 2026-10-21).
+
+## What equalization with a high midtone does (2026-10-22)
+
+**Question (owner):** equalization with a high midtone often looks best. What curve is that, and does the page need more brightness controls?
+
+**Measured** on the default render (grid, 2 M samples) at `max_iter` 100, 2000 and 20,000: the output brightness (rank, clipped at 0.113, raised to the midtone's power 3.9) against log density, fitted with candidate curves.
+- **It is nearly a plain power law of the density with the white point at a high percentile:** brightness ≈ (d / d₉₉)^e with e = 1.1, 0.78, 0.69 for the three iteration counts, white reached at the 98.8th percentile of the non-zero pixels (RMS error 0.02–0.03). A logistic (an S-curve in log density) fits half as well (0.04–0.06).
+- **Half brightness sits at the 85th percentile, 5 % brightness at the median.** So the glow in the lower half of the pixels stays nearly black, and the bright structure keeps its contrast, because the response is close to linear in density there.
+- **Why equalization adapts:** the spread of log density grows with `max_iter` (σ of log₁₀ d from 0.83 to 1.2), and the exponent follows it, keeping the look.
+- **Linear, root and log scale to the brightest pixel**, which sits 2.6–6.5 times above the 99th percentile, and by different factors in the three orbit-length channels (6.5, 4.5, 3.7), so one max clip gives the channels unequal white points.
+- **A percentile white point was considered and not built** (owner, 2026-10-22: not happy baking in a percentile). The measurement below shows the brightest pixel is steadier than assumed, so the case for it is weak.
+
+**How steady is the brightest pixel? (2026-10-22)** Five seeds per sample count, on the preview (pooled to 1000 px, blurred as the page does), density units. Spread is the standard deviation over the seeds, as a share of the mean.
+
+| | samples | max | 99.99th | 99.9th | 99th | median |
+|---|---|---|---|---|---|---|
+| type B (defaults) | 200 k | 338 ± 11 % | 126 ± 1 % | 86 ± 1 % | 58 ± 1 % | 0.56 |
+| | 2 M | 344 ± 4 % | 116 ± 1 % | 80 ± 0 % | 55 ± 0 % | 0.39 |
+| | 20 M | 348 ± 0 % | 116 ± 0 % | 80 ± 0 % | 55 ± 0 % | 0.40 |
+| type A ("Embers") | 300 | 57 k ± 51 % | 20 k ± 20 % | 8.8 k ± 12 % | 3.0 k ± 6 % | 83 ± 7 % |
+| | 600 | 39 k ± 23 % | 13 k ± 6 % | 6.1 k ± 8 % | 2.4 k ± 6 % | 29 ± 11 % |
+| | 2400 | 21 k ± 30 % | 6.5 k ± 4 % | 3.5 k ± 4 % | 1.7 k ± 3 % | 2.2 |
+
+- **Type B:** the max is steady from 2 M samples on (± 4 %) and does not drift with the sample count (1.03× from 200 k to 20 M). The blur tames single hot pixels. A percentile would gain nothing here.
+- **Type A:** the max varies 23–51 % from seed to seed, a high percentile 4–12 %. But type A uses log scaling, where a 30 % change of the max moves the brightness by about 4 %, so New seed hardly flickers. And with the sample count nothing is steady, percentiles included (the 99.9th falls 2.5× from 300 to 2400 samples, the median 38×): a type A image is not a converged density, so no normalization can make it independent of the count.
+- **What is left:** only the unequal white points of the orbit-length channels under linear, root and log. Equalization, the recommended scaling for Nebulabrots, does not have that problem.
+
+**Why equalized images look blown out** (owner's question: is it OKLab clipping against sRGB?). **No.** Of the 15 gradients, only "hot" leaves the sRGB gamut, by 1.2 % in linear light at most; the others never do. The cause is equalization itself. It spreads the pixels evenly over the colours, and nearly every pixel of a whole-set render is non-zero (98 %), so at midtone 0.5 the brightest 18 % of the pixels, the whole body, get the top fifth of the gradient (near white), across 1.6 decades of density. The high midtone pushes them back down. Colouring by orbit length had a second cause, the clipped byte sum (above).
+
 ## The haze (built and removed, 2026-10-21)
 
 A "Haze" slider added the classical nebula around the figure: the expected density of the short orbits of c drawn uniformly from the disk |c| < 2 (4 million samples, 1000 iterations, 400 px, blurred), mixed into the counts by weight at display time. The owner asked for it, then withdrew the request (misremembered), and it was removed the same day. If it ever comes back, the findings were:

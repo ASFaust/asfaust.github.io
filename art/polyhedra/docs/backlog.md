@@ -10,7 +10,11 @@ The task list only. Every item links to the file that explains it. When you fini
 - **Star faces, per-orbit k**: on top of the pointedness rule, once faces can be picked (see per-face painting under Rendering). Does the viewer draw self-intersecting star faces right? Check on renders. → [realization/regular-faces.md](realization/regular-faces.md#per-face-targets)
 - **Subgroup symmetry dial**: keep only some symmetries, for controlled symmetry breaking. → [symmetry.md](symmetry.md#open)
 - **Which graphs suit affine faces**: clean, flat, spiky shapes (`ozJ45`) against collapsed faces (`jsdJ29`, `dA5`); all-quadrilateral graphs first. → [realization/regular-faces.md](realization/regular-faces.md#open-questions)
-- **More optimizer buttons from PolyOp's ideas**: scrape-off morph (truncate ↔ ambo, needs the two graphs mapped), spherical projection. Stopping early and ramped regularity are now done by chaining and stopping buttons. → [realization/README.md](realization/README.md#artsy-deformations-small-ideas-no-file-yet)
+- **More optimizer buttons from PolyOp's ideas**: scrape-off morph (truncate ↔ ambo, needs the two graphs mapped). Stopping early and ramped regularity are done by chaining and stopping buttons; spherical projection is the Mix's sphere target (2026-10-22). → [realization/README.md](realization/README.md#artsy-deformations-small-ideas-no-file-yet)
+
+## Goal A
+
+- **Canonical tangles on `ckmU5` and `cmU5`** (owner's example): inward faces after 60,000 rounds, from the build and from Face mean; Readable inherits it. Find out whether it is the basin or the iteration. → [realization/canonical.md](realization/canonical.md#failure-modes)
 
 ## Low priority
 
@@ -32,6 +36,7 @@ The direction comes from the owner's renders; the techniques are a session's sug
 
 ## Done
 
+- **2026-10-22.** Optimizer UX, the owner's requests ([user-experience.md](user-experience.md)): Whiten (symmetric whitening, keeps the symmetry) replaces centre/orthogonalise/normalise; Keep symmetry switch; spectral stepper with ‹ › for touch; clickable list of steps (instant, states kept in the worker); Share link prunes the chain by replay (same shape up to rotation); Stellate (affine star faces: the great stellated `D`, `tD`, `tI` from the built shape); Equal edges; Mix (weighted targets, chips and sliders; the single buttons on the same engine, bit-identical); Shake. `tests/optimizers.mjs`.
 - **2026-10-21.** Spectral matrix dropdown: adjacency, Laplacian, vertex mean, face mean; the list capped at 100 starts. Survey: the first start is convex on about half of the random strings, Laplacian slightly best, face mean last. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
 - **2026-10-21.** Spectral init (`js/spectral.js`): exactly symmetric starts from whole adjacency eigenspaces, browsable, labelled by density; eigensolver rewritten to compute eigenvectors on demand (6× faster). Star faces optimizer with a pointedness rule for k. From the stellated starts it finds the uniform star polyhedra exactly with the symmetry kept. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
 
