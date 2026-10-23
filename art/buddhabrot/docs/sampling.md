@@ -124,6 +124,12 @@ At the best chain length: a large step of 0.01 scored about the same as 0.05; 0.
 - **Adaptive blur:** each pixel gets the smallest blur σ·2^k whose kernel holds `smooth_hits` orbit points, counted as value × hits × 4πσ², with hits the mean f of the chains' steps (216 in the minibrot). Since a chain revisits similar orbits, the points are far from independent, and the useful values are high: on the minibrot at 2 M orbits, 1000 barely shows, 4000 takes the grain out of the faint parts and keeps the bright rims sharp (the default), 16,000 is smooth but starts to look soft, 64,000 smears. More orbits need less blur by themselves. The seahorse at 0.1 wide and 2 M orbits is so thin that 4000 turns its grain into soft blotches; it needs more orbits.
 - Cost: the adaptive blur takes about 1 s at 2000 px (six blurs), 0.2–0.5 s on the preview.
 
+**Periodicity check (2026-10-23, owner's request to speed up seeding).** Measured at the defaults on 4 threads: seeding took 1.7 s of 4.7 s in the minibrot 0.07 wide, 2.4 s of 3.9 s at 0.004 wide, 0.24 s of 2.7 s in seahorse 0.1. Of the grid sampler's points 19 % fall into the cardioid or the period-2 bulb (skipped at once), 29 % elsewhere into the set, and those took 88 % of the iterations by running all `max_iter`.
+- Stopping at an exact return (within 10⁻¹²) caught under half of them and saved 28 % of their iterations: near the boundary the orbits converge slowly. A looser tolerance (10⁻⁵) caught some escaping orbits, so it would be biased.
+- **Now** (`attracting()` in `worker.js`): an orbit that comes within 10⁻² of the point saved by Brent's scheme gets one Newton try per lap at a periodic point of f^p; one with multiplier below 1 is an attracting cycle, which proves c in the set. On 100,000 grid samples: 95 % of the inside orbits caught, none misjudged, their iterations 58 → 4 million. Newton gives up as soon as its step stops halving the residual.
+- Off in the Metropolis chains: their orbits are mostly long escaping ones, and the check slowed seahorse valley by half before the early give-up and still a little after.
+- Result: every regression hash unchanged; seeding about 2×; minibrot zooms 5.8 → 4.7 s and 4.5 → 3.3 s (three runs each, noisy), seahorse within noise; default render 5.3 → 3.1 s, bisection case 39 → 30 s.
+
 ## Densities for the starting points
 
 The goal is to sample long orbits more often, because they contribute more. Every option needs a *known* density, so that Metropolis can use it.

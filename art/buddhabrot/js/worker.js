@@ -24,17 +24,52 @@ var orbitLen = 0;   // set by trace() and hits(): the iteration at which the orb
 // go to band 0, up to mid to band 1, the rest to band 2; without bands, everything goes to the one histogram.
 function bandOffset(len) { return bands ? (len <= bands[0] ? 0 : len <= bands[1] ? 1 : 2) * res * res : 0; }
 
+// Periodicity check. Orbits inside the set (outside the cardioid and the period-2 bulb, which are tested at once) took
+// 88 % of the seeding work by running all max_iter iterations (docs/sampling.md). Waiting for them to repeat exactly
+// catches few: near the boundary they converge slowly. Instead, an orbit that comes back to within √NEAR of a saved point
+// (Brent's scheme: a new point is saved after 1, 2, 4, 8, … steps) gets one try per lap at proving an attracting cycle:
+// Newton's method on f^p(z) = z from the current point, p the steps since the save. A periodic point whose multiplier
+// (f^p)'(z) is below 1 in size is an attracting cycle, and c then lies in the set, since every attracting cycle draws in
+// the orbit of 0. This is exact up to rounding; checked: none of 100,000 grid samples misjudged, and the iterations
+// spent on orbits inside dropped from 58 to 4 million.
+var NEAR = 1e-4;
+function attracting(zr, zi, cr, ci, p) {
+  var last = Infinity;
+  for (var it = 0; it < 12; it++) {
+    // w = f^p(z) and its derivative d
+    var wr = zr, wi = zi, dr = 1, di = 0;
+    for (var i = 0; i < p; i++) {
+      var t = 2 * (wr * dr - wi * di); di = 2 * (wr * di + wi * dr); dr = t;
+      var u = wr * wr - wi * wi + cr; wi = 2 * wr * wi + ci; wr = u;
+    }
+    var gr = wr - zr, gi = wi - zi, hr = dr - 1, hi = di, h2 = hr * hr + hi * hi;
+    var g2 = gr * gr + gi * gi;
+    if (g2 < 1e-24) return dr * dr + di * di < 1;
+    // Newton converges fast near an attracting cycle; an orbit that only hovers near a repelling one (long escaping
+    // orbits, the ones Metropolis seeks) gives up here after a step or two
+    if (h2 === 0 || g2 > 0.25 * last) return false;
+    last = g2;
+    zr -= (gr * hr + gi * hi) / h2; zi -= (gi * hr - gr * hi) / h2;
+    if (zr * zr + zi * zi > 4) return false;
+  }
+  return false;
+}
+
 function escapes(cr, ci, maxIter) {
   // Main cardioid and period-2 bulb never escape; skipping them is exact and saves most of the work there.
   var q = (cr - 0.25) * (cr - 0.25) + ci * ci;
   if (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) return false;
   if ((cr + 1) * (cr + 1) + ci * ci <= 0.0625) return false;
-  var zr = 0, zi = 0;
+  var zr = 0, zi = 0, sr = 0, si = 0, lap = 1, step = 0, tried = false;
   for (var k = 0; k < maxIter; k++) {
     var t = zr * zr - zi * zi + cr;
     zi = 2 * zr * zi + ci;
     zr = t;
     if (zr * zr + zi * zi > 4) return true;
+    var dr = zr - sr, di = zi - si;
+    step++;
+    if (!tried && dr * dr + di * di < NEAR) { tried = true; if (attracting(zr, zi, cr, ci, step)) return false; }
+    if (step === lap) { sr = zr; si = zi; step = 0; lap *= 2; tried = false; }
   }
   return false;
 }
@@ -61,16 +96,25 @@ function add(buf, n) { var o = bandOffset(orbitLen); for (var k = 0; k < n; k++)
 // With mirror, the mirror image of every point (z̄) is recorded too, so buf needs room for 2 · histIter. The Buddhabrot is
 // symmetric across the real axis, and so is the grid sampler's density, so the orbit of c̄ is exactly as likely as that of c:
 // recording both doubles the hits of a view that straddles the axis for free (docs/sampling.md).
-function hits(cr, ci, buf) {
+// cyc turns on the periodicity check: for seeding and direct tracing, where 29 % of the points lie inside the set. Metropolis
+// leaves it off: its chains stay on long escaping orbits, which the check only slowed down (by half, in seahorse valley).
+function hits(cr, ci, buf, cyc) {
   var q = (cr - 0.25) * (cr - 0.25) + ci * ci;
   if (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) return 0;
   if ((cr + 1) * (cr + 1) + ci * ci <= 0.0625) return 0;
-  var zr = 0, zi = 0, n = 0;
+  var zr = 0, zi = 0, n = 0, sr = 0, si = 0, lap = 1, step = 0, tried = false;
   for (var k = 0; k < histIter; k++) {
     var t = zr * zr - zi * zi + cr;
     zi = 2 * zr * zi + ci;
     zr = t;
     if (zr * zr + zi * zi > bail2) { orbitLen = k + 1; return n; }
+    // caught in an attracting cycle: it never escapes, so it counts 0 (escapes())
+    if (cyc) {
+      var dr = zr - sr, di = zi - si;
+      step++;
+      if (!tried && dr * dr + di * di < NEAR) { tried = true; if (attracting(zr, zi, cr, ci, step)) break; }
+      if (step === lap) { sr = zr; si = zi; step = 0; lap *= 2; tried = false; }
+    }
     if (k < skip) continue;
     var fx = (zr - bx0) * sx, fy = (zi - by0) * sy;
     if (fx >= 0 && fx < res) {
@@ -136,7 +180,7 @@ self.onmessage = function(e) {
       var tbuf = new Int32Array(histIter);
       for (var i = 0; i < count; i++) {
         var pr = pts[2 * i], pi = pts[2 * i + 1];
-        add(tbuf, d.escapingOnly ? hits(pr, pi, tbuf) : trace(pr, pi, tbuf));
+        add(tbuf, d.escapingOnly ? hits(pr, pi, tbuf, true) : trace(pr, pi, tbuf));
         // Nearby points follow orbits similar to the sample's, slightly shifted, so they blur the few points a long
         // orbit revisits over and over. Only diverging ones count: one that lands inside the set is drawn again, up to
         // 8 times. Counting those too filled the body with orbits spiralling into the attractors of the main cardioid.
@@ -157,7 +201,7 @@ self.onmessage = function(e) {
       // keep the starting points whose orbits reach the view, with their number of hits f
       var sp = d.pts, sn = sp.length / 2, sbuf = new Int32Array(2 * histIter), keep = [], keepF = [], sdone = 0;
       for (var i = 0; i < sn; i++) {
-        var sf = hits(sp[2 * i], sp[2 * i + 1], sbuf);
+        var sf = hits(sp[2 * i], sp[2 * i + 1], sbuf, true);
         if (sf > 0) { keep.push(sp[2 * i], sp[2 * i + 1]); keepF.push(sf); }
         if (++sdone === 4096) { progress(sdone); sdone = 0; }
       }
