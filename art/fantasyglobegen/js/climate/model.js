@@ -48,29 +48,33 @@ export const EARTH = {
   landHeat: 1.5e7,           // J/m²/K
   lapseRate: 6.5e-3,         // K/m
   // pressure and wind
-  cellPressure: [-2, 6, -14, 3], // hPa: equatorial low, subtropical high, subpolar low, polar high
-  thermalLow: 1.2,           // hPa per K of land warmer than its latitude
-  thermalLowOcean: 1.0,      // the same over water, which drives the Walker circulation
+  cellPressure: [-1.8, 3.9, -14.5, 3], // hPa: equatorial low, subtropical high, subpolar low, polar high
+  thermalLow: 0.84,          // hPa per K of land warmer than its latitude
+  thermalLowOcean: 0.62,     // the same over water, which drives the Walker circulation
   convectionTemp: 26,        // °C: the equatorial low sits over water warmer than this
-  equatorialWidth: 25,       // degrees from the thermal equator where it can
-  minCoriolis: 8,            // degrees: near the equator the wind turns as if this far out
+  equatorialWidth: 23,       // degrees from the thermal equator where it can
+  minCoriolis: 7.5,          // degrees: near the equator the wind turns as if this far out
   frictionOcean: 1 / 86400, frictionLand: 1 / 0.5 / 86400,
   maxWind: 25,               // m/s
-  windMixing: 600e3,         // m: eddies mix momentum this far, so the trades reach the equator
+  windMixing: 500e3,         // m: eddies mix momentum this far, so the trades reach the equator
   // moisture
   wsat0: 13,                 // mm of column vapour at saturation at 0 °C, sea level
   vapourScaleHeight: 2500,   // m
   evapCoeff: 1.56e-3,        // ρ·C_E, kg/m³
   gust: 4,                   // m/s added to the wind for evaporation
   bucket: 150,               // mm
-  moistureDiffusion: 2e6,    // m²/s
-  surfaceRH0: 0.5,           // near-surface humidity under a completely dry column
-  // rain rate exp(rainSteep (r − rainR0)) mm/day at column saturation r (Bretherton et al.
-  // 2004, tropical oceans); rising air rains at lower r, sinking air at higher
-  rainSteep: 15.6, rainR0: 0.603, rhAscent: 0.1, rhDescent: 0.05,
-  rhStorm: 0.45, stormGradient: 0.8, // K per 100 km of zonal-mean gradient for full storminess
-  orographicEfficiency: 0.5, oroMinRH: 0.35, // air drier than this doesn't rain going uphill
-  oroScale: 0,               // m: heights smoothed over this for the lift (0: the grid's own)
+  moistureDiffusion: 2.1e6,  // m²/s
+  surfaceRH0: 0.31,          // near-surface humidity under a completely dry column
+  // rain rate exp(rainSteep (r − rainR0)) mm/day at column saturation r, the form Bretherton
+  // et al. (2004) found over tropical oceans; rising air rains at lower r, sinking air at
+  // higher. Their steepness of 15.6 holds for daily rain in one place; over a model cell and
+  // a substep the onset is gentler, and 8.3 lets air carry its water as far as it does on
+  // Earth (tools/metrics.mjs, Plength). The rain and wind parameters below were fitted to the
+  // observed climate at level 4 and checked at levels 5 and 6.
+  rainSteep: 8.3, rainR0: 0.57, rhAscent: 0.075, rhDescent: 0.14,
+  rhStorm: 0.34, stormGradient: 0.87, // K per 100 km of zonal-mean gradient for full storminess
+  orographicEfficiency: 0.38, oroMinRH: 0.71, // air drier than this doesn't rain going uphill
+  oroScale: 140e3,           // m: heights smoothed over this for the lift (0: the grid's own)
   // the response of the first baroclinic mode to latent heating (Gill 1980): a steady,
   // damped balance ε φ + c² ∇·u = −Q, u the damped-geostrophic wind of φ, where the heating
   // Q asks for low-level convergence of gillCoupling × (P − mean P)/gillW, fading outside
@@ -79,7 +83,7 @@ export const EARTH = {
   // 1 counts the cooling with height twice: the vapour scale height already includes it, and
   // air climbing a slope would rain out everything it carries
   wsatLapse: 0,
-  wtgScale: 0,               // m: column saturation from temperature smoothed over this (0: local)
+  wtgScale: 150e3,           // m: column saturation from temperature smoothed over this (0: local)
 };
 
 const LV = 2.5e6, CP_OVER_LV = 1004 / 2.5e6, DAY = 86400;
