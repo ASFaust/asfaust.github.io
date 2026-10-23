@@ -78,7 +78,8 @@ js/readable.js            Readable optimizer; readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup(), views() (symmetric orientations)
 js/viewer.js              three.js scene, painted-edges shader, materials, GTAO, palette colouring, export render
 js/lines.js               edges drawn on the screen: face-ID buffer, capsule lines, ink composite
-js/trace.js               Render: the scene copied for three-gpu-pathtracer, traced a tile per frame (loaded on demand)
+js/blender.js             the Blender scene script: the RT scene as data plus Python that builds it for Cycles
+js/trace.js               RT: the scene copied for three-gpu-pathtracer, traced a tile per frame (loaded on demand)
 js/palettes.js            palette presets, hex ↔ linear helpers
 js/colour.js              OKLCh → linear sRGB, golden-angle generated palette
 js/export.js              OBJ, binary STL, download helper

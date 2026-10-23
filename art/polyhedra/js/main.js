@@ -7,6 +7,7 @@ import { TARGETS } from './faces.js';
 import { SPECTRAL_MAX, MATRICES } from './spectral.js';
 import { PALETTES, paletteHex, linearOf, isHex } from './palettes.js';
 import { obj, stl, download } from './export.js';
+import { blenderScene } from './blender.js';
 
 const $ = id => document.getElementById(id);
 
@@ -873,6 +874,14 @@ $('exportBtn').addEventListener('click', async () => {
 });
 $('objBtn').addEventListener('click', () => { if (mesh) download(obj(mesh, positions, st.text), fileName('obj')); });
 $('stlBtn').addEventListener('click', () => { if (mesh) download(stl(mesh, positions), fileName('stl')); });
+$('blendBtn').addEventListener('click', () => {
+  if (!mesh) return;
+  const py = blenderScene(viewer, {
+    size: +$('p-size').value, samples: +$('p-samples').value, denoise: $('p-denoise').checked,
+    transparent: $('p-transparent').checked, title: st.text,
+  });
+  download(new Blob([py], { type: 'text/x-python' }), fileName('py'));
+});
 
 st = readHash() || sanitize({});
 // the regularity field starts at the last value used

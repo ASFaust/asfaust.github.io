@@ -8,7 +8,7 @@ When you finish an item: move it to *Done* with the date and one line; put the f
 
 ## Rendering (R): [rendering.md](rendering.md)
 
-Suggested start: R21, R22 (the confirmed workflow; R20 is in), then R1 once the owner has confirmed the looks.
+Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the owner has confirmed the looks.
 
 | ID | item | done when |
 |---|---|---|
@@ -18,7 +18,6 @@ Suggested start: R21, R22 (the confirmed workflow; R20 is in), then R1 once the 
 | R7 | **Detached solid faces** render mode: shrink and extrude each face into a solid. → [R7](rendering.md#r7-detached-solid-faces) | The mode works on convex, folded and stellated shapes, including export. |
 | R8 | **Iridescent reworked**: no colour controls, a rainbow sweep within each face. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
 | R21 | **Render toggle** (the RT checkbox), built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
-| R22 | **Blender scene script** in Export: a Python file that builds mesh, materials, lights, camera and backdrop (from the spike's `cycles.py`). Needs R20. → [workflow](rendering.md#the-workflow-proposed-by-a-session-confirmed-by-the-owner-2026-10-23) | `blender --python scene.py` opens the page's scene ready to render. |
 | R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
 | R11–R19 | Older ideas: staging, glow lines and bloom, tubes, smooth subdivision, fake SSS, real glass, per-face painting, turntable export, orthographic camera. → [rendering.md](rendering.md#older-ideas-still-open) | Each when its look is confirmed. |
 
@@ -68,6 +67,8 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-23.** R22 Blender scene script: *Save Blender scene* in Export downloads a Python file that rebuilds the RT scene for Cycles (faces with their colours, material, stage, key area light, sky, camera, drawn lines as Freestyle) at the export size and samples; tested on Blender 4.2 and 5.1 against the page's RT export. Owner to try it on the 3090. → [rendering.md](rendering.md#the-blender-scene-r22)
+- **2026-10-23.** Render button renamed RT and made a checkbox toggle (owner).
 - **2026-10-23.** R20 Scene panel: orientation (free, or symmetric views from `views()` in symmetry.js: stand on a face, vertex or edge orbit, labelled by axis order; dragging then orbits the camera), ground (none, floor with fog, curved backdrop that turns with the camera), height above the ground, camera height, light presets in the camera's frame, shadow on the ground, explicit light/dark background (seeded by the theme), perspective and spin moved here. Owner to try composing with it. → [rendering.md](rendering.md#the-scene-r20)
 - **2026-10-23.** R9 spike: three-gpu-pathtracer 0.0.23 runs on three r170 without a build step, 256 samples at 2048² in 21 s on the RTX 3090; Cycles is 2.5–5× faster but leaves the page. Recommendation: a path-traced Render in the page (R20). Spike in `spikes/r9-pathtracer/`. → [rendering.md](rendering.md#r9-ray-tracer-spike)
 - **2026-10-23.** R5 closed by the owner: the drawn lines' *Hidden lines* slider covers frame and glass; fog and lighter back faces not needed so far. → [rendering.md](rendering.md#r5-attenuate-what-is-behind-glass-and-frame)
