@@ -7,8 +7,6 @@
   --color-border-secondary: #ccc;
   --color-bg: #fff;
   --stage-bg: #fff;
-  --plane-tint: 36, 86, 200;
-  --accent: #d0353f;
   --bad: #d0353f;
 }
 [data-theme="dark"] {
@@ -17,8 +15,6 @@
   --color-border-secondary: #333;
   --color-bg: #111;
   --stage-bg: #0f0f10;
-  --plane-tint: 122, 162, 255;
-  --accent: #ff6b6b;
   --bad: #ff6b6b;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -122,22 +118,18 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .wide { grid-column: 1 / -1; }
 .hidden { display: none; }
 .note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; }
-.info { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.ramp { height: 14px; margin-top: 0.3rem; border: 1px solid var(--color-border-secondary); border-radius: 4px; }
 
-.plane-map { position: relative; margin-top: 0.4rem; }
-.plane canvas { display: block; width: 100%; aspect-ratio: 1 / 1; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
-.plane canvas.panning { cursor: grabbing; }
-/* an invisible grip over the marker, big enough for a finger */
-.plane-handle { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; cursor: move; touch-action: none; }
-.plane-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
-.plane-head label { font-size: 13px; margin: 0; }
-.plane-tools { display: flex; gap: 0.25rem; flex: none; }
-.plane-tools button { font-size: 12px; line-height: 1; padding: 0.2rem 0.45rem; min-width: 1.7rem; }
-
-.legend { display: flex; flex-wrap: wrap; gap: 0.9rem; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); }
-.legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
-.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
-.legend .ramp i { width: 80px; }
+/* bars with one or two handles (bar.js): the near end is a filled dot, the far end a hollow one */
+.bar { position: relative; height: 22px; margin: 0.15rem 8px 0; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bar-track { position: absolute; left: -8px; right: -8px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-border-secondary); }
+.bar-fill { position: absolute; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--color-text-primary); }
+.bar-handle { position: absolute; top: 50%; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; background: var(--color-text-primary); border: 2px solid var(--color-text-primary); }
+.bar-handle.far { background: var(--color-bg); }
+.bar-handle:focus { outline: none; }
+.bar-handle:focus-visible { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-text-secondary); }
+#p-hue .bar-track { height: 10px; margin-top: -5px; border-radius: 4px; }
+#p-hue .bar-handle { background: var(--color-bg); }
 
 .notes { font-family: var(--font-serif); }
 .notes h3:first-of-type { margin-top: 0; }
@@ -154,3 +146,4 @@ dialog.info::backdrop { background: rgba(0, 0, 0, 0.55); }
 .info-head h2 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; }
 .info-head button { border: none; font-size: 15px; padding: 0.2rem 0.4rem; color: var(--color-text-secondary); }
 dialog.info .notes { padding: 1.25rem 1.25rem 0.5rem; }
+.hidden { display: none !important; }

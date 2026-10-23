@@ -26,19 +26,22 @@
   <main class="app">
     <section class="viewer">
       <div class="stage" id="stage">
-        <canvas id="canvas" aria-label="Escape times on a slice of the Markov surface. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
+        <canvas id="canvas" aria-label="A Julia set or Bowditch set on a slice of a Markov surface. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
         <div class="status" id="status"></div>
+        <div class="progress"><div id="progress"></div></div>
       </div>
       <div class="controls">
-        <button id="fitBtn" title="Back to the whole slice">Fit</button>
-        <button id="saveBtn" title="Save the image">Save PNG</button>
+        <button id="newBtn" title="A random map, zoomed into a random place on the edge of its set">New place</button>
+        <button id="colourBtn" title="A new random colour for this place">Recolour</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="saveBtn" title="Save the image as shown">Save PNG</button>
         <button id="infoBtn" title="What is this, and how does it work?">Info</button>
       </div>
       <div class="stats" id="stats"></div>
     </section>
 
     <div class="sidebar">
-    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. Each view is computed anew, so zooming reveals finer detail. The URL holds the current settings, so you can share it.</p>
+    <p class="hint">“New place” picks a random map and zooms into a random place on the edge of its set, “Recolour” picks a random colour. Drag the image to pan, scroll or pinch to zoom, double-click to fit. Each view is computed anew. The URL holds the current settings, so you can share it.</p>
 
     <div class="panels">
       <details open>
@@ -55,15 +58,22 @@
         <summary>Map</summary>
         <div class="params">
           <div class="param wide">
+            <label for="p-mode"><span>Draw</span></label>
+            <select id="p-mode">
+              <option value="word">the Julia set of one word</option>
+              <option value="all">where every word escapes (Bowditch set)</option>
+            </select>
+          </div>
+          <div class="param wide only-word">
             <label for="p-word"><span>Word in the moves s₁, s₂, s₃</span></label>
             <small>applied over and over: 1 replaces x by yz − x, 2 replaces y by xz − y, 3 replaces z by xy − z</small>
             <input type="text" id="p-word" class="mono" spellcheck="false" autocomplete="off">
             <p class="note" id="wordNote"></p>
           </div>
-          <div class="param wide">
-            <label for="p-it"><span>Maximum words</span><span id="v-it"></span></label>
+          <div class="param only-word">
+            <label for="p-it"><span>Maximum words</span></label>
             <small>orbits still bounded after this many count as bounded</small>
-            <input type="range" id="p-it" min="1.3" max="3.3" step="0.01">
+            <input type="number" id="p-it" min="10" max="5000" step="1">
           </div>
         </div>
       </details>
@@ -97,41 +107,95 @@
         </div>
       </details>
 
+      <details>
+        <summary>Place</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-seed"><span>Seed</span></label>
+            <small>the same seed always leads to the same map and place</small>
+            <div class="row">
+              <input type="number" id="p-seed" min="0" max="4294967295" step="1">
+              <button id="seedBtn" type="button">Go</button>
+            </div>
+          </div>
+          <div class="param">
+            <label for="p-re"><span>Centre, real part</span></label>
+            <input type="text" class="mono" id="p-re" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-im"><span>Centre, imaginary part</span></label>
+            <input type="text" class="mono" id="p-im" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-r"><span>Radius</span></label>
+            <small>half the width of the view</small>
+            <input type="text" class="mono" id="p-r" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="param">
+            <label for="p-aa"><span>Samples per pixel</span></label>
+            <small>more samples, smoother lines, slower</small>
+            <select id="p-aa">
+              <option value="1">1 × 1</option>
+              <option value="2">2 × 2</option>
+              <option value="3">3 × 3</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
       <details open>
         <summary>Colour</summary>
         <div class="params">
-          <div class="param">
-            <label for="p-pal"><span>Palette</span></label>
-            <select id="p-pal">
-              <option value="ember">ember</option>
-              <option value="ice">ice</option>
-              <option value="moss">moss</option>
-              <option value="ink">ink</option>
-              <option value="night">night</option>
-            </select>
+          <div class="param wide">
+            <label><span>Ramp</span><span>at the set → far out</span></label>
+            <small>● marks the parts at the set, ○ the parts far from it. Cross the lightness dots to swap light and dark.</small>
+            <div class="ramp" id="ramp"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-hue"><span>Hue</span><span id="v-hue"></span></label>
+            <div id="p-hue" aria-labelledby="l-hue"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-l"><span>Lightness</span><span id="v-l"></span></label>
+            <small>OKLCh lightness, 0 black to 1 white</small>
+            <div id="p-l" aria-labelledby="l-l"></div>
+          </div>
+          <div class="param wide">
+            <label id="l-c"><span>Chroma</span><span id="v-c"></span></label>
+            <small>how colourful; where the screen cannot show it, the colour keeps its lightness and hue and loses chroma</small>
+            <div id="p-c" aria-labelledby="l-c"></div>
           </div>
           <div class="param">
-            <label for="p-inside"><span>Bounded orbits</span></label>
-            <select id="p-inside">
-              <option value="dark">dark</option>
-              <option value="light">light</option>
-            </select>
+            <label for="p-lw"><span>Border width</span><span id="v-lw"></span></label>
+            <small>how far from the set the distance estimate darkens, in samples</small>
+            <input type="range" id="p-lw" min="0.25" max="4" step="0.05">
           </div>
-          <div class="param">
-            <label for="p-bands"><span>Bands</span><span id="v-bands"></span></label>
-            <input type="range" id="p-bands" min="0" max="8" step="0.05">
+          <div class="param check">
+            <label><input type="checkbox" id="p-inv"> <span>Invert</span></label>
+            <small>make the bounded or chaotic points white</small>
           </div>
-          <div class="param">
-            <label for="p-phase"><span>Shift</span><span id="v-phase"></span></label>
-            <input type="range" id="p-phase" min="0" max="1" step="0.01">
+          <div class="param check">
+            <label><input type="checkbox" id="p-circle"> <span>Circle</span></label>
+            <small>cut the image to a disk</small>
           </div>
-          <div class="param">
-            <label for="p-size"><span>Saved image size</span></label>
-            <select id="p-size">
-              <option value="1024">1024 × 1024</option>
-              <option value="2048">2048 × 2048</option>
-              <option value="4096">4096 × 4096</option>
-            </select>
+        </div>
+      </details>
+
+      <details>
+        <summary>Export</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-size"><span>Image size</span></label>
+            <small>renders the current view again at this size, with 3 × 3 samples per pixel (2 × 2 at 8192), and saves it as PNG. Large sizes of the Bowditch set can take a few minutes.</small>
+            <div class="row">
+              <select id="p-size">
+                <option value="1024">1024 × 1024</option>
+                <option value="2048" selected>2048 × 2048</option>
+                <option value="4096">4096 × 4096</option>
+                <option value="8192">8192 × 8192</option>
+              </select>
+              <button id="exportBtn" type="button">Render &amp; save</button>
+            </div>
           </div>
         </div>
       </details>
@@ -145,18 +209,23 @@
       <button type="button" id="infoClose" aria-label="Close">✕</button>
     </div>
     <div class="notes">
-      <p class="lede">The Kleinian limit sets come from two Möbius maps. Take instead the space of all such pairs and the moves that rearrange them: iterating one move gives a dynamical system on a complex surface, with Julia sets of its own.</p>
+      <p class="lede">The Kleinian limit sets come from two Möbius maps. Take instead the space of all such pairs and the moves that rearrange them: iterating one move gives a dynamical system on a complex surface, with Julia sets of its own, and all the moves together draw a set much like the Mandelbrot set.</p>
       <h3>The Markov surfaces</h3>
       <p>A pair of matrices <code>A</code>, <code>B</code> in <code>SL(2,ℂ)</code> is determined, up to a change of coordinates, by three traces: <code>x = tr A</code>, <code>y = tr B</code> and <code>z = tr AB</code>. They always satisfy <code>x² + y² + z² − xyz = k</code>, where <code>k = tr ABA⁻¹B⁻¹ + 2</code>. For each <code>k</code> this cubic equation defines a complex surface <code>S_k</code>. With <code>k = 0</code> it is, up to scale, Markov’s equation from number theory, and it holds the groups of <em>Indra’s Pearls</em>, whose commutator is parabolic with trace −2.</p>
       <p>Given <code>y</code> and <code>z</code>, the equation is quadratic in <code>x</code>, so each point has a partner with the other root, <code>yz − x</code>. Swapping them is the move <code>s₁</code>, and <code>s₂</code> and <code>s₃</code> do the same for <code>y</code> and <code>z</code>. In terms of the matrices they are changes of generators: <code>s₁</code> replaces the pair <code>(A, B)</code> by <code>(AB², B⁻¹)</code>, which has the traces <code>(yz − x, y, z)</code>. Together they generate, up to finite index, the action of the extended mapping class group of the punctured torus on its characters. The tree of Markov triples is the orbit of <code>(3, 3, 3)</code> under them.</p>
-      <h3>Iterating a word</h3>
+      <h3>The Julia set of one word</h3>
       <p>Pick a word in the three moves, such as <code>s₁s₂s₁s₃</code>, and apply it over and over. Most points run off to infinity, doubly exponentially fast, since each move multiplies two coordinates. Some stay bounded forever. As for a polynomial in one variable, the edge between the two kinds, the Julia set, is where the dynamics is chaotic, and it is a fractal. Cantat studied these maps in depth: when the word uses all three moves the map is hyperbolic, with chaotic dynamics on a fractal Julia set. A word with only two moves keeps one coordinate fixed and just turns the conic it lies on, so it has no Julia set worth the name.</p>
+      <h3>Is there a Mandelbrot set?</h3>
+      <p>Not in the strict sense. The Mandelbrot set collects the parameters <code>c</code> whose Julia set is connected, and it is found by following the one critical point of <code>z² + c</code>. These maps are invertible, like the Hénon maps, and have no critical points to follow. But there is a close companion, drawn with “Draw: where every word escapes”. Instead of one word, take all of them at once. The orbit of a point under the whole group lies on a tree: each triple has three neighbours, one for each move, and every coordinate met along the way is the trace of a simple closed curve on the torus. Bowditch singled out the points where this tree behaves as it does for a Kleinian group: no trace lies in <code>[−2, 2]</code>, and only finitely many are small, so that every path out along the tree escapes. There every word escapes, so this Bowditch set never meets a Julia set. Outside it the group acts chaotically, and the Julia sets of all the words lie there, drawn in black. For <code>k = 0</code> the Bowditch set contains the quasi-Fuchsian groups, whose limit sets are fractal circles like those of the Kleinian page, and Bowditch conjectured that it is exactly those. Its edge is a fractal, with the scalloped look of the slices of Kleinian groups in <em>Indra’s Pearls</em>.</p>
+      <p>To test a point the page walks down the tree, always by the move that shrinks its coordinate the most, until no move does, and then visits every vertex it can reach through small coordinates, below <code>max(8, 2 + 3√|k|)</code>. For a Bowditch point that is a short, finite walk. More than 100 steps down, a path through more than 40 small coordinates, more than 300 vertices in all, or a trace within 10<sup>−7</sup> of <code>[−2, 2]</code>, and the point counts as chaotic. The set is drawn on one surface only: along a line through <code>ℂ³</code>, <code>k</code> grows without bound, and so does the walk.</p>
       <h3>Slices</h3>
-      <p>The surface has two complex dimensions, four real ones, so a picture shows a slice. The first kind is a conic of one surface: fix <code>z = z₀</code> and write <code>z₀ = λ + 1/λ</code>. The equation becomes <code>(x − λy)(x − y/λ) = k − z₀²</code>, so <code>u = x − λy</code> runs over the punctured plane and names every point of the conic, and the picture is the <code>u</code> plane. The second kind is a line in <code>ℂ³</code>: fix <code>y</code> and <code>z</code> and let <code>x</code> range over the plane. Its points lie on different surfaces, as <code>k</code> changes with <code>x</code>, much like the parameter plane of the Mandelbrot set against the Julia sets.</p>
+      <p>The surface has two complex dimensions, four real ones, so a picture shows a slice. The first kind is a conic of one surface: fix <code>z = z₀</code> and write <code>z₀ = λ + 1/λ</code>. The equation becomes <code>(x − λy)(x − y/λ) = k − z₀²</code>, so <code>u = x − λy</code> runs over the punctured plane and names every point of the conic, and the picture is the <code>u</code> plane. The second kind is a line in <code>ℂ³</code>: fix <code>y</code> and <code>z</code> and let <code>x</code> range over the plane. Its points lie on different surfaces, as <code>k</code> changes with <code>x</code>.</p>
       <h3>Drawing</h3>
-      <p>For each pixel the page applies the word letter by letter until the largest coordinate passes 10⁸, or until the maximum number of words. The escape time is smoothed by where the escape radius falls between the last two letters on a doubly logarithmic scale, and the colour follows its logarithm, so the slow escapers near the Julia set get the dark end of the palette and the bounded orbits a colour of their own. The work is shared between Web Workers, row by row, and a quarter-size picture comes first.</p>
+      <p>The colouring is that of the <a href="../mandelbrot/">Minimal Mandelbrot</a>. For one word, each sample is iterated letter by letter until the largest coordinate passes 10⁸, or until the maximum number of words. The escape time is smoothed by where the escape radius falls between the last two letters on a doubly logarithmic scale. The distance estimate follows the derivatives of <code>x</code>, <code>y</code> and <code>z</code> along the slice, and is <code>|v| log |v| / |dv|</code> for the coordinate <code>v</code> that escaped. For all words, the value is <code>log(1 + 1/ℓ)</code>, where <code>ℓ = 2 log |λ|</code>, <code>λ + 1/λ = t</code>, is the shortest translation length among the traces <code>t</code> met on the walk, and the distance estimate is <code>ℓ</code> over its gradient.</p>
+      <p>The grey value starts as that value, rescaled so that the fastest escape is white and the slowest black, and within one sample of the border it is lowered to the distance estimate itself, never darker than 0.2 far from it. It then runs along a ramp in OKLCh, at one hue, from the colour at the set to the colour far out. The bounded or chaotic points are black, or white with “Invert”. Each pixel averages its samples in OKLab. The work is shared between Web Workers, which keep their samples, so a new colour needs no new iterations.</p>
+      <p>“New place” picks a random map. For one word it walks towards the Julia set, always to a nearby point that escapes later, with steps that shrink with the distance estimate. For all words it looks on a coarse grid for chaotic points with chaotic neighbours, which lie in a region of positive area, and halves the way from one of them to a Bowditch neighbour. It then zooms in, evenly on a logarithmic scale. The seed fixes all of these choices.</p>
       <h3>Sources</h3>
-      <p>Serge Cantat, “Bers and Hénon, Painlevé and Schrödinger”, <em>Duke Mathematical Journal</em> 149 (2009). Serge Cantat and Frank Loray, “Dynamics on character varieties and Malgrange irreducibility of Painlevé VI equation”, <em>Annales de l’Institut Fourier</em> 59 (2009). William Goldman, “The modular group action on real SL(2)-characters of a one-holed torus”, <em>Geometry &amp; Topology</em> 7 (2003). It continues the <a href="../kleinian/">Kleinian limit sets</a>, as one of the avenues beyond Möbius maps listed there.</p>
+      <p>Serge Cantat, “Bers and Hénon, Painlevé and Schrödinger”, <em>Duke Mathematical Journal</em> 149 (2009). Serge Cantat and Frank Loray, “Dynamics on character varieties and Malgrange irreducibility of Painlevé VI equation”, <em>Annales de l’Institut Fourier</em> 59 (2009). Brian Bowditch, “Markoff triples and quasifuchsian groups”, <em>Proceedings of the London Mathematical Society</em> 77 (1998). Ser Peow Tan, Yan Loi Wong and Ying Zhang, “Generalized Markoff maps and McShane’s identity”, <em>Advances in Mathematics</em> 217 (2008). William Goldman, “The modular group action on real SL(2)-characters of a one-holed torus”, <em>Geometry &amp; Topology</em> 7 (2003). It continues the <a href="../kleinian/">Kleinian limit sets</a>, as one of the avenues beyond Möbius maps listed there.</p>
     </div>
   </dialog>
 

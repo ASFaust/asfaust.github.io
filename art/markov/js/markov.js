@@ -32,11 +32,15 @@ export function parseWord(w) {
   return out;
 }
 
-// the starting point for the pixel at w = (wr, wi) of the slice, into p = [xr, xi, yr, yi, zr, zi]
+// The starting point for the pixel at w = (wr, wi) of the slice, into p = [xr, xi, yr, yi, zr, zi],
+// and its derivative with respect to w into dp, in the same layout.
 export function slicer(params) {
   if (params.slice === 'line') {
     const [yr, yi] = params.y0, [zr, zi] = params.z0;
-    return (wr, wi, p) => { p[0] = wr; p[1] = wi; p[2] = yr; p[3] = yi; p[4] = zr; p[5] = zi; };
+    return (wr, wi, p, dp) => {
+      p[0] = wr; p[1] = wi; p[2] = yr; p[3] = yi; p[4] = zr; p[5] = zi;
+      if (dp) { dp.fill(0); dp[0] = 1; }
+    };
   }
   let [zr, zi] = params.z0;
   // λ = (z₀ + √(z₀² − 4)) / 2; at z₀ = ±2 the conic degenerates into two lines, so move off it
@@ -48,40 +52,192 @@ export function slicer(params) {
   const er = ir - lr, ei = ii - li, en = er * er + ei * ei;    // 1/λ − λ
   const [kr, ki] = params.k;
   const cr = kr - (zr * zr - zi * zi), ci = ki - 2 * zr * zi;  // c = k − z₀²
-  return (wr, wi, p) => {
+  return (wr, wi, p, dp) => {
     // y = (u − c/u) / (1/λ − λ), x = u + λy
     const un = wr * wr + wi * wi || 1e-300;
-    const qr = wr - (cr * wr + ci * wi) / un, qi = wi - (ci * wr - cr * wi) / un;
+    const vr = (cr * wr + ci * wi) / un, vi = (ci * wr - cr * wi) / un; // c/u
+    const qr = wr - vr, qi = wi - vi;
     const yr = (qr * er + qi * ei) / en, yi = (qi * er - qr * ei) / en;
     p[0] = wr + lr * yr - li * yi; p[1] = wi + lr * yi + li * yr;
     p[2] = yr; p[3] = yi; p[4] = zr; p[5] = zi;
+    if (dp) {
+      // dy/du = (1 + c/u²) / (1/λ − λ), dx/du = 1 + λ dy/du
+      const gr = 1 + (vr * wr + vi * wi) / un, gi = (vi * wr - vr * wi) / un;
+      const hr = (gr * er + gi * ei) / en, hi = (gi * er - gr * ei) / en;
+      dp[0] = 1 + lr * hr - li * hi; dp[1] = lr * hi + li * hr;
+      dp[2] = hr; dp[3] = hi; dp[4] = 0; dp[5] = 0;
+    }
   };
 }
 
 // Applies the word over and over to p, letter by letter, until the largest coordinate passes
 // RADIUS or maxIt words are done. Returns the escape time in words, smoothed between the letter
 // before and the letter after the escape on a log-log scale (the growth is doubly exponential),
-// or −1 for an orbit still bounded.
-export function escape(p, word, maxIt) {
+// or −1 for an orbit still bounded. With dp, the derivative of p along the slice, it also writes
+// a distance estimate to out.d: |v| log |v| / |dv| for the largest coordinate v at the escape, as
+// for the Mandelbrot set, the ratio of the Green function to its gradient.
+export function escape(p, word, maxIt, dp, out) {
   let xr = p[0], xi = p[1], yr = p[2], yi = p[3], zr = p[4], zi = p[5];
+  let ar = 0, ai = 0, br = 0, bi = 0, cr = 0, ci = 0; // dx, dy, dz
+  const de = !!dp;
+  if (de) { ar = dp[0]; ai = dp[1]; br = dp[2]; bi = dp[3]; cr = dp[4]; ci = dp[5]; out.d = 0; }
   const n = word.length;
   let prev = Math.max(xr * xr + xi * xi, yr * yr + yi * yi, zr * zr + zi * zi);
   for (let it = 0; it < maxIt; it++) {
     for (let j = 0; j < n; j++) {
       const l = word[j];
-      if (l === 0) { const tr = yr * zr - yi * zi - xr, ti = yr * zi + yi * zr - xi; xr = tr; xi = ti; }
-      else if (l === 1) { const tr = xr * zr - xi * zi - yr, ti = xr * zi + xi * zr - yi; yr = tr; yi = ti; }
-      else { const tr = xr * yr - xi * yi - zr, ti = xr * yi + xi * yr - zi; zr = tr; zi = ti; }
-      const m2 = Math.max(xr * xr + xi * xi, yr * yr + yi * yi, zr * zr + zi * zi);
+      if (l === 0) {
+        if (de) { const tr = br * zr - bi * zi + yr * cr - yi * ci - ar, ti = br * zi + bi * zr + yr * ci + yi * cr - ai; ar = tr; ai = ti; }
+        const tr = yr * zr - yi * zi - xr, ti = yr * zi + yi * zr - xi; xr = tr; xi = ti;
+      } else if (l === 1) {
+        if (de) { const tr = ar * zr - ai * zi + xr * cr - xi * ci - br, ti = ar * zi + ai * zr + xr * ci + xi * cr - bi; br = tr; bi = ti; }
+        const tr = xr * zr - xi * zi - yr, ti = xr * zi + xi * zr - yi; yr = tr; yi = ti;
+      } else {
+        if (de) { const tr = ar * yr - ai * yi + xr * br - xi * bi - cr, ti = ar * yi + ai * yr + xr * bi + xi * br - ci; cr = tr; ci = ti; }
+        const tr = xr * yr - xi * yi - zr, ti = xr * yi + xi * yr - zi; zr = tr; zi = ti;
+      }
+      const mx = xr * xr + xi * xi, my = yr * yr + yi * yi, mz = zr * zr + zi * zi;
+      const m2 = Math.max(mx, my, mz);
       if (!(m2 <= RADIUS * RADIUS)) {
         // log log |m| before and after this letter, and where log log R falls between them
         const a = Math.log(Math.max(0.5 * Math.log(Math.max(prev, 1.0000001)), 1e-9));
         const b = isFinite(m2) ? Math.log(0.5 * Math.log(m2)) : a + 1;
         const f = b > a ? Math.min(1, Math.max(0, (LOG_LOG_R - a) / (b - a))) : 1;
+        if (de && isFinite(m2)) {
+          const dm2 = m2 === mx ? ar * ar + ai * ai : m2 === my ? br * br + bi * bi : cr * cr + ci * ci;
+          const d = 0.5 * Math.log(m2) * Math.sqrt(m2 / dm2);
+          out.d = d > 0 && isFinite(d) ? d : 0;
+        }
         return it + (j + f) / n;
       }
       prev = m2;
     }
   }
   return -1;
+}
+
+// ---------- all the moves at once ----------
+//
+// Every point of S_k has an orbit under the whole group the three moves generate, laid out on a
+// tree: each vertex is a triple (x, y, z), its three neighbours change one coordinate each, and
+// every coordinate met on the way is the trace of a simple closed curve on the punctured torus.
+// Bowditch (1998) singled out the triples where the group behaves like it does for a Kleinian
+// group: no such trace lies in [−2, 2], and only finitely many are small. Everywhere else the
+// orbit keeps coming back to a bounded region, and the dynamics of the whole group is chaotic. The
+// Julia set of every word lies there, because along the orbit of a Bowditch triple every
+// hyperbolic word escapes.
+//
+// To test a point, walk down the tree to a vertex none of whose neighbours is smaller, then visit
+// every vertex reachable through small coordinates. That is a finite walk for
+// Bowditch triples; a long way down, a long path or more than `budget` vertices, or a trace very
+// close to [−2, 2], counts as chaotic. For the colouring the walk returns the smallest translation length ℓ = 2 log |λ|,
+// λ + 1/λ = t, among the traces t it met, which goes to 0 towards the edge, and writes to out.d a
+// distance estimate, ℓ over the length of its gradient along the slice.
+
+export const BUDGET = 300; // vertices visited before a point counts as chaotic
+const DEPTH = 40;          // the same for the length of a path of small coordinates
+const DESCENT = 100;       // and for the steps down the tree
+const ELLIPTIC = 1e-7;
+let stack = new Float64Array(0), depths = new Int32Array(0);
+
+// translation length of a trace t and its derivative's factor 1/√(t² − 4), into L = [ℓ, sr, si]
+function length(tr, ti, L) {
+  const ur = tr * tr - ti * ti - 4, ui = 2 * tr * ti;
+  const m = Math.hypot(ur, ui);
+  let sr = Math.sqrt(Math.max(0, (m + ur) / 2)), si = Math.sign(ui || 1) * Math.sqrt(Math.max(0, (m - ur) / 2));
+  // the root with |λ| ≥ 1: t·√(t² − 4) has a positive real part
+  if (tr * sr + ti * si < 0) { sr = -sr; si = -si; }
+  L[0] = 2 * Math.log(Math.hypot(tr + sr, ti + si) / 2);
+  L[1] = sr; L[2] = si;
+}
+
+const V = 13; // per vertex: x, y, z and their derivatives, as re, im pairs, then the letter that led there
+const LEN = [0, 0, 0];
+
+// the move with letter l from the vertex at offset o, written at offset q
+function move(s, o, l, q) {
+  for (let i = 0; i < 12; i++) s[q + i] = s[o + i];
+  const a = 2 * ((l + 1) % 3), b = 2 * ((l + 2) % 3), c = 2 * l;
+  const ar = s[o + a], ai = s[o + a + 1], br = s[o + b], bi = s[o + b + 1];
+  s[q + c] = ar * br - ai * bi - s[o + c];
+  s[q + c + 1] = ar * bi + ai * br - s[o + c + 1];
+  const dar = s[o + 6 + a], dai = s[o + 7 + a], dbr = s[o + 6 + b], dbi = s[o + 7 + b];
+  s[q + 6 + c] = dar * br - dai * bi + ar * dbr - ai * dbi - s[o + 6 + c];
+  s[q + 7 + c] = dar * bi + dai * br + ar * dbi + ai * dbr - s[o + 7 + c];
+  s[q + 12] = l;
+}
+
+// |coordinate c|² of the vertex at o, and of the move with letter c from it
+const abs2 = (s, o, c) => s[o + 2 * c] * s[o + 2 * c] + s[o + 2 * c + 1] * s[o + 2 * c + 1];
+function moved2(s, o, c) {
+  const a = 2 * ((c + 1) % 3), b = 2 * ((c + 2) % 3);
+  const ar = s[o + a], ai = s[o + a + 1], br = s[o + b], bi = s[o + b + 1];
+  const r = ar * br - ai * bi - s[o + 2 * c], i = ar * bi + ai * br - s[o + 2 * c + 1];
+  return r * r + i * i;
+}
+
+export function bowditch(p, dp, budget, out, maxDepth = DEPTH) {
+  if (stack.length < (budget + 8) * V) { stack = new Float64Array((budget + 8) * V); depths = new Int32Array(budget + 8); }
+  const s = stack;
+  for (let i = 0; i < 6; i++) { s[i] = p[i]; s[6 + i] = dp ? dp[i] : 0; }
+  s[12] = -1;
+  // down the tree, always by the move that shrinks its coordinate the most. From a Bowditch triple
+  // this ends after a few steps; an orbit that keeps going down is coming back, and is chaotic.
+  let down = 0;
+  for (; down <= DESCENT; down++) {
+    let best = -1, gain = 0;
+    for (let l = 0; l < 3; l++) {
+      if (l === s[12]) continue;
+      const g = abs2(s, 0, l) - moved2(s, 0, l);
+      if (g > gain) { gain = g; best = l; }
+    }
+    if (best < 0) break;
+    move(s, 0, best, V);
+    s.copyWithin(0, V, 2 * V);
+  }
+  if (down > DESCENT) { out.d = 0; out.n = down; return -1; }
+  s[12] = -1;
+  // The small coordinates must be connected in the tree for the walk to find them all, which needs a
+  // threshold growing with k (Tan, Wong and Zhang); 2 + 3√|k|, at least 8, does in tests.
+  const [xr, xi, yr, yi, zr, zi] = p;
+  const kr = xr * xr - xi * xi + yr * yr - yi * yi + zr * zr - zi * zi - ((xr * yr - xi * yi) * zr - (xr * yi + xi * yr) * zi);
+  const ki = 2 * (xr * xi + yr * yi + zr * zi) - ((xr * yr - xi * yi) * zi + (xr * yi + xi * yr) * zr);
+  const small = Math.max(8, 2 + 3 * Math.sqrt(Math.hypot(kr, ki)));
+  const small2 = Math.max(small * small, Math.min(abs2(s, 0, 0), abs2(s, 0, 1), abs2(s, 0, 2)) * 1.0001);
+  let best = Infinity, bc = 0, br = 0, bi = 0;
+  // the smallest translation length so far, at coordinate bc of the vertex at bo; its derivative is
+  // read at the end, so keep the vertex: the smallest is copied to a slot of its own
+  const SLOT = (budget + 6) * V;
+  const look = (o, c) => {
+    length(s[o + 2 * c], s[o + 2 * c + 1], LEN);
+    if (LEN[0] < best) {
+      best = LEN[0]; br = LEN[1]; bi = LEN[2]; bc = c;
+      s[SLOT + 6 + 2 * c] = s[o + 6 + 2 * c]; s[SLOT + 7 + 2 * c] = s[o + 7 + 2 * c];
+    }
+  };
+  look(0, 0); look(0, 1); look(0, 2);
+  const TMP = (budget + 4) * V;
+  let top = 1, n = 0;
+  depths[0] = 0;
+  while (top > 0) {
+    if (best < ELLIPTIC || ++n > budget) { out.d = 0; out.n = n; return -1; }
+    // pop the vertex into a scratch slot and push its small neighbours in its place
+    top--;
+    s.copyWithin(TMP, top * V, top * V + V);
+    const last = s[TMP + 12], dep = depths[top] + 1;
+    // a long path of small coordinates is an orbit that stays bounded
+    if (dep > maxDepth) { out.d = 0; out.n = n; return -1; }
+    for (let l = 0; l < 3; l++) {
+      if (l === last || !(moved2(s, TMP, l) < small2)) continue;
+      move(s, TMP, l, top * V);
+      depths[top] = dep;
+      look(top * V, l);
+      top++;
+    }
+  }
+  out.n = n;
+  // |dℓ| = 2 |dt| / |√(t² − 4)|
+  const bd = 2 * Math.hypot(s[SLOT + 6 + 2 * bc], s[SLOT + 7 + 2 * bc]) / Math.hypot(br, bi);
+  out.d = bd > 0 ? best / bd : Infinity; // a trace that does not change along the slice
+  return best;
 }

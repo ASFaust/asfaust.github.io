@@ -1,21 +1,22 @@
 import { parseWord } from './markov.js';
+import { randomPlace, randomColour, MIN_RADIUS, MAX_IT } from './places.js';
 import { PRESETS } from './presets.js';
+import { ramp, oklch, css } from './colour.js';
+import { Bar } from './bar.js';
 
 const $ = id => document.getElementById(id);
 
 // ---------- state ----------
 
+const WHOLE = { cx: 0, cy: 0, r: 3 };
 const DEFAULTS = {
-  slice: 'surface', k: [-0.76, 0.09], z0: [-0.2, -0.88], y0: [0.5, 0.3], word: '1213',
-  maxIt: 200, pal: 'ember', bands: 1.5, phase: 0, inside: 'dark', size: 2048, view: null,
+  // the map: one word ('word') or the whole group ('all'), and the slice it is drawn on
+  mode: 'word', slice: 'surface', k: [-0.76, 0.09], z0: [-0.2, -0.88], y0: [0.5, 0.3], word: '1213',
+  maxIt: MAX_IT, seed: 0, view: WHOLE, aa: 2,
+  // the colour ramp in OKLCh: lightness and chroma at the set (0) and far out (1), and one hue
+  hue: 230, l0: 0, l1: 0.97, c0: 0.12, c1: 0.03, lw: 1, invert: false, circle: true,
 };
-const PALETTES = {
-  ember: ['#fbf4e6', '#f4a259', '#b33a3a', '#3a1d5c', '#0b0b1a'],
-  ice: ['#ffffff', '#bfe8f2', '#3fa7c9', '#164a6b', '#08121f'],
-  moss: ['#f6f3e8', '#c9d8a8', '#5f8f55', '#24452f', '#0c1a12'],
-  ink: ['#ffffff', '#d8d8d8', '#8a8a8a', '#3a3a3a', '#111111'],
-  night: ['#0d0d12', '#2b2f5a', '#7d6bc2', '#f0b3d9', '#fff7f0'],
-};
+const C_MAX = 0.3;
 let st = structuredClone(DEFAULTS);
 
 const NUM = (v, lo, hi, d) => (v !== '' && v !== null && v !== undefined && isFinite(+v) ? Math.min(hi, Math.max(lo, +v)) : d);
@@ -23,37 +24,56 @@ const pair = (v, lo, hi, d) => Array.isArray(v) && v.length === 2 ? [NUM(v[0], l
 
 function sanitize(s) {
   const word = String(s.word ?? '').replace(/[^123]/g, '');
+  const v = s.view;
   return {
-    slice: s.slice === 'line' ? 'line' : 'surface',
+    mode: s.mode === 'all' ? 'all' : 'word',
+    // the Bowditch set is drawn on one surface: along a line k grows without bound, and so does the
+    // walk that tests a point
+    slice: s.slice === 'line' && s.mode !== 'all' ? 'line' : 'surface',
     k: pair(s.k, -20, 20, DEFAULTS.k), z0: pair(s.z0, -20, 20, DEFAULTS.z0), y0: pair(s.y0, -20, 20, DEFAULTS.y0),
     word: parseWord(word).length ? word : DEFAULTS.word,
     maxIt: Math.round(NUM(s.maxIt, 10, 5000, DEFAULTS.maxIt)),
-    pal: s.pal in PALETTES ? s.pal : DEFAULTS.pal,
-    bands: NUM(s.bands, 0, 8, DEFAULTS.bands), phase: NUM(s.phase, 0, 1, 0),
-    inside: s.inside === 'light' ? 'light' : 'dark',
-    size: [1024, 2048, 4096].includes(+s.size) ? +s.size : DEFAULTS.size,
-    view: s.view && [s.view.cx, s.view.cy, s.view.half].every(isFinite) && s.view.half > 0 ? s.view : null,
+    seed: Math.round(NUM(s.seed, 0, 4294967295, 0)),
+    view: v && [v.cx, v.cy, v.r].every(isFinite) && v.r > 0
+      ? { cx: +v.cx, cy: +v.cy, r: Math.min(100, Math.max(MIN_RADIUS / 10, +v.r)) } : { ...WHOLE },
+    aa: Math.round(NUM(s.aa, 1, 3, DEFAULTS.aa)),
+    hue: Math.round(NUM(s.hue, 0, 359, DEFAULTS.hue)),
+    l0: NUM(s.l0, 0, 1, DEFAULTS.l0), l1: NUM(s.l1, 0, 1, DEFAULTS.l1),
+    c0: NUM(s.c0, 0, C_MAX, DEFAULTS.c0), c1: NUM(s.c1, 0, C_MAX, DEFAULTS.c1),
+    lw: NUM(s.lw, 0.25, 4, DEFAULTS.lw),
+    invert: !!s.invert, circle: s.circle !== false,
   };
 }
 
+const rampOf = s => ({ hue: s.hue, l0: s.l0, l1: s.l1, c0: s.c0, c1: s.c1 });
+const mapParams = () => ({ mode: st.mode, slice: st.slice, k: st.k, z0: st.z0, y0: st.y0, word: st.word });
+
+const exact = v => String(+v.toPrecision(17));
 const r6 = v => +(+v).toFixed(6);
+
 function writeHash() {
   const parts = [];
+  if (st.mode === 'all') parts.push('m=all');
   if (st.slice === 'line') parts.push('s=line', 'y=' + st.y0.map(r6).join(','));
   else parts.push('k=' + st.k.map(r6).join(','));
-  parts.push('z=' + st.z0.map(r6).join(','), 'w=' + st.word);
-  if (st.maxIt !== DEFAULTS.maxIt) parts.push('it=' + st.maxIt);
-  if (st.pal !== DEFAULTS.pal) parts.push('pal=' + st.pal);
-  if (st.bands !== DEFAULTS.bands) parts.push('bd=' + st.bands);
-  if (st.phase) parts.push('ph=' + st.phase);
-  if (st.inside !== 'dark') parts.push('in=' + st.inside);
-  if (st.size !== DEFAULTS.size) parts.push('size=' + st.size);
-  if (st.view) parts.push('v=' + [st.view.cx, st.view.cy, st.view.half].map(v => +v.toPrecision(12)).join(','));
+  parts.push('z=' + st.z0.map(r6).join(','));
+  if (st.mode === 'word') parts.push('w=' + st.word);
+  if (st.maxIt !== DEFAULTS.maxIt && st.mode === 'word') parts.push('it=' + st.maxIt);
+  parts.push(
+    'v=' + [exact(st.view.cx), exact(st.view.cy), +st.view.r.toPrecision(6)].join(','),
+    'h=' + st.hue, 'l=' + st.l0 + ',' + st.l1, 'ch=' + st.c0 + ',' + st.c1,
+  );
+  if (st.seed) parts.push('seed=' + st.seed);
+  if (st.lw !== DEFAULTS.lw) parts.push('lw=' + st.lw);
+  if (st.aa !== DEFAULTS.aa) parts.push('aa=' + st.aa);
+  if (st.invert) parts.push('inv=1');
+  if (!st.circle) parts.push('c=0');
   history.replaceState(null, '', '#' + parts.join('&'));
 }
 
-function parseHash(h) {
-  h = h.replace(/^#/, '');
+// Links from before the colour ramp (pal=, bd=, ph=) still open: their extra keys are ignored.
+function readHash() {
+  const h = location.hash.replace(/^#/, '');
   if (!h) return null;
   const q = {};
   for (const kv of h.split('&')) {
@@ -62,223 +82,393 @@ function parseHash(h) {
   }
   const two = s => s ? s.split(',').map(Number) : null;
   const v = two(q.v);
-  return sanitize({
-    slice: q.s, k: two(q.k), z0: two(q.z), y0: two(q.y), word: q.w, maxIt: q.it, pal: q.pal,
-    bands: q.bd, phase: q.ph, inside: q.in, size: q.size,
-    view: v && v.length === 3 ? { cx: v[0], cy: v[1], half: v[2] } : null,
+  const l = (q.l || '').split(','), ch = (q.ch || '').split(',');
+  const s = sanitize({
+    mode: q.m, slice: q.s, k: two(q.k), z0: two(q.z), y0: two(q.y), word: q.w, maxIt: q.it, seed: q.seed,
+    view: v && v.length === 3 ? { cx: v[0], cy: v[1], r: v[2] } : null,
+    aa: q.aa, hue: q.h, l0: l[0], l1: l[1], c0: ch[0], c1: ch[1], lw: q.lw,
+    invert: q.inv === '1', circle: q.c !== '0',
   });
+  s.fromHash = { colour: 'h' in q };
+  return s;
 }
-
-const params = () => ({ slice: st.slice, k: st.k, z0: st.z0, y0: st.y0, word: st.word });
-const currentView = () => st.view || { cx: 0, cy: 0, half: 3 };
 
 // ---------- workers ----------
 
+// A set of workers, each holding every n-th row of the last computed image.
+class Pool {
+  constructor(n) {
+    this.n = n;
+    this.url = new URL('./worker.js', import.meta.url);
+    this.pending = new Map(); // rid → { resolve, reject, onProgress }
+    this.rid = 0;
+    this.spawn();
+  }
+  spawn() {
+    this.workers = [];
+    for (let i = 0; i < this.n; i++) {
+      const w = new Worker(this.url, { type: 'module' });
+      w.onmessage = e => this.receive(e.data);
+      w.onerror = e => { e.preventDefault(); this.failAll(new Error(e.message || 'Worker failed to start.')); };
+      this.workers.push(w);
+    }
+  }
+  receive(m) {
+    const p = this.pending.get(m.rid);
+    if (!p) return;
+    if (m.type === 'progress') return p.onProgress && p.onProgress(m.done);
+    this.pending.delete(m.rid);
+    if (m.type === 'error') p.reject(new Error(m.message));
+    else p.resolve(m);
+  }
+  call(i, msg, onProgress) {
+    const rid = ++this.rid;
+    return new Promise((resolve, reject) => {
+      this.pending.set(rid, { resolve, reject, onProgress });
+      this.workers[i].postMessage({ ...msg, rid });
+    });
+  }
+  all(make, onProgress) {
+    return Promise.all(this.workers.map((_, i) => this.call(i, make(i), onProgress && (d => onProgress(i, d)))));
+  }
+  failAll(err) {
+    for (const p of this.pending.values()) p.reject(err);
+    this.pending.clear();
+  }
+  // stops whatever runs; the workers lose their samples
+  reset() {
+    this.workers.forEach(w => w.terminate());
+    this.failAll(new Error('cancelled'));
+    this.spawn();
+  }
+  close() {
+    this.workers.forEach(w => w.terminate());
+    this.failAll(new Error('cancelled'));
+  }
+}
+
 const NWORK = Math.max(2, Math.min(8, navigator.hardwareConcurrency || 4));
-const workerURL = new URL('./worker.js', import.meta.url);
-let workers = [], jobId = 0, busy = 0;
 
-function spawn() {
-  workers.forEach(w => w.terminate());
-  workers = Array.from({ length: NWORK }, () => {
-    const w = new Worker(workerURL, { type: 'module' });
-    w.onmessage = e => onResult(e.data);
-    w.onerror = e => { e.preventDefault(); showError(e.message || 'Worker failed to start.'); };
-    return w;
+// Iterate the view at W × W pixels with aa × aa samples each; returns the escape time range.
+async function computeImage(pool, view, W, aa, onProgress) {
+  const done = new Array(pool.n).fill(0);
+  const res = await pool.all(
+    i => ({ type: 'compute', params: mapParams(), view, W, aa, k: i, step: pool.n, maxIt: st.maxIt }),
+    (i, d) => { done[i] = d; onProgress(done.reduce((a, b) => a + b, 0) / W); });
+  return {
+    tmin: Math.min(...res.map(r => r.tmin)), tmax: Math.max(...res.map(r => r.tmax)),
+    inside: res.reduce((a, r) => a + r.inside, 0) / (W * W * aa * aa),
+  };
+}
+
+// Colour the computed image with the current settings.
+// The range of grey values outside the set, which the colour ramp spans.
+async function greyRange(pool, t) {
+  const ranges = await pool.all(() => ({ type: 'range', ...t, lw: st.lw }));
+  const imin = Math.min(...ranges.map(r => r.imin)), imax = Math.max(...ranges.map(r => r.imax));
+  return imax >= imin ? { imin, imax } : { imin: 0, imax: 1 }; // all inside
+}
+
+function colourParams() {
+  const { rgb, lab } = ramp(rampOf(st));
+  return { lw: st.lw, rgb, lab, invert: st.invert, circle: st.circle };
+}
+
+async function colourImage(pool, W, t) {
+  const range = await greyRange(pool, t);
+  const msg = { type: 'colour', ...t, ...range, ...colourParams() };
+  const parts = await pool.all(() => msg);
+  const img = new ImageData(W, W);
+  const row = W * 4;
+  parts.forEach((p, k) => {
+    for (let j = 0, y = k; y < W; j++, y += pool.n) img.data.set(p.data.subarray(j * row, (j + 1) * row), y * row);
   });
-  busy = 0;
-}
-
-// Computes the escape times of a W × W image of the view, split by rows over the workers.
-let job = null; // { id, W, data, left, resolve }
-function compute(W, view, maxIt) {
-  if (busy) spawn();
-  const id = ++jobId;
-  return new Promise(resolve => {
-    job = { id, W, data: new Float32Array(W * W), left: NWORK, resolve };
-    busy = NWORK;
-    workers.forEach((w, i) => w.postMessage({ id, params: params(), view, W, first: i, step: NWORK, maxIt }));
-  });
-}
-
-function onResult(m) {
-  if (!job || m.id !== job.id) return;
-  if (m.error) { showError(m.error); return; }
-  const { W, data } = job;
-  for (let j = 0, y = m.first; y < W; j++, y += m.step) data.set(m.data.subarray(j * W, (j + 1) * W), y * W);
-  busy--;
-  if (--job.left === 0) { const j = job; job = null; j.resolve(j.data); }
-}
-
-function showError(msg) {
-  $('status').textContent = 'Could not compute: ' + msg;
-  $('status').style.display = 'flex';
-}
-
-// ---------- colouring ----------
-
-function hex(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
-
-// 256 entries of the palette as RGB bytes
-function lut(name) {
-  const stops = PALETTES[name].map(hex), out = new Uint8Array(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const x = i / 255 * (stops.length - 1), a = Math.min(stops.length - 2, Math.floor(x)), f = x - a;
-    for (let c = 0; c < 3; c++) out[3 * i + c] = Math.round(stops[a][c] + (stops[a + 1][c] - stops[a][c]) * f);
-  }
-  return out;
-}
-
-// The escape time e, in words, coloured along the palette by log(1 + e): far points escape at
-// once and take its first colour, those near the Julia set its last. With bands > 0 the palette
-// is run back and forth that many times per unit of log(1 + e).
-function colourise(data, W, img) {
-  const L = lut(st.pal), out = img.data;
-  const top = Math.log1p(st.maxIt);
-  const inside = st.inside === 'dark' ? [8, 8, 10] : [250, 250, 248];
-  for (let i = 0; i < W * W; i++) {
-    const e = data[i], o = 4 * i;
-    if (e < 0) { out[o] = inside[0]; out[o + 1] = inside[1]; out[o + 2] = inside[2]; out[o + 3] = 255; continue; }
-    const v = Math.log1p(e);
-    let t;
-    if (st.bands > 0) {
-      const x = v * st.bands + st.phase * 2;
-      t = 0.5 - 0.5 * Math.cos(Math.PI * x);
-      // drift towards the dark end as the set nears, so the bands do not hide it
-      t = t * 0.75 + 0.25 * Math.min(1, v / top * 2);
-    } else t = Math.min(1, v / top * 1.6);
-    const k = Math.round(t * 255) * 3;
-    out[o] = L[k]; out[o + 1] = L[k + 1]; out[o + 2] = L[k + 2]; out[o + 3] = 255;
-  }
   return img;
 }
 
 // ---------- rendering ----------
 
-const stage = $('stage'), canvas = $('canvas'), ctx = canvas.getContext('2d');
-let shown = null; // { data, W, view } of the last full render, for recolouring and panning
+const stage = $('stage'), canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+let pool = new Pool(NWORK);
+let shown = null;       // { view, W, t } of the image on the canvas, if the workers still hold its samples
+let shownView = null;   // the view the canvas shows, for panning
+let computing = null;   // { gen, pan } of the render in progress
 let renderGen = 0;
+let colouring = false, colourAgain = false;
 
-function sizeCanvas() {
+function canvasSize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const css = stage.clientWidth || 600;
-  const px = Math.min(1600, Math.round(css * dpr));
-  if (canvas.width !== px || canvas.height !== px) { canvas.width = px; canvas.height = px; }
-  return px;
-}
-
-function paint(data, W) {
-  resetTransform(); // the picture now matches the view
-  const img = colourise(data, W, new ImageData(W, W));
-  if (W === canvas.width) { ctx.putImageData(img, 0, 0); return; }
-  const off = new OffscreenCanvas(W, W);
-  off.getContext('2d').putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = W < canvas.width;
-  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+  return Math.min(1600, Math.round((stage.clientWidth || 600) * dpr));
 }
 
 async function render() {
+  clearTimeout(commitTimer);
+  if (computing || colouring) pool.reset();
+  colouring = colourAgain = false;
+  shown = null;
   const gen = ++renderGen;
-  const W = sizeCanvas(), view = { ...currentView() };
-  $('status').style.display = 'none';
-  const t0 = performance.now();
-  // a quick pass at a quarter of the resolution, then the full one
-  const coarse = await compute(Math.ceil(W / 4), view, st.maxIt);
-  if (gen !== renderGen) return;
-  paint(coarse, Math.ceil(W / 4));
-  shown = { data: coarse, W: Math.ceil(W / 4), view };
-  $('stats').textContent = 'computing…';
-  const data = await compute(W, view, st.maxIt);
-  if (gen !== renderGen) return;
-  shown = { data, W, view };
-  paint(data, W);
-  let inside = 0;
-  for (const e of data) if (e < 0) inside++;
-  const parts = [`${W} × ${W}`, `${((performance.now() - t0) / 1000).toFixed(2)} s`];
-  const pct = 100 * inside / data.length;
-  if (inside) parts.unshift(`${pct < 0.1 ? "under 0.1" : pct.toFixed(1)}% bounded after ${st.maxIt} words`);
-  $('stats').textContent = parts.join(' · ');
-}
-
-let renderTimer = 0;
-function schedule(ms = 60) {
-  clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => { render(); writeHash(); }, ms);
-}
-
-function recolour() {
-  if (shown) paint(shown.data, shown.W);
+  const view = { ...st.view }, W = canvasSize(), aa = st.aa;
+  computing = { gen, pan: { ...pan } };
   writeHash();
+  setRunning(true);
+  setStatus('');
+  setProgress(0);
+  $('stats').textContent = '';
+  const t0 = performance.now();
+  try {
+    // the Bowditch set is slow: a coarse picture first
+    let f0 = 0;
+    if (st.mode === 'all') {
+      const w = Math.ceil(W / 4), f = 1 / (1 + 16 * aa * aa);
+      const t = await computeImage(pool, view, w, 1, d => setProgress(d * f));
+      const img = await colourImage(pool, w, t);
+      if (gen !== renderGen) return;
+      paint(img, computing.pan, W);
+      computing.pan = { s: 1, tx: 0, ty: 0 }; // the full picture shows the same view
+      f0 = f;
+    }
+    const t = await computeImage(pool, view, W, aa, d => setProgress(f0 + d * (1 - f0)));
+    const img = await colourImage(pool, W, t);
+    if (gen !== renderGen) return;
+    const ms = performance.now() - t0;
+    paint(img, computing.pan);
+    computing = null;
+    shown = { view, W, t };
+    shownView = view;
+    setRunning(false);
+    setProgress(1);
+    const time = ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s';
+    $('stats').textContent = `${W} × ${W} px · ${aa} × ${aa} samples · ${time} · radius ${view.r.toPrecision(3)}` +
+      insideNote(t.inside) + (view.r < MIN_RADIUS ? ' · past double precision' : '');
+    // colours changed while the image was being coloured
+    if (colourAgain) { colourAgain = false; recolour(); }
+  } catch (e) {
+    if (e.message === 'cancelled' || gen !== renderGen) return;
+    computing = null;
+    fail(e.message);
+  }
 }
+
+// Recolour the image on the canvas; the samples are kept, so this is quick.
+async function recolour() {
+  writeHash();
+  if (computing) { colourAgain = true; return; } // redone once the render in progress is done
+  if (!shown) return render();
+  if (colouring) { colourAgain = true; return; }
+  colouring = true;
+  const gen = renderGen;
+  try {
+    const img = await colourImage(pool, shown.W, shown.t);
+    if (gen === renderGen) paint(img, null);
+  } catch (e) {
+    if (e.message !== 'cancelled') fail(e.message);
+    return;
+  } finally {
+    colouring = false;
+  }
+  if (colourAgain) { colourAgain = false; recolour(); }
+}
+
+// Put a finished image on the canvas. committed: the pan the image was rendered for; whatever the
+// user panned since stays on as a CSS transform.
+// A smaller image, a coarse preview, is scaled up to size.
+function paint(img, committed, size = img.width) {
+  if (canvas.width !== size) { canvas.width = canvas.height = size; }
+  if (size === img.width) ctx.putImageData(img, 0, 0);
+  else {
+    const small = document.createElement('canvas');
+    small.width = small.height = img.width;
+    small.getContext('2d').putImageData(img, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(small, 0, 0, size, size);
+  }
+  if (committed) {
+    const s = pan.s / committed.s;
+    pan = { s, tx: pan.tx - committed.tx * s, ty: pan.ty - committed.ty * s };
+    applyPan();
+  }
+}
+
+function fail(message) {
+  setRunning(false);
+  setProgress(1);
+  setStatus(message);
+}
+
+function setStatus(text) {
+  $('status').textContent = text;
+  $('status').style.display = text ? 'flex' : 'none';
+}
+function setProgress(f) {
+  $('progress').style.width = (100 * f).toFixed(1) + '%';
+  $('progress').parentElement.style.opacity = f >= 1 ? 0 : 1;
+}
+function setRunning(on) { $('stopBtn').disabled = !on; }
 
 // ---------- pan and zoom ----------
 
-// While dragging or zooming, the last picture is moved by CSS; a new one is computed after.
-function preview() {
-  if (!shown) return;
-  const v = currentView(), s = shown.view;
-  const k = s.half / v.half;
-  const dx = ((s.cx - s.half) - (v.cx - v.half)) / (2 * v.half);
-  const dy = ((v.cy + v.half) - (s.cy + s.half)) / (2 * v.half);
-  canvas.style.transform = `translate(${dx * 100}%, ${dy * 100}%) scale(${k})`;
-}
-function settle() { schedule(150); }
-const resetTransform = () => { canvas.style.transform = ''; };
-
+let pan = { s: 1, tx: 0, ty: 0 }; // CSS transform of the canvas relative to shownView, in CSS px
+let commitTimer = 0;
 const pointers = new Map();
 let pinch = null;
-const local = e => { const r = stage.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
-function zoomAt(u, v, f) {
-  const vw = { ...currentView() };
-  const x = vw.cx - vw.half + 2 * vw.half * u, y = vw.cy + vw.half - 2 * vw.half * v;
-  vw.half = Math.min(100, Math.max(1e-12, vw.half * f));
-  vw.cx = x - (2 * u - 1) * vw.half;
-  vw.cy = y + (2 * v - 1) * vw.half;
-  st.view = vw;
+
+function applyPan() {
+  canvas.style.transform = pan.s === 1 && !pan.tx && !pan.ty ? '' : `translate(${pan.tx}px, ${pan.ty}px) scale(${pan.s})`;
 }
+
+function zoomAt(x, y, f) {
+  pan.tx = x - (x - pan.tx) * f;
+  pan.ty = y - (y - pan.ty) * f;
+  pan.s *= f;
+  applyPan();
+}
+
+function scheduleCommit(delay = 250) {
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(commit, delay);
+}
+
+// Turn the CSS transform into a new view and render it; the old image stays on meanwhile.
+function commit() {
+  if (pointers.size) return scheduleCommit();
+  const v = shownView || st.view;
+  if (computing && sameView(computing.pan, pan)) return;
+  if (!computing && pan.s === 1 && !pan.tx && !pan.ty) return;
+  const css = stage.clientWidth;
+  const u = 2 * v.r / css; // plane units per CSS px before the transform
+  // the stage centre came from the old CSS position (c − t)/s
+  const qx = (css / 2 - pan.tx) / pan.s, qy = (css / 2 - pan.ty) / pan.s;
+  st.view = { cx: v.cx - v.r + qx * u, cy: v.cy + v.r - qy * u, r: Math.max(MIN_RADIUS / 10, v.r / pan.s) };
+  syncInputs();
+  render();
+}
+const sameView = (a, b) => a.s === b.s && a.tx === b.tx && a.ty === b.ty;
+
+function local(e) {
+  const r = stage.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+
 stage.addEventListener('wheel', e => {
   e.preventDefault();
-  const [u, v] = local(e);
-  zoomAt(u, v, Math.exp(e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
-  preview(); settle();
+  const [x, y] = local(e);
+  zoomAt(x, y, Math.exp(-Math.max(-1, Math.min(1, e.deltaY * (e.deltaMode ? 0.05 : 0.002)))));
+  scheduleCommit();
 }, { passive: false });
+
 stage.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
   stage.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, local(e));
   stage.classList.add('dragging');
-  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
+  clearTimeout(commitTimer);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) };
+  }
 });
 stage.addEventListener('pointermove', e => {
   if (!pointers.has(e.pointerId)) return;
   const prev = pointers.get(e.pointerId), cur = local(e);
   pointers.set(e.pointerId, cur);
   if (pointers.size === 1) {
-    const vw = { ...currentView() };
-    vw.cx -= (cur[0] - prev[0]) * 2 * vw.half;
-    vw.cy += (cur[1] - prev[1]) * 2 * vw.half;
-    st.view = vw;
+    pan.tx += cur[0] - prev[0];
+    pan.ty += cur[1] - prev[1];
+    applyPan();
   } else if (pointers.size === 2 && pinch) {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-    zoomAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, pinch / d);
-    pinch = d;
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    pan.tx += (cur[0] - prev[0]) / 2;
+    pan.ty += (cur[1] - prev[1]) / 2;
+    if (pinch.d > 0) zoomAt(mx, my, d / pinch.d);
+    pinch.d = d;
   }
-  preview();
 });
 function endPointer(e) {
   if (!pointers.delete(e.pointerId)) return;
   if (pointers.size < 2) pinch = null;
-  if (!pointers.size) { stage.classList.remove('dragging'); settle(); }
+  if (!pointers.size) { stage.classList.remove('dragging'); scheduleCommit(120); }
 }
 stage.addEventListener('pointerup', endPointer);
 stage.addEventListener('pointercancel', endPointer);
-stage.addEventListener('dblclick', () => { st.view = null; resetTransform(); schedule(0); });
+stage.addEventListener('dblclick', () => setView(WHOLE));
 
-// ---------- controls ----------
+// Jump to a view: the old image is dropped rather than transformed.
+function setView(view) {
+  st.view = { ...view };
+  shownView = st.view;
+  pan = { s: 1, tx: 0, ty: 0 };
+  applyPan();
+  syncInputs();
+  render();
+}
 
-const fmt = v => (v >= 0 ? ' ' : '') + v.toFixed(3);
+// ---------- places and colours ----------
 
-// a complex parameter as two sliders, real and imaginary part, and a text field for exact values
+function insideNote(f) {
+  if (!(f > 0)) return '';
+  const pct = f < 0.001 ? 'under 0.1' : (100 * f).toFixed(f < 0.1 ? 1 : 0);
+  return st.mode === 'all' ? ` · ${pct}% chaotic` : ` · ${pct}% bounded`;
+}
+
+function newPlace(seed) {
+  const place = randomPlace(seed >>> 0, st.mode);
+  if (!place) { setStatus('No edge found for this seed; try another.'); return; }
+  st.seed = seed >>> 0;
+  Object.assign(st, sanitize({ ...st, ...place }));
+  unpreset();
+  setView(st.view);
+}
+const randomSeed = () => (Math.random() * 4294967296) >>> 0;
+
+function newColour() {
+  Object.assign(st, randomColour(Math.random));
+  syncInputs();
+  recolour();
+}
+
+// ---------- inputs ----------
+
+// The colour bars. Values change live while dragging; the URL follows when a drag ends.
+const fmt = v => v.toFixed(2);
+const fmtC = v => v.toFixed(3);
+function showColour() {
+  $('v-hue').textContent = st.hue + '°';
+  $('v-l').textContent = `${fmt(st.l0)} → ${fmt(st.l1)}`;
+  $('v-c').textContent = `${fmtC(st.c0)} → ${fmtC(st.c1)}`;
+  // the ramp as it will be painted, from the set to far out
+  const lut = ramp(rampOf(st)).rgb, n = lut.length / 3, stops = [];
+  for (let k = 0; k <= 32; k++) {
+    const i = 3 * Math.round(k / 32 * (n - 1));
+    stops.push(`rgb(${lut[i]} ${lut[i + 1]} ${lut[i + 2]}) ${(100 * k / 32).toFixed(1)}%`);
+  }
+  $('ramp').style.background = `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
+const hueStrip = [];
+for (let h = 0; h <= 360; h += 15) hueStrip.push(css(oklch(0.72, 0.13, h)));
+
+const bars = {
+  hue: new Bar($('p-hue'), { min: 0, max: 359, step: 1, values: [st.hue], names: ['Hue'],
+    onInput: ([h]) => { st.hue = h; showColour(); recolour(); }, onChange: writeHash }),
+  l: new Bar($('p-l'), { min: 0, max: 1, step: 0.01, values: [st.l0, st.l1], names: ['Lightness at the set', 'Lightness far out'],
+    onInput: ([a, b]) => { st.l0 = a; st.l1 = b; showColour(); recolour(); }, onChange: writeHash }),
+  c: new Bar($('p-c'), { min: 0, max: C_MAX, step: 0.005, values: [st.c0, st.c1], names: ['Chroma at the set', 'Chroma far out'],
+    onInput: ([a, b]) => { st.c0 = a; st.c1 = b; showColour(); recolour(); }, onChange: writeHash }),
+};
+bars.hue.track.style.background = `linear-gradient(90deg, ${hueStrip.join(', ')})`;
+
+// A complex parameter as two sliders, real and imaginary part, and a text field for exact values.
+// The sliders re-render once they stop moving.
+let mapTimer = 0;
+function mapChanged(delay = 250) {
+  unpreset();
+  clearTimeout(mapTimer);
+  mapTimer = setTimeout(() => render(), delay);
+}
 function complexControl(key, lo, hi) {
   const re = $(`p-${key}-re`), im = $(`p-${key}-im`), txt = $(`p-${key}`);
   re.min = im.min = lo; re.max = im.max = hi; re.step = im.step = 0.001;
@@ -287,13 +477,13 @@ function complexControl(key, lo, hi) {
     txt.value = `${r6(st[key][0])}${st[key][1] < 0 ? '−' : '+'}${Math.abs(r6(st[key][1]))}i`;
     txt.classList.remove('bad');
   };
-  const onSlide = () => { st[key] = [+re.value, +im.value]; show(); unpreset(); schedule(); };
+  const onSlide = () => { st[key] = [+re.value, +im.value]; show(); mapChanged(); };
   re.addEventListener('input', onSlide);
   im.addEventListener('input', onSlide);
   txt.addEventListener('change', () => {
     const z = parseComplex(txt.value);
     if (!z) { txt.classList.add('bad'); return; }
-    st[key] = z; show(); unpreset(); schedule(0);
+    st[key] = z; show(); mapChanged(0);
   });
   return show;
 }
@@ -310,21 +500,7 @@ function parseComplex(s) {
   return isFinite(re) && isFinite(im) ? [re, im] : null;
 }
 
-const shows = [];
-function syncControls() {
-  shows.forEach(f => f());
-  $('p-slice').value = st.slice;
-  document.querySelectorAll('.only-surface').forEach(e => e.classList.toggle('hidden', st.slice !== 'surface'));
-  document.querySelectorAll('.only-line').forEach(e => e.classList.toggle('hidden', st.slice !== 'line'));
-  $('p-word').value = st.word;
-  $('wordNote').textContent = wordNote();
-  $('p-it').value = Math.log10(st.maxIt); $('v-it').textContent = st.maxIt;
-  $('p-pal').value = st.pal;
-  $('p-bands').value = st.bands; $('v-bands').textContent = st.bands.toFixed(2);
-  $('p-phase').value = st.phase; $('v-phase').textContent = st.phase.toFixed(2);
-  $('p-inside').value = st.inside;
-  $('p-size').value = st.size;
-}
+const complexShows = [complexControl('k', -4, 6), complexControl('z0', -4, 4), complexControl('y0', -4, 4)];
 
 function wordNote() {
   const w = parseWord(st.word);
@@ -333,74 +509,188 @@ function wordNote() {
   return names + (all ? '' : ' — uses only two of the three moves, so it fixes a coordinate and has no Julia set to speak of');
 }
 
+function syncInputs() {
+  $('p-seed').value = st.seed;
+  $('p-re').value = exact(st.view.cx);
+  $('p-im').value = exact(st.view.cy);
+  $('p-r').value = +st.view.r.toPrecision(6);
+  $('p-aa').value = st.aa;
+  $('p-mode').value = st.mode;
+  $('p-slice').value = st.slice;
+  $('p-slice').querySelector('[value=line]').disabled = st.mode === 'all';
+  document.querySelectorAll('.only-surface').forEach(e => e.classList.toggle('hidden', st.slice !== 'surface'));
+  document.querySelectorAll('.only-line').forEach(e => e.classList.toggle('hidden', st.slice !== 'line'));
+  document.querySelectorAll('.only-word').forEach(e => e.classList.toggle('hidden', st.mode !== 'word'));
+  $('p-word').value = st.word;
+  $('p-word').classList.remove('bad');
+  $('wordNote').textContent = wordNote();
+  $('p-it').value = st.maxIt;
+  complexShows.forEach(f => f());
+  bars.hue.set([st.hue]);
+  bars.l.set([st.l0, st.l1]);
+  bars.c.set([st.c0, st.c1]);
+  showColour();
+  $('p-lw').value = st.lw;
+  $('v-lw').textContent = st.lw.toFixed(2);
+  $('p-inv').checked = st.invert;
+  $('p-circle').checked = st.circle;
+}
+
+function onViewInput() {
+  const cx = parseFloat($('p-re').value), cy = parseFloat($('p-im').value), r = parseFloat($('p-r').value);
+  $('p-re').classList.toggle('bad', !isFinite(cx));
+  $('p-im').classList.toggle('bad', !isFinite(cy));
+  $('p-r').classList.toggle('bad', !(r > 0));
+  if (!isFinite(cx) || !isFinite(cy) || !(r > 0)) return;
+  setView(sanitize({ ...st, view: { cx, cy, r } }).view);
+}
+
 function unpreset() { $('p-preset').value = ''; $('presetNote').textContent = ''; }
 
+// An example sets the map and the view; the colour stays.
 function loadPreset(i) {
   const p = PRESETS[i];
   if (!p) return;
-  st = sanitize({ ...DEFAULTS, size: st.size, ...p.state, view: p.state.view || null });
+  const colour = { ...rampOf(st), lw: st.lw, invert: st.invert, circle: st.circle, aa: st.aa };
+  st = sanitize({ ...DEFAULTS, ...p.state, ...colour });
+  $('p-preset').value = String(i);
   $('presetNote').textContent = p.note || '';
-  resetTransform();
-  syncControls();
-  schedule(0);
+  setView(st.view);
 }
 
-function init() {
-  spawn();
-  shows.push(complexControl('k', -2, 6), complexControl('z0', -4, 4), complexControl('y0', -4, 4));
-  const sel = $('p-preset');
-  sel.innerHTML = '<option value="">Choose an example…</option>' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
-  sel.addEventListener('change', () => { if (sel.value !== '') loadPreset(+sel.value); });
-  $('p-slice').addEventListener('change', () => { st.slice = $('p-slice').value; st.view = null; unpreset(); syncControls(); schedule(0); });
-  $('p-word').addEventListener('change', () => {
-    const w = $('p-word').value.replace(/[^123]/g, '');
-    if (!parseWord(w).length) { $('p-word').classList.add('bad'); return; }
-    $('p-word').classList.remove('bad');
-    st.word = w; unpreset(); syncControls(); schedule(0);
-  });
-  $('p-it').addEventListener('input', () => { st.maxIt = Math.round(10 ** +$('p-it').value); $('v-it').textContent = st.maxIt; schedule(200); });
-  $('p-pal').addEventListener('change', () => { st.pal = $('p-pal').value; recolour(); });
-  $('p-bands').addEventListener('input', () => { st.bands = +$('p-bands').value; syncControls(); recolour(); });
-  $('p-phase').addEventListener('input', () => { st.phase = +$('p-phase').value; syncControls(); recolour(); });
-  $('p-inside').addEventListener('change', () => { st.inside = $('p-inside').value; recolour(); });
-  $('p-size').addEventListener('change', () => { st.size = +$('p-size').value; writeHash(); });
-  $('fitBtn').addEventListener('click', () => { st.view = null; resetTransform(); schedule(0); });
-  $('saveBtn').addEventListener('click', save);
+const presetSel = $('p-preset');
+presetSel.innerHTML = '<option value="">Choose an example…</option>' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
+presetSel.addEventListener('change', () => { if (presetSel.value !== '') loadPreset(+presetSel.value); });
 
-  new ResizeObserver(() => schedule(100)).observe(stage);
-  window.addEventListener('hashchange', () => {
-    const s = parseHash(location.hash);
-    if (s && JSON.stringify(s) !== JSON.stringify(st)) { st = s; resetTransform(); syncControls(); schedule(0); }
-  });
+$('p-re').addEventListener('change', onViewInput);
+$('p-im').addEventListener('change', onViewInput);
+$('p-r').addEventListener('change', onViewInput);
+$('p-seed').addEventListener('keydown', e => { if (e.key === 'Enter') $('seedBtn').click(); });
+$('seedBtn').addEventListener('click', () => newPlace(sanitize({ seed: $('p-seed').value }).seed));
+$('p-aa').addEventListener('change', function() { st.aa = +this.value; render(); });
+$('p-mode').addEventListener('change', function() {
+  st.mode = this.value;
+  if (st.mode === 'all' && st.slice === 'line') { st.slice = 'surface'; syncInputs(); unpreset(); setView(WHOLE); return; }
+  syncInputs(); mapChanged(0);
+});
+$('p-slice').addEventListener('change', function() { st.slice = this.value; syncInputs(); unpreset(); setView(WHOLE); });
+$('p-word').addEventListener('change', function() {
+  const w = this.value.replace(/[^123]/g, '');
+  if (!parseWord(w).length) { this.classList.add('bad'); return; }
+  st.word = w; syncInputs(); mapChanged(0);
+});
+$('p-it').addEventListener('change', function() { st.maxIt = sanitize({ ...st, maxIt: this.value }).maxIt; this.value = st.maxIt; render(); });
+$('p-lw').addEventListener('input', function() { st.lw = +this.value; $('v-lw').textContent = st.lw.toFixed(2); recolour(); });
+$('p-inv').addEventListener('change', function() { st.invert = this.checked; recolour(); });
+$('p-circle').addEventListener('change', function() { st.circle = this.checked; recolour(); });
 
-  const s = parseHash(location.hash);
-  if (s) st = s;
-  else { const p = PRESETS[0]; st = sanitize({ ...DEFAULTS, ...p.state }); sel.value = '0'; $('presetNote').textContent = p.note || ''; }
-  syncControls();
-  schedule(0);
+$('newBtn').addEventListener('click', () => newPlace(randomSeed()));
+$('colourBtn').addEventListener('click', newColour);
+$('stopBtn').addEventListener('click', () => {
+  renderGen++;
+  pool.reset();
+  computing = null;
+  colouring = false;
+  shown = null;
+  setRunning(false);
+  setProgress(1);
+  $('stats').textContent = 'Stopped';
+});
+$('saveBtn').addEventListener('click', () => {
+  canvas.toBlob(b => download(b, fileName()), 'image/png');
+});
+$('exportBtn').addEventListener('click', exportImage);
+
+function fileName(size) {
+  const name = st.mode === 'all' ? 'markov_all' : 'markov_' + st.word;
+  return `${name}_${st.view.r.toExponential(2).replace('+', '')}${size ? '_' + size : ''}.png`;
 }
 
-// Saves the view at the chosen size.
-async function save() {
-  const W = st.size, view = { ...currentView() };
-  $('saveBtn').disabled = true;
-  $('stats').textContent = `rendering ${W} × ${W}…`;
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Render the current view at a chosen size in a pool of its own, so the image on screen keeps its
+// samples, and save it. A small reference render fixes the tonal range, so every size comes out
+// alike; then the workers compute and colour strips of rows without keeping their samples, so even
+// 8192 × 8192 needs little memory.
+let exportPool = null;
+const EXPORT_REF = 1024, EXPORT_STRIP = 32;
+async function exportImage() {
+  const size = +$('p-size').value;
+  const aa = size > 4096 ? 2 : 3;
+  const btn = $('exportBtn'), text = btn.textContent;
+  if (exportPool) exportPool.close();
+  const p = exportPool = new Pool(NWORK);
+  btn.disabled = true;
   try {
-    const data = await compute(W, view, st.maxIt);
-    const off = document.createElement('canvas');
-    off.width = off.height = W;
-    off.getContext('2d').putImageData(colourise(data, W, new ImageData(W, W)), 0, 0);
-    off.toBlob(blob => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'markov-julia.png';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    }, 'image/png');
+    const view = { ...st.view };
+    btn.textContent = 'Measuring…';
+    const t = await computeImage(p, view, EXPORT_REF, 2, () => {});
+    const job = {
+      type: 'render', ...t, ...(await greyRange(p, t)), ...colourParams(),
+      params: mapParams(), view, W: size, aa, step: 1, maxIt: st.maxIt,
+    };
+    const out = document.createElement('canvas');
+    out.width = out.height = size;
+    const octx = out.getContext('2d');
+    // each worker takes the next strip as soon as it is free
+    let next = 0, done = 0;
+    btn.textContent = 'Rendering… 0%';
+    await Promise.all(p.workers.map(async (_, i) => {
+      while (next < size) {
+        const k = next, rows = Math.min(EXPORT_STRIP, size - k);
+        next += rows;
+        const r = await p.call(i, { ...job, k, rows });
+        octx.putImageData(new ImageData(r.data, size, rows), 0, k);
+        done += rows;
+        btn.textContent = `Rendering… ${Math.round(100 * done / size)}%`;
+      }
+    }));
+    btn.textContent = 'Saving…';
+    const blob = await new Promise(res => out.toBlob(res, 'image/png'));
+    download(blob, fileName(size));
+  } catch (e) {
+    if (e.message !== 'cancelled') setStatus(e.message);
   } finally {
-    $('saveBtn').disabled = false;
-    render();
+    p.close();
+    if (exportPool === p) exportPool = null;
+    btn.textContent = text;
+    btn.disabled = false;
   }
 }
 
-init();
+// ---------- resize ----------
+
+let lastWidth = stage.clientWidth;
+new ResizeObserver(() => {
+  if (Math.abs(stage.clientWidth - lastWidth) > 2) {
+    lastWidth = stage.clientWidth;
+    clearTimeout(commitTimer);
+    commitTimer = setTimeout(() => render(), 200);
+  }
+}).observe(stage);
+
+// ---------- start ----------
+
+const fromHash = readHash();
+if (fromHash) {
+  const { colour } = fromHash.fromHash;
+  delete fromHash.fromHash;
+  st = fromHash;
+  // an old link, without a colour, gets a random one
+  if (!colour) Object.assign(st, randomColour(Math.random));
+  shownView = st.view;
+  syncInputs();
+  render();
+} else {
+  // a first visit gets the first example, in a random colour
+  Object.assign(st, randomColour(Math.random));
+  loadPreset(0);
+}
