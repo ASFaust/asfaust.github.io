@@ -37,7 +37,7 @@
       <div class="controls">
         <button id="randomBtn" title="A random seed with a few random operators">Random</button>
         <button id="resetBtn" title="Turn back to the starting view">Reset view</button>
-        <button id="renderBtn" aria-pressed="false" title="Path-trace the scene: soft shadows, light between the faces, real glass. It refines while the view is still.">Render</button>
+        <label class="toggle" title="Ray tracing: path-trace the scene for soft shadows, light between the faces and real glass. It refines while the view is still."><input type="checkbox" id="rtToggle"> RT</label>
         <button id="saveBtn" title="Save the image as shown">Save PNG</button>
         <button id="infoBtn" title="What is this, and how does it work?">Info</button>
       </div>
@@ -333,7 +333,7 @@
           </div>
           <div class="param">
             <label for="p-samples"><span>Render samples</span></label>
-            <small>with Render on: rays per pixel in the saved image; more is smoother and slower</small>
+            <small>with RT on: rays per pixel in the saved image; more is smoother and slower</small>
             <select id="p-samples">
               <option value="64">64</option>
               <option value="256" selected>256</option>

@@ -473,12 +473,12 @@ export class Viewer {
     this.orient();
   }
 
-  // Something changed: draw again, and with Render on, trace the scene again once it is still.
+  // Something changed: draw again, and with RT on, trace the scene again once it is still.
   request() { this.dirty = true; this.changed = performance.now(); this.stale = true; }
 
   // ---------- render (path tracing) ----------
 
-  // Render on: the view traces the scene whenever nothing has moved for a moment, refining up to
+  // RT on: the view traces the scene whenever nothing has moved for a moment, refining up to
   // TRACE_MAX samples; while anything moves it shows the fast view. The tracer is loaded the first
   // time.
   async setTrace(on) {
@@ -630,7 +630,7 @@ export class Viewer {
   }
 
   // Renders the current view again as a size × size PNG; transparent leaves out the background.
-  // With Render on it is traced to samples samples, yielding to the page between batches and
+  // With RT on it is traced to samples samples, yielding to the page between batches and
   // reporting onProgress(samples done).
   async snapshot(size, background, { samples = 256, onProgress } = {}) {
     const r = this.renderer;

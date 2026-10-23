@@ -13,11 +13,11 @@ Suggested start: R21, R22 (the confirmed workflow; R20 is in), then R1 once the 
 | ID | item | done when |
 |---|---|---|
 | R1 | **Looks instead of materials × palettes × styles.** A Look choice (paper, mathy, and what the owner confirms from the proposed list), each with only its own controls; colour only in mathy; delete unused presets; old URLs map to the nearest look. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles) | The owner has picked the looks from sample renders, and the panel offers them. |
-| R3 | **AO that works**, replacing GTAO: analytic polygon AO, baked ray-traced AO, or the path tracer. → [R3](rendering.md#r3-ambient-occlusion-that-works) | Creases shade cleanly, without grain or smudges, on the catalogue's folded shapes. |
+| R3 | **Remove AO from the rasterizer** (owner, 2026-10-23: the ray tracer takes care of creases, the fast view needs no AO). Delete GTAO, its composer and the AO sliders; old links with `ao` keys still load. → [R3](rendering.md#r3-remove-ambient-occlusion-from-the-rasterizer) | The fast view has no AO code or controls, and old links load. |
 | R4 | **Depth of field**, live (BokehPass) and in final renders. → [R4](rendering.md#r4-depth-of-field) | A focus/aperture control; export uses it. |
 | R7 | **Detached solid faces** render mode: shrink and extrude each face into a solid. → [R7](rendering.md#r7-detached-solid-faces) | The mode works on convex, folded and stellated shapes, including export. |
 | R8 | **Iridescent reworked**: no colour controls, a rainbow sweep within each face. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
-| R21 | **Render toggle**, built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
+| R21 | **Render toggle** (the RT checkbox), built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
 | R22 | **Blender scene script** in Export: a Python file that builds mesh, materials, lights, camera and backdrop (from the spike's `cycles.py`). Needs R20. → [workflow](rendering.md#the-workflow-proposed-by-a-session-confirmed-by-the-owner-2026-10-23) | `blender --python scene.py` opens the page's scene ready to render. |
 | R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
 | R11–R19 | Older ideas: staging, glow lines and bloom, tubes, smooth subdivision, fake SSS, real glass, per-face painting, turntable export, orthographic camera. → [rendering.md](rendering.md#older-ideas-still-open) | Each when its look is confirmed. |
@@ -41,6 +41,7 @@ X1 and X2 are the tools the questions need; do them first.
 | X5 | **Which graphs give affine stars**; test the zone hypothesis (self-crossing zones collapse). → [X5](exploration.md#x5-which-graphs-give-affine-stars) | Zone counts and collapse predictions checked on the known cases. |
 | X6 | **Several resting points of Regular faces**: list them by many symmetric starts and clustering. → [X6](exploration.md#x6-several-resting-points-of-regular-faces) | Counts for `dosmA5` and a few others. |
 | X7 | **Predict and classify in general**, from the accumulated surveys. → [X7](exploration.md#x7-predicting-and-classifying-in-general) | Ongoing; rules recorded as found. |
+| X8 | **LLM-guided search for nice renders** (owner, 2026-10-23): a loop in which a vision-capable model proposes shapes, optimizer chains and render settings (look, scene, light, camera), looks at the renders, and keeps what it judges nice or artsy, building a gallery and notes on what works. → [X8](exploration.md#x8-llm-guided-search-for-nice-renders) | A first run with its gallery shown to the owner, and the harness documented. |
 
 ## Optimizers (O): [realization/README.md](realization/README.md#goal-b-artsy-shapes)
 

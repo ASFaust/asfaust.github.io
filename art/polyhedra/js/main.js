@@ -848,10 +848,9 @@ function stageBackground() { return background() === 'dark' ? '#0f0f10' : '#ffff
 $('saveBtn').addEventListener('click', () => {
   $('canvas').toBlob(b => b && download(b, fileName('png')), 'image/png');
 });
-// Render: the view path-traces the scene while it is still; the note says how far it has got
-$('renderBtn').addEventListener('click', async () => {
-  const on = $('renderBtn').getAttribute('aria-pressed') !== 'true';
-  $('renderBtn').setAttribute('aria-pressed', on);
+// RT: while on, the view path-traces the scene when it is still; the note says how far it has got
+$('rtToggle').addEventListener('change', async () => {
+  const on = $('rtToggle').checked;
   $('traceNote').textContent = on ? 'loading the path tracer…' : '';
   await viewer.setTrace(on);
   viewer.setDenoise($('p-denoise').checked);
