@@ -4,6 +4,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { Lines } from './lines.js';
+import { tileMesh, tilePositions } from './tiles.js';
 
 export const STYLES = ['solid', 'glass', 'frame'];
 export const COLOURINGS = ['origin', 'sides', 'orbit', 'single'];
@@ -135,7 +136,7 @@ export class Viewer {
 
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
-      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, spin: false, ink: 'auto', dark: false,
+      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, spin: false, ink: 'auto', dark: false,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -157,6 +158,21 @@ export class Viewer {
   // the faces of a new polyhedron (from the worker's 'mesh' message)
   setMesh(m) {
     this.mesh = m;
+    this.faceOrbit = null;
+    this.shape();
+    this.setPositions(m.pos);
+  }
+
+  // Whether the faces are drawn as they are or as detached tiles (R7): 0 the faces, 1 flat
+  // tiles, 2 solid tiles. The tiles need their own faces.
+  tiling() { const o = this.opts; return o.gap > 0 ? (o.thick > 0 ? 2 : 1) : 0; }
+
+  // The faces drawn (this.shown: nf, nv, ne, fo, fv, and src, the face of the polyhedron each
+  // belongs to, or null for the faces themselves), and the buffers for them.
+  shape() {
+    const P = this.mesh, t = this.tiling();
+    this.tiles = t;
+    const m = this.shown = t ? tileMesh(P, t === 2) : { nf: P.nf, nv: P.nv, ne: P.fo[P.nf] / 2, fo: P.fo, fv: P.fv, src: null };
     let tris = 0;
     for (let f = 0; f < m.nf; f++) { const d = m.fo[f + 1] - m.fo[f]; tris += d === 3 ? 1 : d; }
     const g = new THREE.BufferGeometry();
@@ -173,25 +189,37 @@ export class Viewer {
     this.lines.setMesh(m);
     this.faces.geometry.dispose();
     this.faces.geometry = g; this.backs.geometry = g;
-    this.faceOrbit = null;
     this.recolour();
-    this.setPositions(m.pos);
   }
 
   // new vertex positions for the same faces
   setPositions(pos) {
-    const m = this.mesh;
-    if (!m) return;
+    if (!this.mesh) return;
+    this.raw = pos;
     // scale to fit the unit sphere
     let r = 0;
     for (let i = 0; i < pos.length; i += 3) r = Math.max(r, Math.hypot(pos[i], pos[i + 1], pos[i + 2]));
     const s = 1 / (r || 1);
-    const p = this.pos = new Float32Array(pos.length);
+    let p = this.pos = new Float32Array(pos.length);
     for (let i = 0; i < pos.length; i++) p[i] = pos[i] * s;
+    // the mean edge of the polyhedron, which the painted edges and the tiles' thickness follow
+    const P = this.mesh;
+    let len = 0;
+    for (let f = 0; f < P.nf; f++) {
+      const a = P.fo[f], d = P.fo[f + 1] - a;
+      for (let k = 0; k < d; k++) {
+        const u = 3 * P.fv[a + k], w = 3 * P.fv[a + (k + 1) % d];
+        len += Math.hypot(p[w] - p[u], p[w + 1] - p[u + 1], p[w + 2] - p[u + 2]);
+      }
+    }
+    this.meanEdge = len / P.fv.length;
+    if (this.tiles) p = tilePositions(P, p, this.tiles === 2, 1 - this.opts.gap, this.opts.thick * this.meanEdge);
+    this.shownPos = p;
+    const m = this.shown;
 
     const attr = this.faces.geometry.attributes;
     const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array;
-    let o = 0, len = 0;
+    let o = 0;
     const put = (x, y, z, nx, ny, nz) => { pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz; o += 3; };
     // the line through sides of the current face, as [point, inward normal within the face]
     const lines = [];
@@ -207,7 +235,6 @@ export class Viewer {
         ny += (p[u + 2] - p[w + 2]) * (p[u] + p[w]);
         nz += (p[u] - p[w]) * (p[u + 1] + p[w + 1]);
         cx += p[u]; cy += p[u + 1]; cz += p[u + 2];
-        len += Math.hypot(p[w] - p[u], p[w + 1] - p[u + 1], p[w + 2] - p[u + 2]);
       }
       const l = Math.hypot(nx, ny, nz) || 1;
       nx /= l; ny /= l; nz /= l; cx /= d; cy /= d; cz /= d;
@@ -242,7 +269,6 @@ export class Viewer {
     }
     attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
-    this.meanEdge = len / m.fv.length;
     this.lines.setPositions(p);
     this.orient();
     this.placeLines();
@@ -267,8 +293,8 @@ export class Viewer {
     this.faceMat.depthWrite = !glass;
     if (glass) this.faceMat.roughness = Math.min(look.roughness, 0.15);
     // the frame is the painted edges alone, seen from both sides, with smooth borders from the
-    // multisampling
-    this.faceMat.side = frame ? THREE.DoubleSide : THREE.FrontSide;
+    // multisampling; flat tiles have two sides too
+    this.faceMat.side = frame || (o.gap > 0 && o.thick === 0) ? THREE.DoubleSide : THREE.FrontSide;
     this.faceMat.alphaToCoverage = frame;
     this.faceMat.needsUpdate = true;
     this.uniforms.uFrame.value = frame ? 1 : 0;
@@ -283,6 +309,9 @@ export class Viewer {
     if (ink === 'colour') this.uniforms.uInk.value.setRGB(...o.palette[0].map(x => 0.35 * x));
     else this.uniforms.uInk.value.set(ink === 'light' ? 0xeeeeea : 0x1c1c20);
     if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette)) this.recolour();
+    // detached faces: new faces when tiles come or go, or gain or lose their thickness
+    if (this.mesh && this.tiling() !== this.tiles) { this.shape(); this.setPositions(this.raw); }
+    else if (this.mesh && this.tiles && (prev.gap !== o.gap || prev.thick !== o.thick)) this.setPositions(this.raw);
     if (prev.fov !== o.fov) this.resize();
     this.request();
   }
@@ -303,7 +332,7 @@ export class Viewer {
   }
 
   recolour() {
-    const m = this.mesh, o = this.opts;
+    const m = this.mesh, o = this.opts, S = this.shown;
     const C = this.faces.geometry.attributes.color, ca = C.array;
     const sides = m.census.map(([s]) => s), pal = o.palette;
     const colourOf = f => {
@@ -313,8 +342,9 @@ export class Viewer {
       return pal[key % pal.length];
     };
     let k = 0;
-    for (let f = 0; f < m.nf; f++) {
-      const d = m.fo[f + 1] - m.fo[f], n = 3 * (d === 3 ? 1 : d), c = colourOf(f);
+    // a tile takes its face's colour
+    for (let f = 0; f < S.nf; f++) {
+      const d = S.fo[f + 1] - S.fo[f], n = 3 * (d === 3 ? 1 : d), c = colourOf(S.src ? S.src[f] : f);
       for (let i = 0; i < n; i++, k += 3) { ca[k] = c[0]; ca[k + 1] = c[1]; ca[k + 2] = c[2]; }
     }
     C.needsUpdate = true;

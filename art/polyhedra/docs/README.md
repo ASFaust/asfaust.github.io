@@ -79,6 +79,7 @@ js/frame.js               whiten (ZCA), the old adjustments (still replayed), sh
 js/readable.js            Readable optimizer; readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup(), views() (symmetric orientations)
 js/viewer.js              three.js scene, painted-edges shader, materials, palette colouring, export render
+js/tiles.js               detached faces (R7): the tiles' faces and positions
 js/lines.js               edges drawn on the screen: face-ID buffer, capsule lines, ink composite
 js/blender.js             the Blender scene script: the RT scene as data plus Python that builds it for Cycles
 js/trace.js               RT: the scene copied for three-gpu-pathtracer, traced a tile per frame (loaded on demand)

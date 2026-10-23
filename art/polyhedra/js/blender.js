@@ -17,7 +17,8 @@ const rgb = c => [r6(c.r), r6(c.g), r6(c.b)];   // linear, as three.js keeps col
 // The scene as data. size is the square picture in pixels; samples, denoise and transparent are
 // the Export panel's.
 export function sceneData(v, { size, samples, denoise, transparent, title }) {
-  const o = v.opts, m = v.mesh, p = v.pos;
+  // the faces as drawn: the polyhedron's, or its detached tiles
+  const o = v.opts, m = v.shown, p = v.shownPos;
   // the camera as for a square export
   v.placeCamera(1);
   v.scene.updateMatrixWorld(true);

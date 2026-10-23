@@ -18,7 +18,7 @@ const $ = id => document.getElementById(id);
 const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
-  hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, spin: false,
+  hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, spin: false,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -46,6 +46,8 @@ function sanitize(s) {
     ink: ONE(s.ink, INKS, DEFAULTS.ink),
     fov: Math.round(NUM(s.fov, 2, 70, DEFAULTS.fov)),
     blur: NUM(s.blur, 0, 0.5, DEFAULTS.blur),
+    gap: NUM(s.gap, 0, 0.6, DEFAULTS.gap),
+    thick: NUM(s.thick, 0, 1, DEFAULTS.thick),
     focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
     spin: typeof s.spin === 'boolean' ? s.spin : DEFAULTS.spin,
     orient: typeof s.orient === 'string' && /^(free|[fve]\d{1,5})$/.test(s.orient) ? s.orient : DEFAULTS.orient,
@@ -61,7 +63,7 @@ function sanitize(s) {
 
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
-  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', spin: 'spin',
+  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', spin: 'spin',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -610,6 +612,9 @@ function showLook() {
   $('p-hidden').disabled = st.style === 'solid';
   $('p-ink').value = st.ink;
   $('p-fov').value = st.fov; $('v-fov').textContent = st.fov + '°';
+  $('p-gap').value = st.gap; $('v-gap').textContent = st.gap ? st.gap.toFixed(2) : 'off';
+  $('p-thick').value = st.thick; $('v-thick').textContent = st.thick ? st.thick.toFixed(2) + ' edges' : 'flat';
+  $('p-thick').disabled = st.gap === 0;
   $('p-blur').value = st.blur; $('v-blur').textContent = st.blur ? st.blur.toFixed(2) : 'off';
   $('p-focus').value = st.focus; $('v-focus').textContent = st.focus === 0 ? 'centre' : (st.focus < 0 ? 'nearer ' : 'farther ') + Math.abs(st.focus).toFixed(2);
   $('p-focus').disabled = st.blur === 0;
@@ -627,7 +632,7 @@ function showLook() {
   viewer.set({
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
-    edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, spin: st.spin,
+    edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, spin: st.spin,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -716,6 +721,8 @@ function bindLook() {
   look('p-ink', 'ink', el => el.value);
   look('p-fov', 'fov', el => +el.value);
   look('p-blur', 'blur', el => +el.value);
+  look('p-gap', 'gap', el => +el.value);
+  look('p-thick', 'thick', el => +el.value);
   look('p-focus', 'focus', el => +el.value);
   look('p-orient', 'orient', el => el.value);
   look('p-ground', 'ground', el => el.value);
@@ -803,8 +810,10 @@ $('exportBtn').addEventListener('click', async () => {
     if (size < want) alert(`This graphics card renders at most ${max} × ${max}; saved at that size.`);
   } finally { btn.disabled = false; btn.textContent = label; }
 });
-$('objBtn').addEventListener('click', () => { if (mesh) download(obj(mesh, positions, st.text), fileName('obj')); });
-$('stlBtn').addEventListener('click', () => { if (mesh) download(stl(mesh, positions), fileName('stl')); });
+// the faces as drawn: detached tiles (scaled as the view has them) or the polyhedron itself
+const solid = () => (viewer.tiles ? [viewer.shown, viewer.shownPos] : [mesh, positions]);
+$('objBtn').addEventListener('click', () => { if (mesh) download(obj(...solid(), st.text), fileName('obj')); });
+$('stlBtn').addEventListener('click', () => { if (mesh) download(stl(...solid()), fileName('stl')); });
 $('blendBtn').addEventListener('click', () => {
   if (!mesh) return;
   const py = blenderScene(viewer, {

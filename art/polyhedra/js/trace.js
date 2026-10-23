@@ -61,6 +61,8 @@ export class Tracer {
     v.scene.updateMatrixWorld(true);
     if (o.style !== 'frame') {
       const mat = (MATERIALS[o.style === 'glass' ? 'glass' : o.material] || MATERIALS.matte)();
+      // flat detached faces are seen from both sides
+      if (v.tiles === 1) mat.side = THREE.DoubleSide;
       // Only what the tracer reads (the viewer's geometry also carries the edge distances and face
       // numbers for its shaders), and the colours as RGBA: the tracer gives meshes without colours
       // four components and merges everything into one buffer, so three would be read with the

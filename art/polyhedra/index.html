@@ -182,6 +182,16 @@
             </select>
           </div>
           <div class="param">
+            <label for="p-gap"><span>Detach faces</span><span id="v-gap"></span></label>
+            <small>shrinks every face towards its centre, so each becomes a tile of its own</small>
+            <input type="range" id="p-gap" min="0" max="0.6" step="0.02">
+          </div>
+          <div class="param">
+            <label for="p-thick"><span>Tile thickness</span><span id="v-thick"></span></label>
+            <small>detached faces as solid slabs, this many edge lengths deep; 0 leaves them flat</small>
+            <input type="range" id="p-thick" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
             <label for="p-colouring"><span>Colour faces by</span></label>
             <select id="p-colouring">
               <option value="origin">Origin</option>

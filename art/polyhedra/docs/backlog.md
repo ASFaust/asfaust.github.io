@@ -13,7 +13,6 @@ Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the 
 | ID | item | done when |
 |---|---|---|
 | R1 | **Looks instead of materials × palettes × styles.** A Look choice (paper, mathy, and what the owner confirms from the proposed list), each with only its own controls; colour only in mathy; delete unused presets; old URLs map to the nearest look. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles) | The owner has picked the looks from sample renders, and the panel offers them. |
-| R7 | **Detached solid faces** render mode: shrink and extrude each face into a solid. → [R7](rendering.md#r7-detached-solid-faces) | The mode works on convex, folded and stellated shapes, including export. |
 | R8 | **Iridescent reworked**: no colour controls, a rainbow sweep within each face. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
 | R21 | **Render toggle** (the RT checkbox), built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
 | R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
@@ -59,6 +58,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-23.** R7 Detached solid faces: *Detach faces* and *Tile thickness* in Appearance (URL `gap`, `thk`); the tiles are drawn, traced, sent to Blender and saved as OBJ/STL in place of the faces (`js/tiles.js`). → [rendering.md](rendering.md#r7-detached-solid-faces)
 - **2026-10-23.** R4 Depth of field: *Depth of field* and *Focus* in the Scene panel (URL `dof`, `fo`), traced by RT (PhysicalCamera) and carried into the Blender scene; the fast view stays sharp, and the drawn lines stay sharp. Found on the way: a white background traced black (library bug, worked round). → [rendering.md](rendering.md#r4-depth-of-field)
 - **2026-10-23.** U1 Examples menu under Named shapes: all 29 catalogue entries in five groups, with the owner's short names (`js/examples.js`); choosing one opens its link. The chain format moved to `js/chain.js` so `tests/examples.mjs` replays every link exactly as the page does; all match the catalogue's faces, inward faces and reflex edges (and its round counts), about 4 minutes in all.
 - **2026-10-23.** R3: AO removed from the fast view (owner: RT does creases): GTAO, the composer, the two sliders and the vendored add-ons only they used; old links with `ao`/`aos` still load (unknown keys are ignored). → [rendering.md](rendering.md#r3-remove-ambient-occlusion-from-the-rasterizer)
