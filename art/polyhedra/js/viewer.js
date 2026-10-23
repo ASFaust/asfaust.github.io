@@ -5,6 +5,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { Lines } from './lines.js';
 import { tileMesh, tilePositions } from './tiles.js';
+import { filmUV, FILM_GLSL } from './film.js';
 
 export const STYLES = ['solid', 'glass', 'frame'];
 export const COLOURINGS = ['origin', 'sides', 'orbit', 'single'];
@@ -14,31 +15,11 @@ export const MATERIALS = ['matte', 'glossy', 'iridescent'];
 // no Fresnel rim), so a face's brightness depends only on its orientation and can be read; the
 // environment still lights it diffusely. Glass takes the material's (owner, 2026-10-23: matte
 // glass without highlights looks right).
-// The iridescent look's film: thicknesses in nanometres, and the base under it (linear RGB).
-export const FILM_RANGE = [250, 700], FILM_BASE = [0.02, 0.02, 0.025];
-// The film's thickness at a point, from 0 to 1 of FILM_RANGE: waves across the shape a few mean
-// edges long, in two directions, so the bands sweep through each face and differ from face to face.
-// Each corner carries it (as its u coordinate) and it is interpolated across the face's fan.
-export function film(x, y, z, edge) {
-  const s = 1 / (2.5 * edge);
-  return 0.5 + 0.35 * Math.sin(s * (0.8 * x + 0.5 * y + 0.33 * z) * 6.283) + 0.15 * Math.sin(s * (-0.3 * x + 0.9 * y - 0.3 * z) * 4.1 + 1.3);
-}
-// a ramp the thickness map reads: green from 0 to 1 along u
-export const FILM_RAMP = (() => {
-  const d = new Uint8Array(4 * 256);
-  for (let i = 0; i < 256; i++) d.set([i, i, i, 255], 4 * i);
-  const t = new THREE.DataTexture(d, 256, 1);
-  t.magFilter = t.minFilter = THREE.LinearFilter;
-  t.needsUpdate = true;
-  return t;
-})();
-
 const LOOKS = {
   matte: { roughness: 1, metalness: 0, specularIntensity: 0, clearcoat: 0, iridescence: 0, env: 0.6 },
   glossy: { roughness: 0.35, metalness: 0, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.08, iridescence: 0, env: 0.8 },
-  // a thin film on a dark base (R8): the colour is all interference, with no colour controls;
-  // the film's thickness varies across each face (film()), so a face shows bands of colour
-  iridescent: { roughness: 0.2, metalness: 0, specularIntensity: 1, clearcoat: 0, iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessRange: FILM_RANGE, env: 1.8 },
+  // the colours of a thin film (film.js), lit like matte: no colour controls, no highlights (R8)
+  iridescent: { roughness: 1, metalness: 0, specularIntensity: 0, clearcoat: 0, iridescence: 0, env: 0.6 },
 };
 export const INKS = ['auto', 'dark', 'light', 'colour'];
 // painted: bands on the faces, as wide as a fraction of the edge length; screen: the same bands,
@@ -52,6 +33,8 @@ export const GROUNDS = ['none', 'floor', 'backdrop'];
 const LIGHTS = { soft: [-2, 3, 4], top: [0.3, 4, 0.8], side: [-4, 1.2, 0.6], rim: [1.5, 2.5, -3] };
 export const LIGHT_NAMES = Object.keys(LIGHTS);
 const DEG = Math.PI / 180;
+// the iridescent film carries its own colour (the path tracer multiplies its texture by this)
+const WHITE = [1, 1, 1];
 // Render: trace after this long without a change, up to this many samples
 const STILL_MS = 250, TRACE_MAX = 2048;
 const SPIN = 0.25; // radians per second when turning by itself
@@ -68,11 +51,16 @@ function paintEdges(material, uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 edist;\nvarying vec3 vEdist;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdist = edist;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 edist;\nvarying vec3 vEdist;\nattribute vec2 film;\nvarying vec2 vFilm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdist = edist;\nvFilm = film;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nuniform float uScreen;\nuniform float uDepth;\nuniform float uRef;\nvarying vec3 vEdist;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nuniform float uScreen;\nuniform float uDepth;\nuniform float uRef;\nuniform float uFilm;\nvarying vec3 vEdist;\nvarying vec2 vFilm;\n' + FILM_GLSL)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        // the iridescent film, per pixel, from the face's own normal and the view
+        if (uFilm > 0.5) {
+          vec3 fn = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
+          diffuseColor.rgb = filmColour(vFilm, abs(dot(fn, normalize(vViewPosition))));
+        }
         float line = 0.0;
         if (uScreen > 0.5) {
           vec3 g = vec3(length(vec2(dFdx(vEdist.x), dFdy(vEdist.x))), length(vec2(dFdx(vEdist.y), dFdy(vEdist.y))), length(vec2(dFdx(vEdist.z), dFdy(vEdist.z))));
@@ -141,7 +129,7 @@ export class Viewer {
 
     this.uniforms = {
       uInk: { value: new THREE.Color(0x1c1c20) }, uWidth: { value: 0 }, uFrame: { value: 0 },
-      uScreen: { value: 0 }, uDepth: { value: 0 }, uRef: { value: 1 },
+      uScreen: { value: 0 }, uDepth: { value: 0 }, uRef: { value: 1 }, uFilm: { value: 0 },
     };
     this.faceMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.45, metalness: 0 });
     this.backMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.BackSide });
@@ -156,7 +144,7 @@ export class Viewer {
 
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
-      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, spin: false, ink: 'auto', dark: false,
+      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -199,8 +187,8 @@ export class Viewer {
     for (const name of ['position', 'normal', 'color', 'edist']) {
       g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9 * tris), 3));
     }
-    // the iridescent film's thickness at each corner
-    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6 * tris), 2));
+    // the iridescent film's coordinates at each corner (film.js)
+    g.setAttribute('film', new THREE.BufferAttribute(new Float32Array(6 * tris), 2));
     // the face of every corner, for the face buffer of the drawn lines
     const fid = new Float32Array(3 * tris);
     for (let f = 0, k = 0; f < m.nf; f++) {
@@ -240,9 +228,9 @@ export class Viewer {
     const m = this.shown;
 
     const attr = this.faces.geometry.attributes;
-    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array, ua = attr.uv.array, edge = this.meanEdge;
+    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array, ua = attr.film.array, band = this.opts.filmBand * this.meanEdge;
     let o = 0;
-    const put = (x, y, z, nx, ny, nz) => { pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz; ua[2 * o / 3] = film(x, y, z, edge); o += 3; };
+    const put = (x, y, z, nx, ny, nz) => { pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz; ua.set(filmUV(x, y, z, band), 2 * o / 3); o += 3; };
     // the line through sides of the current face, as [point, inward normal within the face]
     const lines = [];
     const dist = (x, y, z, L) => (L ? (x - L[0]) * L[3] + (y - L[1]) * L[4] + (z - L[2]) * L[5] : FAR);
@@ -289,7 +277,7 @@ export class Viewer {
         put(p[w], p[w + 1], p[w + 2], nx, ny, nz); putDist(p[w], p[w + 1], p[w + 2], prev, L, next);
       }
     }
-    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.uv.needsUpdate = true;
+    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.film.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
     this.lines.setPositions(p);
     this.orient();
@@ -310,8 +298,7 @@ export class Viewer {
       if (look[k] !== undefined) { this.faceMat[k] = look[k]; if (k !== 'roughness') this.backMat[k] = look[k]; }
     }
     this.scene.environmentIntensity = look.env;
-    const film = look.iridescence ? FILM_RAMP : null;
-    if (this.faceMat.iridescenceThicknessMap !== film) { this.faceMat.iridescenceThicknessMap = film; this.backMat.iridescenceThicknessMap = film; this.backMat.needsUpdate = true; }
+    this.uniforms.uFilm.value = o.material === 'iridescent' && !glass ? 1 : 0;
     this.faceMat.transparent = glass;
     this.faceMat.opacity = glass ? 0.35 : 1;
     this.faceMat.depthWrite = !glass;
@@ -335,7 +322,7 @@ export class Viewer {
     if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette || prev.material !== o.material || prev.style !== o.style)) this.recolour();
     // detached faces: new faces when tiles come or go, or gain or lose their thickness
     if (this.mesh && this.tiling() !== this.tiles) { this.shape(); this.setPositions(this.raw); }
-    else if (this.mesh && this.tiles && (prev.gap !== o.gap || prev.thick !== o.thick)) this.setPositions(this.raw);
+    else if (this.mesh && ((this.tiles && (prev.gap !== o.gap || prev.thick !== o.thick)) || prev.filmBand !== o.filmBand)) this.setPositions(this.raw);
     if (prev.fov !== o.fov) this.resize();
     this.request();
   }
@@ -363,7 +350,7 @@ export class Viewer {
       const key = o.colouring === 'origin' ? m.ftags[f]
         : o.colouring === 'sides' ? sides.indexOf(m.fo[f + 1] - m.fo[f])
         : o.colouring === 'orbit' && this.faceOrbit ? this.faceOrbit[f] : 0;
-      return o.material === 'iridescent' && o.style !== 'glass' ? FILM_BASE : pal[key % pal.length];
+      return o.material === 'iridescent' && o.style !== 'glass' ? WHITE : pal[key % pal.length];
     };
     let k = 0;
     // a tile takes its face's colour

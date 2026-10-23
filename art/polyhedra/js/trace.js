@@ -9,14 +9,15 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial, PhysicalCamera } from '../vendor/three-gpu-pathtracer.js';
 import { FullScreenQuad } from '../vendor/addons/postprocessing/Pass.js';
-import { FILM_RANGE, FILM_RAMP } from './viewer.js';
+import { FILM_MAP } from './film.js';
 
 // the traced materials, for the viewer's materials; glass is a style, so it overrides them
 const MATERIALS = {
   matte: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
   glossy: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
-  // the film's thickness from the corners' u coordinate, as in the viewer
-  iridescent: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.2, metalness: 0, iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessRange: FILM_RANGE, iridescenceThicknessMap: FILM_RAMP }),
+  // the film's colour as a texture over its two coordinates (film.js), lit like matte
+  // (fully rough: a specular intensity of 0 gave black specks, from NaNs in the tracer)
+  iridescent: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, map: FILM_MAP }),
   glass: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.03, metalness: 0, transmission: 1, ior: 1.5, thickness: 0.05, side: THREE.DoubleSide }),
 };
 
@@ -70,7 +71,9 @@ export class Tracer {
       // four components and merges everything into one buffer, so three would be read with the
       // wrong stride, and some faces would come out black.
       const g = new THREE.BufferGeometry(), src = v.faces.geometry.attributes;
-      for (const k of ['position', 'normal', 'uv']) g.setAttribute(k, src[k].clone());
+      for (const k of ['position', 'normal']) g.setAttribute(k, src[k].clone());
+      // the film's coordinates as the texture coordinates of the iridescent look
+      g.setAttribute('uv', src.film.clone());
       const c3 = src.color.array, c4 = new Float32Array(c3.length / 3 * 4).fill(1);
       for (let i = 0, j = 0; i < c3.length; i += 3, j += 4) { c4[j] = c3[i]; c4[j + 1] = c3[i + 1]; c4[j + 2] = c3[i + 2]; }
       g.setAttribute('color', new THREE.BufferAttribute(c4, 4));
