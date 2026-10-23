@@ -11,6 +11,8 @@
 //   ∇·u   = (1/A) Σ l (u_i + u_j)/2 · n
 //   ∇f    = (1/A) Σ l (f_j − f_i)/2 n        (Green–Gauss, then projected onto the tangent plane)
 
+import { buildHierarchy, setOperator, precondition } from './multigrid.js';
+
 function circumcentre(p, a, b, c) {
   const ax = p[3 * a], ay = p[3 * a + 1], az = p[3 * a + 2];
   const ux = p[3 * b] - ax, uy = p[3 * b + 1] - ay, uz = p[3 * b + 2] - az;
@@ -117,41 +119,43 @@ export function buildOps(grid) {
     return out;
   };
 
-  // Solves (diag_i − ∇·k∇) x = b for x by conjugate gradients with a Jacobi
-  // preconditioner, with per-cell k ≥ 0 (the edge value is the mean of its two cells'; the
-  // system is symmetric once multiplied by the cell areas). x holds the first guess.
-  ops.solveImplicit = (diag, k, b, x, tol = 1e-8, maxIter = 300) => {
-    const r = new Float64Array(N), d = new Float64Array(N), q = new Float64Array(N), z = new Float64Array(N), m = new Float64Array(N);
+  // Solves (diag_i − ∇·k∇) x = b for x by conjugate gradients with a multigrid
+  // preconditioner (multigrid.js), with per-cell k ≥ 0 (the edge value is the mean of its two
+  // cells'; the system is symmetric once multiplied by the cell areas). x holds the first
+  // guess. Returns the number of iterations.
+  let levels = null;
+  const r = new Float64Array(N), d = new Float64Array(N), q = new Float64Array(N), z = new Float64Array(N);
+  ops.solveImplicit = (diag, k, b, x, tol = 1e-8, maxIter = 100) => {
+    if (!levels) levels = buildHierarchy(grid);
+    setOperator(levels, ops, diag, k);
+    const Ad = levels[0].Ad, Ao = levels[0].Ao;
     const apply = (v, o) => {
       for (let i = 0; i < N; i++) {
-        let s = area[i] * diag[i] * v[i];
-        for (let n = 0, e = 6 * i; n < nbrCount[i]; n++, e++) {
-          const j = nbr[e];
-          s -= lap[e] * 0.5 * (k[i] + k[j]) * (v[j] - v[i]);
-        }
+        let s = Ad[i] * v[i];
+        for (let n = 0, e = 6 * i; n < nbrCount[i]; n++, e++) s += Ao[e] * v[nbr[e]];
         o[i] = s;
       }
     };
-    for (let i = 0; i < N; i++) {
-      let s = area[i] * diag[i];
-      for (let n = 0, e = 6 * i; n < nbrCount[i]; n++, e++) s += lap[e] * 0.5 * (k[i] + k[nbr[e]]);
-      m[i] = 1 / s;
-    }
     apply(x, q);
-    let rz = 0, bb = 0, rr = 0;
-    for (let i = 0; i < N; i++) {
-      r[i] = area[i] * b[i] - q[i]; z[i] = m[i] * r[i]; d[i] = z[i];
-      rz += r[i] * z[i]; rr += r[i] * r[i]; bb += (area[i] * b[i]) ** 2;
-    }
+    let bb = 0, rr = 0;
+    for (let i = 0; i < N; i++) { r[i] = area[i] * b[i] - q[i]; rr += r[i] * r[i]; bb += (area[i] * b[i]) ** 2; }
+    if (rr <= tol * tol * bb) return 0;
+    precondition(levels, r, z);
+    d.set(z);
+    let rz = 0;
+    for (let i = 0; i < N; i++) rz += r[i] * z[i];
     let it = 0;
     for (; it < maxIter && rr > tol * tol * bb; it++) {
       apply(d, q);
       let dq = 0;
       for (let i = 0; i < N; i++) dq += d[i] * q[i];
       const a = rz / dq;
-      let rz2 = 0;
       rr = 0;
-      for (let i = 0; i < N; i++) { x[i] += a * d[i]; r[i] -= a * q[i]; z[i] = m[i] * r[i]; rz2 += r[i] * z[i]; rr += r[i] * r[i]; }
+      for (let i = 0; i < N; i++) { x[i] += a * d[i]; r[i] -= a * q[i]; rr += r[i] * r[i]; }
+      if (rr <= tol * tol * bb) { it++; break; }
+      precondition(levels, r, z);
+      let rz2 = 0;
+      for (let i = 0; i < N; i++) rz2 += r[i] * z[i];
       const beta = rz2 / rz;
       rz = rz2;
       for (let i = 0; i < N; i++) d[i] = z[i] + beta * d[i];
