@@ -13,7 +13,6 @@ Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the 
 | ID | item | done when |
 |---|---|---|
 | R1 | **Looks instead of materials × palettes × styles.** A Look choice (paper, mathy, and what the owner confirms from the proposed list), each with only its own controls; colour only in mathy; delete unused presets; old URLs map to the nearest look. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles) | The owner has picked the looks from sample renders, and the panel offers them. |
-| R3 | **Remove AO from the rasterizer** (owner, 2026-10-23: the ray tracer takes care of creases, the fast view needs no AO). Delete GTAO, its composer and the AO sliders; old links with `ao` keys still load. → [R3](rendering.md#r3-remove-ambient-occlusion-from-the-rasterizer) | The fast view has no AO code or controls, and old links load. |
 | R4 | **Depth of field**, live (BokehPass) and in final renders. → [R4](rendering.md#r4-depth-of-field) | A focus/aperture control; export uses it. |
 | R7 | **Detached solid faces** render mode: shrink and extrude each face into a solid. → [R7](rendering.md#r7-detached-solid-faces) | The mode works on convex, folded and stellated shapes, including export. |
 | R8 | **Iridescent reworked**: no colour controls, a rainbow sweep within each face. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
@@ -67,6 +66,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-23.** R3: AO removed from the fast view (owner: RT does creases): GTAO, the composer, the two sliders and the vendored add-ons only they used; old links with `ao`/`aos` still load (unknown keys are ignored). → [rendering.md](rendering.md#r3-remove-ambient-occlusion-from-the-rasterizer)
 - **2026-10-23.** R22 Blender scene script: *Save Blender scene* in Export downloads a Python file that rebuilds the RT scene for Cycles (faces with their colours, material, stage, key area light, sky, camera, drawn lines as Freestyle) at the export size and samples; tested on Blender 4.2 and 5.1 against the page's RT export. Owner to try it on the 3090. → [rendering.md](rendering.md#the-blender-scene-r22)
 - **2026-10-23.** Render button renamed RT and made a checkbox toggle (owner).
 - **2026-10-23.** R20 Scene panel: orientation (free, or symmetric views from `views()` in symmetry.js: stand on a face, vertex or edge orbit, labelled by axis order; dragging then orbits the camera), ground (none, floor with fog, curved backdrop that turns with the camera), height above the ground, camera height, light presets in the camera's frame, shadow on the ground, explicit light/dark background (seeded by the theme), perspective and spin moved here. Owner to try composing with it. → [rendering.md](rendering.md#the-scene-r20)

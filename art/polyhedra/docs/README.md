@@ -76,7 +76,7 @@ js/spectral.js            SymmetricEigen, spectralStarts(), density()
 js/frame.js               whiten (ZCA), the old adjustments (still replayed), shake, random positions, rng, jacobi, shapeDistance
 js/readable.js            Readable optimizer; readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup(), views() (symmetric orientations)
-js/viewer.js              three.js scene, painted-edges shader, materials, GTAO, palette colouring, export render
+js/viewer.js              three.js scene, painted-edges shader, materials, palette colouring, export render
 js/lines.js               edges drawn on the screen: face-ID buffer, capsule lines, ink composite
 js/blender.js             the Blender scene script: the RT scene as data plus Python that builds it for Cycles
 js/trace.js               RT: the scene copied for three-gpu-pathtracer, traced a tile per frame (loaded on demand)
@@ -84,7 +84,7 @@ js/palettes.js            palette presets, hex ↔ linear helpers
 js/colour.js              OKLCh → linear sRGB, golden-angle generated palette
 js/export.js              OBJ, binary STL, download helper
 tests/                    Node scripts (below)
-vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons/ (EffectComposer, GTAOPass, …), three-gpu-pathtracer.js 0.0.23, three-mesh-bvh.js 0.8.3
+vendor/                   three.module.min.js (r170), RoomEnvironment.js, addons/postprocessing/Pass.js (for the path tracer), three-gpu-pathtracer.js 0.0.23, three-mesh-bvh.js 0.8.3
 ```
 
 **Data flow.**

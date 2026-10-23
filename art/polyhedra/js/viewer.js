@@ -3,10 +3,6 @@
 
 import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
-import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from '../vendor/addons/postprocessing/GTAOPass.js';
-import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
 import { Lines } from './lines.js';
 
 export const STYLES = ['solid', 'glass', 'frame'];
@@ -135,22 +131,10 @@ export class Viewer {
     this.backs.renderOrder = -1;
     this.group.add(this.backs, this.faces);
 
-    // Ambient occlusion: a screen-space pass (GTAO) between the scene and the output. It is used
-    // for the solid style only; the others are see-through, which it does not handle. Its radius
-    // follows the mean edge length (placeAO), so creases darken the same at every subdivision;
-    // the denoiser blurs widely but not across faces (high normalPhi), which hides the sampling
-    // pattern without smearing the shading of one face onto the next.
-    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.gtao = new GTAOPass(this.scene, this.camera, 1, 1);
-    this.gtao.updateGtaoMaterial({ distanceExponent: 2, distanceFallOff: 1, scale: 1, samples: 32 });
-    this.gtao.updatePdMaterial({ lumaPhi: 6, depthPhi: 2, normalPhi: 8, radius: 12, radiusExponent: 1.5, rings: 3, samples: 24 });
-    this.composer.addPass(this.gtao);
-    this.composer.addPass(new OutputPass());
     this.lines = new Lines();
 
     this.opts = {
-      style: 'solid', material: 'matte', ao: 0, aoSize: 1, colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
+      style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, spin: false, ink: 'auto', dark: false,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
@@ -262,7 +246,6 @@ export class Viewer {
     this.lines.setPositions(p);
     this.orient();
     this.placeLines();
-    this.placeAO();
     this.request();
   }
 
@@ -301,7 +284,6 @@ export class Viewer {
     else this.uniforms.uInk.value.set(ink === 'light' ? 0xeeeeea : 0x1c1c20);
     if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette)) this.recolour();
     if (prev.fov !== o.fov) this.resize();
-    this.placeAO();
     this.request();
   }
 
@@ -318,13 +300,6 @@ export class Viewer {
     u.uScreen.value = o.lines === 'screen' ? 1 : 0;
     u.uWidth.value = o.lines === 'painted' ? o.edge * 0.08 * this.meanEdge : o.lines === 'screen' ? this.linePixels() / 2 : 0;
     u.uDepth.value = o.depthWidth;
-  }
-
-  // the occlusion reaches aoSize mean edge lengths; ao is its strength
-  placeAO() {
-    const r = Math.max(1e-3, this.opts.aoSize * this.meanEdge);
-    this.gtao.updateGtaoMaterial({ radius: r, thickness: r });
-    this.gtao.blendIntensity = this.opts.ao;
   }
 
   recolour() {
@@ -371,8 +346,6 @@ export class Viewer {
     const w = el.clientWidth, h = el.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
-    this.composer.setPixelRatio(this.renderer.getPixelRatio());
-    this.composer.setSize(w, h);
     this.aspect = w / h;
     this.request();
   }
@@ -530,11 +503,9 @@ export class Viewer {
   }
 
   draw() {
-    const o = this.opts;
     this.placeLines();
     this.uniforms.uRef.value = this.camera.position.distanceTo(this.target);
-    if (o.ao > 0 && o.style === 'solid') this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.camera);
     this.drawLines(false);
   }
 
@@ -639,8 +610,6 @@ export class Viewer {
     try {
       r.setPixelRatio(1);
       r.setSize(size, size, false);
-      this.composer.setPixelRatio(1);
-      this.composer.setSize(size, size);
       if (background) r.setClearColor(background, 1); else r.setClearColor(0x000000, 0);
       this.placeCamera(1);
       if (this.tracing && this.tracer) {

@@ -15,7 +15,7 @@ const $ = id => document.getElementById(id);
 
 const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
-  style: 'solid', material: 'matte', ao: 0.6, aoSize: 1, colouring: 'origin', palette: 'generated', custom: [],
+  style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, spin: false,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
@@ -35,8 +35,6 @@ function sanitize(s) {
     steps: (Array.isArray(s.steps) ? s.steps.slice(0, MAX_STEPS) : DEFAULTS.steps).map(t => ({ ...t })),
     style: ONE(s.style, STYLES, DEFAULTS.style),
     material: ONE(s.material, MATERIALS, DEFAULTS.material),
-    ao: NUM(s.ao, 0, 1, DEFAULTS.ao),
-    aoSize: NUM(s.aoSize, 0.2, 4, DEFAULTS.aoSize),
     colouring: ONE(s.colouring, COLOURINGS, DEFAULTS.colouring),
     palette: ONE(s.palette, Object.keys(PALETTES), DEFAULTS.palette),
     custom: Array.isArray(s.custom) ? s.custom.filter(isHex).slice(0, MAX_SWATCHES) : [],
@@ -61,7 +59,7 @@ function sanitize(s) {
 }
 
 const KEYS = {
-  text: 'n', steps: 'm', style: 'st', material: 'mat', ao: 'ao', aoSize: 'aos',
+  text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', spin: 'spin',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
@@ -662,10 +660,6 @@ function randomText() {
 
 function showLook() {
   $('p-material').value = st.material;
-  $('p-ao').value = st.ao; $('v-ao').textContent = st.ao ? st.ao.toFixed(2) : 'off';
-  $('p-aosize').value = st.aoSize; $('v-aosize').textContent = st.aoSize.toFixed(1) + ' edges';
-  for (const id of ['p-ao', 'p-aosize']) $(id).disabled = st.style !== 'solid';
-  $('p-aosize').disabled ||= st.ao === 0;
   $('p-palette').value = st.palette;
   for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', st.palette !== 'generated');
   $('p-style').value = st.style;
@@ -694,7 +688,7 @@ function showLook() {
   // the hue means nothing without chroma
   $('p-hue').disabled = st.chroma === 0;
   viewer.set({
-    style: st.style, material: st.material, ao: st.ao, aoSize: st.aoSize, colouring: st.colouring, palette: currentPalette(),
+    style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, spin: st.spin,
     dark: background() === 'dark',
@@ -770,8 +764,6 @@ function bindLook() {
   });
   look('p-style', 'style', el => el.value);
   look('p-material', 'material', el => el.value);
-  look('p-ao', 'ao', el => +el.value);
-  look('p-aosize', 'aoSize', el => +el.value);
   look('p-palette', 'palette', el => {
     // a fresh custom palette starts from what is shown
     if (el.value === 'custom' && !st.custom.length) st.custom = paletteHex({ ...st, palette: st.palette }, Math.min(MAX_SWATCHES, viewer.classes())).slice();
