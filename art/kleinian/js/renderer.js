@@ -28,6 +28,22 @@ function rampColor(stops, t) {
 
 export function palette(themeName) { return THEMES[themeName] || THEMES.light; }
 
+// colour index of each segment code, and the list of colours. maxLen: the longest word drawn
+export function colouring({ mode, depth, theme }, maxLen) {
+  const pal = palette(theme);
+  if (mode === 'mono') return { colors: [pal.ink], index: () => 0 };
+  if (mode === 'level') {
+    const colors = [];
+    for (let i = 0; i < RAMP_STEPS; i++) colors.push(rampColor(pal.ramp, i / (RAMP_STEPS - 1)));
+    const lmax = Math.log(maxLen + 1);
+    return { colors, index: c => Math.min(RAMP_STEPS - 1, Math.floor(Math.log((c >>> 18) + 1) / lmax * RAMP_STEPS)) };
+  }
+  if (mode === 'last') return { colors: pal.gens, index: c => (c >>> 16) & 3 };
+  // letter number `depth` of the word; shorter words use their last letter
+  const d = Math.max(1, Math.min(8, depth | 0)), shift = 2 * (d - 1);
+  return { colors: pal.gens, index: c => ((c >>> 18) >= d ? (c >>> shift) & 3 : (c >>> 16) & 3) };
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -90,26 +106,9 @@ export class Renderer {
     for (const c of this.chunks) this.drawChunk(c);
   }
 
-  // colour index of each segment, and the list of colours
-  colouring() {
-    const { mode, depth, theme } = this.style;
-    const pal = palette(theme);
-    if (mode === 'mono') return { colors: [pal.ink], index: () => 0 };
-    if (mode === 'level') {
-      const colors = [];
-      for (let i = 0; i < RAMP_STEPS; i++) colors.push(rampColor(pal.ramp, i / (RAMP_STEPS - 1)));
-      const lmax = Math.log(this.maxLen + 1);
-      return { colors, index: c => Math.min(RAMP_STEPS - 1, Math.floor(Math.log((c >>> 18) + 1) / lmax * RAMP_STEPS)) };
-    }
-    if (mode === 'last') return { colors: pal.gens, index: c => (c >>> 16) & 3 };
-    // letter number `depth` of the word; shorter words use their last letter
-    const d = Math.max(1, Math.min(8, depth | 0)), shift = 2 * (d - 1);
-    return { colors: pal.gens, index: c => ((c >>> 18) >= d ? (c >>> shift) & 3 : (c >>> 16) & 3) };
-  }
-
   drawChunk({ seg, code, n, points }) {
     const { ctx } = this;
-    const { colors, index } = this.colouring();
+    const { colors, index } = colouring(this.style, this.maxLen);
     const k = colors.length;
     const idx = new Uint8Array(n);
     for (let i = 0; i < n; i++) idx[i] = index(code[i]);

@@ -4,6 +4,7 @@ import { Renderer, palette, GEN_NAMES } from './renderer.js';
 import { TracePlane, initProbes } from './planes.js';
 import { PRESETS } from './presets.js';
 import { QL } from './dfs.js';
+import { SegmentStore, buildSvg } from './svg.js';
 
 const $ = id => document.getElementById(id);
 
@@ -457,6 +458,9 @@ function syncInputs(recomputePlanes = true) {
   $('p-clip').checked = st.clip;
   $('p-method').value = st.method;
   document.querySelectorAll('[data-methods]').forEach(el => el.classList.toggle('hidden', !el.dataset.methods.split(' ').includes(st.method)));
+  // the random walk plots points, not lines
+  $('svgBtn').disabled = st.method === 'walk';
+  $('svgBtn').title = st.method === 'walk' ? 'The random walk draws points, not lines: choose the search or the random descent' : '';
   $('p-descents').value = st.descents;
   $('p-points').value = st.points;
   $('p-stay').value = st.stay;
@@ -558,10 +562,11 @@ $('saveBtn').addEventListener('click', () => {
   canvas.toBlob(b => download(b, fileName()), 'image/png');
 });
 $('exportBtn').addEventListener('click', exportImage);
+$('svgBtn').addEventListener('click', exportSvg);
 
-function fileName(size) {
+function fileName(size, ext = 'png') {
   const clean = s => s.replace(/[^0-9a-z.+-]/gi, '');
-  return `kleinian_${clean(st.ta)}_${clean(st.tb)}${st.comm !== 'free' ? '_' + st.comm : ''}${st.symm ? '_symm' : ''}${size ? '_' + size : ''}.png`;
+  return `kleinian_${clean(st.ta)}_${clean(st.tb)}${st.comm !== 'free' ? '_' + st.comm : ''}${st.symm ? '_symm' : ''}${size ? '_' + size : ''}.${ext}`;
 }
 
 function download(blob, name) {
@@ -574,38 +579,61 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Render the current view at a chosen size off screen and save it.
-async function exportImage() {
-  const size = +$('p-size').value;
+// Search the current view again off screen, on a px × px canvas, streaming into target. The
+// button shows the progress; done() runs when the search has finished.
+async function exportRun(btn, px, target, done) {
   cancel();
   let g;
   try { g = groupParams(); } catch (e) { return fail(e.message); }
-  const out = document.createElement('canvas');
-  out.width = out.height = size;
-  const r = new Renderer(out);
-  const css = stage.clientWidth;
-  const scale = size / css;
-  const vt = viewTransform(st.view, size);
-  r.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * scale, theme: themeName(), tiles: tiles(vt) });
-  r.clear();
-  $('exportBtn').disabled = true;
+  const scale = px / stage.clientWidth;
+  const vt = viewTransform(st.view, px);
+  btn.disabled = true;
   setRunning(true);
-  const btnText = $('exportBtn').textContent;
+  const btnText = btn.textContent;
   let m = null;
-  try { m = await getMeasure(g); } catch (e) { $('exportBtn').disabled = false; if (e.message !== 'cancelled') fail(e.message); return; }
-  startSearch({ ...g, ...methodParams(), view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt), eps: st.eps * scale }, r, {
-    onProgress: f => { setProgress(f); $('exportBtn').textContent = `Rendering… ${Math.round(100 * f)}%`; },
+  try { m = await getMeasure(g); } catch (e) { btn.disabled = false; if (e.message !== 'cancelled') fail(e.message); return; }
+  startSearch({ ...g, ...methodParams(), view: vt, bound: m ? m.bound : null, sphere: sphereParams(), tiles: tiles(vt), eps: st.eps * scale }, target, {
+    onProgress: f => { setProgress(f); btn.textContent = `Rendering… ${Math.round(100 * f)}%`; },
     onDone: () => {
       setRunning(false);
-      $('exportBtn').textContent = btnText;
-      $('exportBtn').disabled = false;
-      out.toBlob(b => download(b, fileName(size)), 'image/png');
+      btn.textContent = btnText;
+      btn.disabled = false;
+      done();
     },
   });
   // restore the button if the export is cancelled by another render
   const check = setInterval(() => {
-    if (!job || job.target !== r) { clearInterval(check); $('exportBtn').textContent = btnText; $('exportBtn').disabled = false; }
+    if (!job || job.target !== target) { clearInterval(check); btn.textContent = btnText; btn.disabled = false; }
   }, 300);
+}
+
+// Render the current view at a chosen size off screen and save it.
+function exportImage() {
+  const size = +$('p-size').value;
+  const out = document.createElement('canvas');
+  out.width = out.height = size;
+  const r = new Renderer(out);
+  r.setStyle({ mode: st.color, depth: st.depth, lineWidth: st.lw * size / stage.clientWidth, theme: themeName(), tiles: tiles(viewTransform(st.view, size)) });
+  r.clear();
+  exportRun($('exportBtn'), size, r, () => out.toBlob(b => download(b, fileName(size)), 'image/png'));
+}
+
+// Search the current view again with the settings on screen, and save the lines as SVG, size mm wide.
+function exportSvg() {
+  const size = NUM($('p-mm').value, 10, 5000, 200);
+  $('p-mm').value = size;
+  const { px } = sizeCanvas();
+  const store = new SegmentStore();
+  exportRun($('svgBtn'), px, store, () => {
+    const { text, paths, points } = buildSvg(store, {
+      px, size, style: { mode: st.color, depth: st.depth }, lineWidth: st.lw * size / stage.clientWidth,
+      tiles: tiles(viewTransform(st.view, px)),
+      title: `Kleinian limit set, tr a = ${st.ta}, tr b = ${st.tb}`,
+      desc: `Made with ${location.href}`,
+    });
+    download(new Blob([text], { type: 'image/svg+xml' }), fileName(size + 'mm', 'svg'));
+    $('stats').textContent = `Saved ${paths.toLocaleString('en')} paths of ${points.toLocaleString('en')} points, ${(text.length / 1e6).toFixed(1)} MB`;
+  });
 }
 
 // ---------- trace planes ----------
