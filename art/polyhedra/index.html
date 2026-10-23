@@ -301,6 +301,16 @@
             <small>field of view; small is nearly flat</small>
             <input type="range" id="p-fov" min="2" max="70" step="1">
           </div>
+          <div class="param">
+            <label for="p-blur"><span>Depth of field</span><span id="v-blur"></span></label>
+            <small>the lens opening, as a fraction of the shape's size; with RT and in the Blender scene (the fast view stays sharp)</small>
+            <input type="range" id="p-blur" min="0" max="0.5" step="0.01">
+          </div>
+          <div class="param">
+            <label for="p-focus"><span>Focus</span><span id="v-focus"></span></label>
+            <small>where it is sharp: from the near side of the shape through its centre to the far side</small>
+            <input type="range" id="p-focus" min="-1" max="1" step="0.05">
+          </div>
           <div class="param check">
             <label><input type="checkbox" id="p-spin"> <span>Turn by itself</span></label>
           </div>

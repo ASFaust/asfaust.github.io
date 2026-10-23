@@ -7,7 +7,7 @@
 // colour as the background. The drawn lines are not traced; the viewer lays them over the result.
 
 import * as THREE from '../vendor/three.module.min.js';
-import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial } from '../vendor/three-gpu-pathtracer.js';
+import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial, PhysicalCamera } from '../vendor/three-gpu-pathtracer.js';
 import { FullScreenQuad } from '../vendor/addons/postprocessing/Pass.js';
 
 // the traced materials, for the viewer's materials; glass is a style, so it overrides them
@@ -40,6 +40,9 @@ export class Tracer {
     };
     this.sky = new GradientEquirectTexture();
     this.sky.topColor.set(0xffffff); this.sky.bottomColor.set(0x777777); this.sky.update();
+    this.backdrop = new GradientEquirectTexture(16);
+    // the viewer's camera with a lens, for depth of field
+    this.cam = new PhysicalCamera();
     this.scene = null;
   }
 
@@ -82,7 +85,14 @@ export class Tracer {
     scene.add(key);
     scene.environment = this.sky;
     scene.environmentIntensity = 0.8;
-    scene.background = transparent ? null : new THREE.Color(o.stage);
+    // The background as a texture of one colour. The tracer makes such a texture itself from a
+    // colour, but only fills it when the colour differs from the texture's default white, so a
+    // white background came out black (three-gpu-pathtracer 0.0.23).
+    if (transparent) scene.background = null;
+    else {
+      this.backdrop.topColor.set(o.stage); this.backdrop.bottomColor.set(o.stage); this.backdrop.update();
+      scene.background = this.backdrop;
+    }
     this.scene = scene;
     // Tiles keep every draw short: one sample of the whole picture is one GPU job of 40 ms at
     // 900² and 80 ms at 2048², which freezes the desktop sharing the GPU. About 0.2 megapixels
@@ -90,7 +100,14 @@ export class Tracer {
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     const n = Math.max(1, Math.ceil(Math.sqrt(size.x * size.y / 2e5)));
     this.pt.tiles.set(n, n);
-    this.pt.setScene(scene, v.camera);
+    // The lens: the tracer reads its opening as bokehSize in millimetres, a thousandth of a world
+    // unit, and 0 turns depth of field off.
+    const cam = this.cam, lens = v.lens();
+    cam.copy(v.camera);
+    cam.apertureBlades = 0; cam.apertureRotation = 0; cam.anamorphicRatio = 1;
+    cam.focusDistance = lens.distance;
+    cam.fStop = lens.diameter > 0 ? cam.getFocalLength() / (lens.diameter * 1000) : Infinity;
+    this.pt.setScene(scene, cam);
   }
 
   // the camera moved: same scene, start again

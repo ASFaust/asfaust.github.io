@@ -58,6 +58,8 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
     light: { position: toBlender(v.key.position), target: toBlender(v.key.target.position), size: 3, power: r6(7 * Math.PI * 9) },
     sky: { top: [1, 1, 1], bottom: rgb(new THREE.Color(0x777777)), exponent: 2, strength: 0.8 },
     camera: { position: toBlender(c.position), target: toBlender(v.target), fov: c.fov, near: r6(c.near), far: r6(c.far) },
+    // depth of field: the lens opening and the sharp distance, in scene units
+    lens: (({ diameter, distance }) => ({ diameter: r6(diameter), distance: r6(distance) }))(v.lens()),
     // lines over the picture, as in Render: every edge type becomes drawn lines
     lines: o.edge > 0 ? { width: r6(o.edge * 0.01 * size), ink: rgb(v.uniforms.uInk.value), hidden: o.style === 'solid' ? 0 : o.hidden } : null,
     size, samples, denoise,
@@ -241,6 +243,11 @@ camera = bpy.data.objects.new('Camera', cam)
 scene.collection.objects.link(camera)
 look_at(camera, C['position'], C['target'])
 scene.camera = camera
+# Blender takes the opening as an f-number: focal length over opening, both in metres
+if DATA['lens']['diameter'] > 0:
+    cam.dof.use_dof = True
+    cam.dof.focus_distance = DATA['lens']['distance']
+    cam.dof.aperture_fstop = cam.lens * 1e-3 / DATA['lens']['diameter']
 
 # ---------- lines ----------
 

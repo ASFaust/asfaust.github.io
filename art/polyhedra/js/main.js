@@ -18,7 +18,7 @@ const $ = id => document.getElementById(id);
 const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
-  hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, spin: false,
+  hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, spin: false,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -45,6 +45,8 @@ function sanitize(s) {
     hidden: NUM(s.hidden, 0, 1, DEFAULTS.hidden),
     ink: ONE(s.ink, INKS, DEFAULTS.ink),
     fov: Math.round(NUM(s.fov, 2, 70, DEFAULTS.fov)),
+    blur: NUM(s.blur, 0, 0.5, DEFAULTS.blur),
+    focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
     spin: typeof s.spin === 'boolean' ? s.spin : DEFAULTS.spin,
     orient: typeof s.orient === 'string' && /^(free|[fve]\d{1,5})$/.test(s.orient) ? s.orient : DEFAULTS.orient,
     ground: ONE(s.ground, GROUNDS, DEFAULTS.ground),
@@ -59,7 +61,7 @@ function sanitize(s) {
 
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
-  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', spin: 'spin',
+  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', spin: 'spin',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -608,6 +610,9 @@ function showLook() {
   $('p-hidden').disabled = st.style === 'solid';
   $('p-ink').value = st.ink;
   $('p-fov').value = st.fov; $('v-fov').textContent = st.fov + '°';
+  $('p-blur').value = st.blur; $('v-blur').textContent = st.blur ? st.blur.toFixed(2) : 'off';
+  $('p-focus').value = st.focus; $('v-focus').textContent = st.focus === 0 ? 'centre' : (st.focus < 0 ? 'nearer ' : 'farther ') + Math.abs(st.focus).toFixed(2);
+  $('p-focus').disabled = st.blur === 0;
   $('p-orient').value = [...$('p-orient').options].some(o => o.value === st.orient) ? st.orient : 'free';
   $('p-ground').value = st.ground;
   $('p-lift').value = st.lift; $('v-lift').textContent = st.lift ? st.lift.toFixed(2) : 'on it';
@@ -622,7 +627,7 @@ function showLook() {
   viewer.set({
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
-    edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, spin: st.spin,
+    edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, spin: st.spin,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -710,6 +715,8 @@ function bindLook() {
   look('p-hidden', 'hidden', el => +el.value);
   look('p-ink', 'ink', el => el.value);
   look('p-fov', 'fov', el => +el.value);
+  look('p-blur', 'blur', el => +el.value);
+  look('p-focus', 'focus', el => +el.value);
   look('p-orient', 'orient', el => el.value);
   look('p-ground', 'ground', el => el.value);
   look('p-lift', 'lift', el => +el.value);

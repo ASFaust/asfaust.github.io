@@ -135,7 +135,7 @@ export class Viewer {
 
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
-      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, spin: false, ink: 'auto', dark: false,
+      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, spin: false, ink: 'auto', dark: false,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -437,6 +437,14 @@ export class Viewer {
     c.near = on ? 0.05 : Math.max(0.01, d - 3); c.far = on ? d + 80 : d + 3;
     this.scene.fog = o.ground === 'floor' ? new THREE.Fog(o.stage, d + 2, d + 25) : null;
     c.updateProjectionMatrix();
+  }
+
+  // Depth of field (R4), for RT and the Blender scene: the lens opening in world units (the shape
+  // fits the unit sphere, so blur is a fraction of its radius) and the distance from the camera
+  // that is sharp, from the near side of the shape (focus -1) to the far side (1).
+  lens() {
+    const o = this.opts;
+    return { diameter: o.blur, distance: this.camera.position.distanceTo(this.target) + o.focus };
   }
 
   resetView() {
