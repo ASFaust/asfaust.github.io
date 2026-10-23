@@ -63,6 +63,8 @@ There is no build step. The page uses plain ES modules, loaded directly by the b
 ```
 index.html, style.css     the page; layout copied from art/mandelbrot (viewer left, panels right, Info dialog)
 js/main.js                UI wiring, state, URL hash, worker jobs, steps list, Share (pruning worker), the Mix, stats line, palette swatches
+js/chain.js               the chain of steps in the URL: parseSteps, stepsText, the worker message (shared with the tests)
+js/examples.js            the examples menu: the catalogue's links with the owner's short names
 js/worker.js              one job per worker: build → symmetries → realize, posting positions live; keeps the state after every step; a second instance prunes a chain for Share
 js/pipeline.js            build, OPTIMIZERS, one optimizer run (Realization), Session (one shape and its steps), prune; shared by worker.js and the tests
 js/notation.js            parse "tk4dD" → { ops, seed }, describe(), size estimate()
@@ -117,6 +119,7 @@ Match the surrounding code: comments explain *why*, in full sentences; British s
   - `node tests/topology.mjs`: census of every named solid, validity of 200 random strings, size estimates, `dd`/`rr` involutions.
   - `node tests/symmetry.mjs [-v]`: automorphism counts and point-group names for 36 shapes; symmetrize exactness.
   - `node tests/realize.mjs [--mode chain] [--sym] [--flags w] [--weights regular=1,flat=0.5] [--random N] [--max-it N] [--regularity x] [strings…]`: the realization benchmark. The chain is optimizers run in turn from the built shape (`canonical,regular`), metrics after the last; metrics are explained in [realization/README.md](realization/README.md#measuring).
+  - `node tests/examples.mjs [--print] [filter]`: replays every entry of the examples menu (`js/examples.js`) through `js/chain.js`, as the page does, and checks faces, inward faces and reflex edges against [catalogue.md](catalogue.md). Run it after any change to an optimizer or to the chain format: an old link must still give the same shape. A few minutes.
   - `node tests/optimizers.mjs`: whitening, `shapeDistance`, Stellate, mix = regularity blend, equal edges, shake and the symmetry, pruning a chain.
   - `node tests/spectral.mjs [-v] [strings…]`: the eigensolver, the spectral starts, star faces reaching the uniform star polyhedra; with strings, lists their starts.
   - `node tests/planes.mjs [--start raw|canonical] [strings…]`: the readability loss on its own ([realization/readable.md](realization/readable.md)).

@@ -1,10 +1,10 @@
 # Catalogue: the Owner's Shapes
 
-> **Status:** 29 entries (2026-10-22 to 2026-10-23). **Used by:** the planned examples menu (backlog `U1`) and the shape research ([exploration.md](exploration.md)). **Backlog:** U1.
+> **Status:** 29 entries (2026-10-22 to 2026-10-23). **Used by:** the examples menu (`js/examples.js`, every entry, with a short name; `tests/examples.mjs` checks the numbers) and the shape research ([exploration.md](exploration.md)). **Backlog:** none.
 
 Realizations the owner called good or interesting, as reference points for goal B and as test cases. Each entry has the link (the part after `art/polyhedra/`), the owner's words, and the numbers that explain it. Numbers come from `node tests/realize.mjs --sym --mode <chain> [--flags w] <string>`; the columns are defined in [realization/README.md](realization/README.md#measuring). "Reflex" counts reflex edges, "inward" inward faces, "turn" the smallest relative corner turn. Density is 1 (folded, not stellated) unless stated.
 
-**Add new shapes here**, in the group they fit, with the date. Keep each entry to a few lines: the link, the words, what makes it work, and the numbers. Any study of a shape belongs in the topic doc.
+**Add new shapes here**, in the group they fit, with the date, and to `js/examples.js` (with a short name) and the expected numbers in `tests/examples.mjs`. Keep each entry to a few lines: the link, the words, what makes it work, and the numbers. Any study of a shape belongs in the topic doc.
 
 ## Patterns
 

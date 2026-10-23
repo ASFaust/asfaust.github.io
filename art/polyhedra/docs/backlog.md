@@ -4,7 +4,7 @@ The only task list. Every item has an ID, says why it exists, where to start, an
 
 When you finish an item: move it to *Done* with the date and one line; put the findings, including negative results, in the linked doc; fix anything stale you noticed. When the owner raises something new, add it here with an ID in the right track, and the details in a topic doc.
 
-**Tracks, in the owner's order of priority (2026-10-23):** Rendering (R) is the next big task. Examples (U) is small and independent. Exploration (X) is a separate research project. Optimizers (O) are mostly paused. Goal A (A) and low priority (L) are leftovers.
+**Tracks, in the owner's order of priority (2026-10-23):** Rendering (R) is the next big task. Examples (U1) is done. Exploration (X) is a separate research project. Optimizers (O) are mostly paused. Goal A (A) and low priority (L) are leftovers.
 
 ## Rendering (R): [rendering.md](rendering.md)
 
@@ -19,12 +19,6 @@ Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the 
 | R21 | **Render toggle** (the RT checkbox), built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
 | R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
 | R11–R19 | Older ideas: staging, glow lines and bloom, tubes, smooth subdivision, fake SSS, real glass, per-face painting, turntable export, orthographic camera. → [rendering.md](rendering.md#older-ideas-still-open) | Each when its look is confirmed. |
-
-## Examples (U)
-
-| ID | item | done when |
-|---|---|---|
-| U1 | **Selectable examples** from [catalogue.md](catalogue.md): a menu (next to the named solids, or its own) that loads an entry's link (notation, chain, look). Keep the list in one JS module generated or copied from the catalogue, with the owner's short name for each ("drum", "tomahawk", "low-poly virus"). Old links must still give the same shape (notation and chain; their look may change), so test every entry after changes to the chain format (a test that replays each link and compares metrics would catch it). | Every catalogue entry is in the menu and replays to the documented numbers. |
 
 ## Exploration (X): [exploration.md](exploration.md)
 
@@ -66,6 +60,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-23.** U1 Examples menu under Named shapes: all 29 catalogue entries in five groups, with the owner's short names (`js/examples.js`); choosing one opens its link. The chain format moved to `js/chain.js` so `tests/examples.mjs` replays every link exactly as the page does; all match the catalogue's faces, inward faces and reflex edges (and its round counts), about 4 minutes in all.
 - **2026-10-23.** R3: AO removed from the fast view (owner: RT does creases): GTAO, the composer, the two sliders and the vendored add-ons only they used; old links with `ao`/`aos` still load (unknown keys are ignored). → [rendering.md](rendering.md#r3-remove-ambient-occlusion-from-the-rasterizer)
 - **2026-10-23.** R22 Blender scene script: *Save Blender scene* in Export downloads a Python file that rebuilds the RT scene for Cycles (faces with their colours, material, stage, key area light, sky, camera, drawn lines as Freestyle) at the export size and samples; tested on Blender 4.2 and 5.1 against the page's RT export. Owner to try it on the 3090. → [rendering.md](rendering.md#the-blender-scene-r22)
 - **2026-10-23.** Render button renamed RT and made a checkbox toggle (owner).
