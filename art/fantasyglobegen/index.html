@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fantasy Globe Generator</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../../fonts/fonts.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <h1>Fantasy Globe Generator</h1>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <main class="app">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="The globe's grid. Drag to turn the globe or pan the map, scroll or pinch to zoom."></canvas>
+        <div class="status" id="status"></div>
+      </div>
+      <div class="controls">
+        <button id="globeBtn" title="Show a globe">Globe</button>
+        <button id="mapBtn" title="Show an equirectangular map">Map</button>
+        <button id="resetBtn" title="Back to the starting view">Reset view</button>
+        <button id="saveBtn" title="Save the image">Save PNG</button>
+        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <div class="sidebar">
+    <p class="hint">Work in progress. This first step is only the grid every later layer will live on: terrain, then a seasonal climate. Drag to turn the globe or pan the map, scroll or pinch to zoom.</p>
+
+    <div class="panels">
+      <details open>
+        <summary>Grid</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-level"><span>Level</span><span id="v-level"></span></label>
+            <small>each level splits every triangle into four: 10·4ⁿ + 2 cells</small>
+            <input type="range" id="p-level" min="0" max="8" step="1">
+          </div>
+          <div class="param check wide">
+            <label><input type="checkbox" id="p-borders"> Cell borders</label>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Field</summary>
+        <div class="params">
+          <div class="param wide">
+            <select id="p-field" aria-label="Field"></select>
+            <p class="note" id="fieldNote"></p>
+          </div>
+        </div>
+      </details>
+    </div>
+    </div>
+  </main>
+
+  <dialog class="info" id="infoDialog" aria-labelledby="infoTitle">
+    <div class="info-head">
+      <h2 id="infoTitle">Fantasy Globe Generator</h2>
+      <button type="button" id="infoClose" aria-label="Close">✕</button>
+    </div>
+    <div class="notes">
+      <p class="lede">A generator for whole fantasy planets: terrain shaped by erosion, and a climate with seasons, monsoons, deserts and rainforests that follow from the physics. It is being built in steps, and this page shows the first one, the grid.</p>
+      <h3>The grid</h3>
+      <p>A map stored as a rectangle of latitude and longitude wastes most of its pixels near the poles and has a seam where the edges meet, which is a poor place to run a simulation. Instead every value lives on the vertices of a subdivided icosahedron. Each level splits every triangle into four, with the new points pushed out onto the sphere, so level <code>n</code> has <code>10·4ⁿ + 2</code> points. Seen from above, the region closest to each point is a hexagon, apart from twelve pentagons at the icosahedron’s own corners. Level 6 has 40,962 cells about 110 km apart, a usual resolution for a climate model; level 8 has 655,362, about 28 km apart.</p>
+      <p>The twenty faces pair up into ten diamonds, and each diamond is stored as a plain square array, with the two poles kept apart. Each level contains the one above it, so finer detail can be added to a region later without changing what is already there. The <em>Cell area</em> field shows how even the cells are: the largest is about one and a half times the smallest.</p>
+      <h3>Next</h3>
+      <p>A climate model that runs through the seasons, tested first on the real Earth: air rising where the winds converge and raining out on the way up, which is what makes the equator wet and the subtropics dry. Then terrain, using Rune Skovbo Johansen’s erosion filter adapted to the sphere.</p>
+    </div>
+  </dialog>
+
+  <script>
+    var themeBtn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      themeBtn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    themeBtn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      themeBtn.textContent = isDark ? '☀' : '☾';
+      document.dispatchEvent(new Event('themechange'));
+    });
+    var info = document.getElementById('infoDialog');
+    document.getElementById('infoBtn').addEventListener('click', function() { info.showModal(); });
+    document.getElementById('infoClose').addEventListener('click', function() { info.close(); });
+    // a click on the backdrop closes the dialog
+    info.addEventListener('click', function(e) { if (e.target === info) info.close(); });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
