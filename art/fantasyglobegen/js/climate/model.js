@@ -69,6 +69,7 @@ export const EARTH = {
   lapseRate: 6.5e-3,         // K/m
   // pressure and wind
   cellPressure: [-2.9, 4.5, -15.2, 4.5], // hPa: equatorial low, subtropical high, subpolar low, polar high
+  lnLat: 0,                   // degrees: within this, warm water and land are low against the whole tropics
   baroRef: 1.1, baroExp: 1,  // K per 100 km; the eddy-driven pressures go as (gradient/baroRef)^baroExp
   thermalLow: 0.63,          // hPa per K of land warmer than its latitude
   thermalLowOcean: 1.06,     // the same over water, which drives the Walker circulation
@@ -284,6 +285,9 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let shift = ((best + 0.5) / NB - 0.5) * Math.PI;
     shift = Math.max(-20 * deg, Math.min(20 * deg, shift)) * 0.7;
     const [a0, a1, a2, a3] = P.cellPressure;
+    let Ttrop = 0, Wt = 0;
+    if (P.lnLat > 0) for (let i = 0; i < N; i++) { const w = ops.area[i] / (1 + (sinLat[i] / Math.sin(P.lnLat * deg)) ** 4); Ttrop += T[i] * w; Wt += w; }
+    Ttrop /= Wt || 1;
     // the eddy-driven part, the subtropical high and the subpolar low, grows with the storms
     // that drive it, and so with each hemisphere's steepest temperature gradient between 30°
     // and 70°, against Earth's
@@ -301,7 +305,11 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const conv = 1 / (1 + Math.exp(-(T[i] - P.convectionTemp) / 1.5));
       const ed = eddy[ops.lat[i] > 0 ? 0 : 1];
       let p = a0 * conv * gauss(x, 0, P.equatorialWidth) + ed * (a1 * gauss(x, 32, 12) + a2 * gauss(x, 62, 10)) + a3 * gauss(x, 90, 12);
-      p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - atBand(zT, i));
+      // a column warmer than its surroundings has lower pressure beneath it. In the tropics
+      // the surroundings are the whole tropical belt (Lindzen & Nigam 1987), so the lows
+      // follow the warmest water and land across latitudes too; further out, its latitude
+      const wt = P.lnLat > 0 ? 1 / (1 + (sinLat[i] / Math.sin(P.lnLat * deg)) ** 4) : 0;
+      p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - (wt * Ttrop + (1 - wt) * atBand(zT, i)));
       phi[i] = p * 100 / 1.2 + phiG[i];
     }
     balance(1, un, wind);
