@@ -58,6 +58,20 @@
       </details>
 
       <details open>
+        <summary>File</summary>
+        <div class="params">
+          <div class="param wide">
+            <small>a .globe file holds the parameters and the computed layers; drop one on the view to open it</small>
+            <div class="row">
+              <button id="fileLoadBtn" title="Open a .globe file">Open…</button>
+              <button id="fileSaveBtn" title="Save what is shown as a .globe file">Save .globe</button>
+            </div>
+            <input type="file" id="fileIn" accept=".globe,application/zip" hidden>
+          </div>
+        </div>
+      </details>
+
+      <details open>
         <summary>Field</summary>
         <div class="params">
           <div class="param wide">
@@ -80,6 +94,8 @@
       <h3>The grid</h3>
       <p>A map stored as a rectangle of latitude and longitude wastes most of its pixels near the poles and has a seam where the edges meet, which is a poor place to run a simulation. Instead every value lives on the vertices of a subdivided icosahedron. Each level splits every triangle into four, with the new points pushed out onto the sphere, so level <code>n</code> has <code>10·4ⁿ + 2</code> points. Seen from above, the region closest to each point is a hexagon, apart from twelve pentagons at the icosahedron’s own corners. Level 6 has 40,962 cells about 110 km apart, a usual resolution for a climate model; level 8 has 655,362, about 28 km apart.</p>
       <p>The twenty faces pair up into ten diamonds, and each diamond is stored as a plain square array, with the two poles kept apart. Each level contains the one above it, so finer detail can be added to a region later without changing what is already there. The <em>Cell area</em> field shows how even the cells are: the largest is about one and a half times the smallest.</p>
+      <h3>Files</h3>
+      <p>A globe is saved as a <code>.globe</code> file, which is an ordinary zip archive: a <code>manifest.json</code> with the parameters, and for each layer one small binary file per diamond, in the same layout as the grid. Heights are stored as 16-bit integers, other fields as 16- or 32-bit floats. A layer stored at one level can be shown at any other, refined or averaged one level at a time.</p>
       <h3>Next</h3>
       <p>A climate model that runs through the seasons, tested first on the real Earth: air rising where the winds converge and raining out on the way up, which is what makes the equator wet and the subtropics dry. Then terrain, using Rune Skovbo Johansen’s erosion filter adapted to the sphere.</p>
     </div>

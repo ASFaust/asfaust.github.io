@@ -81,6 +81,18 @@ vec3 category(float k) {
   if (i == 10) return vec3(0.95, 0.95, 0.95);
   return vec3(0.12, 0.12, 0.12);
 }
+// relief in metres: blues below sea level, greens to browns to snow above
+vec3 relief(float v, vec2 r) {
+  if (v < 0.0) {
+    float t = clamp(v / min(r.x, -1.0), 0.0, 1.0);
+    return mix(vec3(0.55, 0.75, 0.88), vec3(0.06, 0.16, 0.38), sqrt(t));
+  }
+  float t = clamp(v / 5000.0, 0.0, 1.0);
+  if (t < 0.1) return mix(vec3(0.33, 0.55, 0.32), vec3(0.55, 0.65, 0.38), t / 0.1);
+  if (t < 0.35) return mix(vec3(0.55, 0.65, 0.38), vec3(0.62, 0.52, 0.36), (t - 0.1) / 0.25);
+  if (t < 0.7) return mix(vec3(0.62, 0.52, 0.36), vec3(0.50, 0.42, 0.38), (t - 0.35) / 0.35);
+  return mix(vec3(0.50, 0.42, 0.38), vec3(0.95, 0.95, 0.95), (t - 0.7) / 0.3);
+}
 void main() {
   float val = vVal;
   float b1 = max(vBary.x, max(vBary.y, vBary.z));
@@ -89,7 +101,7 @@ void main() {
     val = vBary.x == b1 ? vVals.x / vBary.x : vBary.y == b1 ? vVals.y / vBary.y : vVals.z / vBary.z;
   }
   float t = clamp((val - uRange.x) / (uRange.y - uRange.x), 0.0, 1.0);
-  vec3 col = uCmap == 1 ? category(val) : uCmap == 2 ? diverging(t) : viridis(t);
+  vec3 col = uCmap == 1 ? category(val) : uCmap == 2 ? diverging(t) : uCmap == 3 ? relief(val, uRange) : viridis(t);
   if (uBorders == 1) {
     // borders fade out once cells shrink to a few pixels, before they turn into moiré
     float d = b1 - b2, w = fwidth(d);
