@@ -15,6 +15,8 @@
 //   Pzonal   1 − rmse/σ of the zonal means
 //   Pheight  land precipitation by height band (0–0.5, 0.5–1, 1–2, 2–3, >3 km): 1 − the mean
 //            |log ratio| model/observed, which catches mountains that rain too much
+//   Plength  how far the pattern reaches: 1 − |log ratio| of the distances at which the
+//            spatial autocorrelation of annual precipitation, less its zonal mean, falls to 1/2
 //   Pdist    1 − the Wasserstein distance between the distributions of annual land
 //            precipitation, in units of its mean: too spiky or too uniform
 //   T        annual temperature RMSE skill, land and all; Tseason the same for July − January
@@ -153,6 +155,31 @@ export function score(res, runLevel, prep) {
       if (qa[ia][0] <= pn) ia++; if (ib < qb.length && qb[ib][0] <= pn) ib++;
     }
     r.Pdist = 1 - d / mean(Po, land); }
+  // how far the pattern reaches: the distance at which the spatial autocorrelation of
+  // annual precipitation (anomalies from the zonal mean) falls to 1/2, model vs observed
+  { const corrLength = f => {
+      const z = zm(f).s, a = f.map((v, i) => v - z[Math.min(NB - 1, Math.floor((lat[i] / Math.PI + 0.5) * NB))]);
+      const pos = ops.pos, NL = 40, bw = 100e3 / 6.371e6;
+      const num = new Float64Array(NL), den = new Float64Array(NL);
+      for (let i = 0; i < N; i += 2) for (let j = 0; j < N; j += 3) {
+        const c = pos[3 * i] * pos[3 * j] + pos[3 * i + 1] * pos[3 * j + 1] + pos[3 * i + 2] * pos[3 * j + 2];
+        if (c < 0.9) continue;
+        const b = Math.floor(Math.acos(Math.min(1, c)) / bw);
+        if (b >= NL) continue;
+        const w = area[i] * area[j];
+        num[b] += w * a[i] * a[j]; den[b] += w * 0.5 * (a[i] * a[i] + a[j] * a[j]);
+      }
+      let pb = -1, pc = 1;
+      for (let b = 0; b < NL; b++) {
+        if (!(den[b] > 0)) continue;
+        const c = num[b] / den[b];
+        if (c < 0.5) return pb < 0 ? 100 * (b + 0.5) : 100 * (pb + 0.5 + (b - pb) * (pc - 0.5) / (pc - c));
+        pb = b; pc = c;
+      }
+      return 100 * NL;
+    };
+    r.P_length = [corrLength(Pm), corrLength(Po)].map(v => Math.round(v));
+    r.Plength = 1 - Math.abs(Math.log(r.P_length[0] / r.P_length[1])); }
   r.dry_land = [mean(Pm.map(v => v < 0.5 ? 1 : 0), land), mean(Po.map(v => v < 0.5 ? 1 : 0), land)].map(v => +v.toFixed(3));
   r.T_skill = skill(Tm, To);
   r.T_land_skill = skill(Tm, To, land);
@@ -186,7 +213,7 @@ export function score(res, runLevel, prep) {
   r.bad_values = bad;
   r.checks_ok = bad === 0 && r.water_imbalance < 0.02 && r.P_max < 15;
   // overall
-  const Pskills = [r.P_corr, r.P_logcorr, r.P_land_logcorr, r.P_skill, r.Pseason, r.Pzonal, r.Pheight, r.Pdist].map(v => Math.max(0, v));
+  const Pskills = [r.P_corr, r.P_logcorr, r.P_land_logcorr, r.P_skill, r.Pseason, r.Pzonal, r.Pheight, r.Pdist, r.Plength].map(v => Math.max(0, v));
   const others = [r.T_land_skill, r.Tseason, (r.u_corr + r.v_corr) / 2, r.koppen_group, r.koppen_class].map(v => Math.max(0, v));
   r.score_P = Pskills.reduce((a, b) => a + b) / Pskills.length;
   // smooth penalties: global precipitation off by 10% costs 0.05, 20 mm/day at the wettest
@@ -201,7 +228,7 @@ export function summary(r) {
   const f = (v, d = 3) => (typeof v === 'number' ? v.toFixed(d) : JSON.stringify(v));
   return [
     `score ${f(r.score)} (precipitation ${f(r.score_P)})${r.checks_ok ? '' : '  CHECKS FAILED'}`,
-    `P  corr ${f(r.P_corr)} log ${f(r.P_logcorr)} land-log ${f(r.P_land_logcorr)} land ${f(r.P_land_corr)} skill ${f(r.P_skill)} season ${f(r.Pseason)} zonal ${f(r.Pzonal)} height ${f(r.Pheight)} dist ${f(r.Pdist)}`,
+    `P  corr ${f(r.P_corr)} log ${f(r.P_logcorr)} land-log ${f(r.P_land_logcorr)} land ${f(r.P_land_corr)} skill ${f(r.P_skill)} season ${f(r.Pseason)} zonal ${f(r.Pzonal)} height ${f(r.Pheight)} dist ${f(r.Pdist)} length ${f(r.Plength)} ${f(r.P_length)} km`,
     `   by height (model, obs) ${f(r.P_by_height)} · dry land ${f(r.dry_land)} · max ${f(r.P_max, 1)}`,
     `T  land skill ${f(r.T_land_skill)} (rmse ${f(r.T_land_rmse, 1)}) all ${f(r.T_skill)} season ${f(r.Tseason)} · wind u ${f(r.u_corr)} v ${f(r.v_corr)}`,
     `Köppen group ${f(r.koppen_group)} class ${f(r.koppen_class)} · worst ${f(r.koppen_confusion)}`,

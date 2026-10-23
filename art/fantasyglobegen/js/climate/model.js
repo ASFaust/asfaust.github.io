@@ -75,6 +75,7 @@ export const EARTH = {
   // damped balance ε φ + c² ∇·u = −Q, u the damped-geostrophic wind of φ, where the heating
   // Q asks for low-level convergence of gillCoupling × (P − mean P)/gillW, fading outside
   // the tropics
+  transportFriction: 1,      // friction on the wind that carries vapour, relative to the surface's
   gillCoupling: 0, gillC: 50, gillDamp: 1 / (3 * 86400), gillW: 40, gillLat: 25,
   // 1 counts the cooling with height twice: the vapour scale height already includes it, and
   // air climbing a slope would rain out everything it carries
@@ -126,6 +127,13 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     out.fill(0);
     for (let i = 0; i < N; i++) out[band[i]] += f[i] * ops.area[i];
     for (let b = 0; b < NB; b++) out[b] /= bandW[b] || 1;
+    // a coarse grid leaves some bands without cells: they take the mean of the nearest bands
+    for (let b = 0; b < NB; b++) if (!bandW[b]) {
+      let lo = b - 1, hi = b + 1;
+      while (lo >= 0 && !bandW[lo]) lo--;
+      while (hi < NB && !bandW[hi]) hi++;
+      out[b] = lo < 0 ? out[hi] : hi >= NB ? out[lo] : out[lo] + (out[hi] - out[lo]) * (b - lo) / (hi - lo);
+    }
     return out;
   };
 
@@ -147,6 +155,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   }
 
   const phi = new Float64Array(N), un = new Float64Array(E6), wind = new Float64Array(3 * N);
+  const unT = P.transportFriction !== 1 ? new Float64Array(E6) : un, windT = P.transportFriction !== 1 ? new Float64Array(3 * N) : wind;
   const speed = new Float64Array(N), div = new Float64Array(N), upslope = new Float64Array(N);
   const ekman = new Float64Array(3 * N), upwell = new Float64Array(N);
   const ones = new Float64Array(N).fill(1), mixK = new Float64Array(N), mixB = new Float64Array(N), mixX = new Float64Array(N);
@@ -199,6 +208,42 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     ops.solveGeneral(gillApply, gB, phiG, gillPC, 1e-4, 50);
   }
 
+  // the wind of the pressure field phi on the edges (uo) and cells (w), for friction rScale
+  // times the surface's
+  function balance(rScale, uo, w) {
+    // normal wind on every edge: u_n = −(r g_n + f g_t)/(r² + f²)
+    for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
+      const e = 6 * i + k, j = ops.nbr[e];
+      const gn = (phi[j] - phi[i]) / (ops.dist[e] * R);
+      const v1 = (phi[i] + phi[j] + phi[ops.side1[e]]) / 3, v2 = (phi[i] + phi[j] + phi[ops.side2[e]]) / 3;
+      const gt = (v2 - v1) / (ops.len[e] * R);
+      const r = rScale * rEdge[e], f = fEdge[e], f2 = Math.max(f * f, fMin * fMin);
+      // clipped, standing in for drag that grows with speed; clipping both directions of an
+      // edge alike keeps every flux antisymmetric
+      uo[e] = Math.max(-P.maxWind, Math.min(P.maxWind, -(r * gn + f * gt) / (r * r + f2)));
+    }
+    ops.reconstruct(uo, w);
+    // momentum mixing: smooth the wind, (1 − L²∇²) u = u_balance per component, then put it
+    // back on the edges; averaging both cells keeps every edge's flux antisymmetric
+    if (P.windMixing > 0) {
+      mixK.fill((P.windMixing / R) ** 2);
+      for (let c = 0; c < 3; c++) {
+        for (let i = 0; i < N; i++) { mixB[i] = w[3 * i + c]; mixX[i] = mixB[i]; }
+        ops.solveImplicit(ones, mixK, mixB, mixX, 1e-4, 100, c > 0);
+        for (let i = 0; i < N; i++) w[3 * i + c] = mixX[i];
+      }
+      for (let i = 0; i < N; i++) {
+        const px = ops.pos[3 * i], py = ops.pos[3 * i + 1], pz = ops.pos[3 * i + 2];
+        const r = w[3 * i] * px + w[3 * i + 1] * py + w[3 * i + 2] * pz;
+        w[3 * i] -= r * px; w[3 * i + 1] -= r * py; w[3 * i + 2] -= r * pz;
+      }
+      for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
+        const e = 6 * i + k, j = ops.nbr[e];
+        uo[e] = 0.5 * ((w[3 * i] + w[3 * j]) * ops.nrm[3 * e] + (w[3 * i + 1] + w[3 * j + 1]) * ops.nrm[3 * e + 1] + (w[3 * i + 2] + w[3 * j + 2]) * ops.nrm[3 * e + 2]);
+      }
+    }
+  }
+
   function winds() {
     if (gillOn) gill();
     // the thermal equator: the warmest latitude band, held within ±20°
@@ -216,37 +261,9 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - zT[band[i]]);
       phi[i] = p * 100 / 1.2 + phiG[i];
     }
-    // normal wind on every edge: u_n = −(r g_n + f g_t)/(r² + f²)
-    for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
-      const e = 6 * i + k, j = ops.nbr[e];
-      const gn = (phi[j] - phi[i]) / (ops.dist[e] * R);
-      const v1 = (phi[i] + phi[j] + phi[ops.side1[e]]) / 3, v2 = (phi[i] + phi[j] + phi[ops.side2[e]]) / 3;
-      const gt = (v2 - v1) / (ops.len[e] * R);
-      const r = rEdge[e], f = fEdge[e], f2 = Math.max(f * f, fMin * fMin);
-      // clipped, standing in for drag that grows with speed; clipping both directions of an
-      // edge alike keeps every flux antisymmetric
-      un[e] = Math.max(-P.maxWind, Math.min(P.maxWind, -(r * gn + f * gt) / (r * r + f2)));
-    }
-    ops.reconstruct(un, wind);
-    // momentum mixing: smooth the wind, (1 − L²∇²) u = u_balance per component, then put it
-    // back on the edges; averaging both cells keeps every edge's flux antisymmetric
-    if (P.windMixing > 0) {
-      mixK.fill((P.windMixing / R) ** 2);
-      for (let c = 0; c < 3; c++) {
-        for (let i = 0; i < N; i++) { mixB[i] = wind[3 * i + c]; mixX[i] = mixB[i]; }
-        ops.solveImplicit(ones, mixK, mixB, mixX, 1e-4, 100, c > 0);
-        for (let i = 0; i < N; i++) wind[3 * i + c] = mixX[i];
-      }
-      for (let i = 0; i < N; i++) {
-        const px = ops.pos[3 * i], py = ops.pos[3 * i + 1], pz = ops.pos[3 * i + 2];
-        const r = wind[3 * i] * px + wind[3 * i + 1] * py + wind[3 * i + 2] * pz;
-        wind[3 * i] -= r * px; wind[3 * i + 1] -= r * py; wind[3 * i + 2] -= r * pz;
-      }
-      for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
-        const e = 6 * i + k, j = ops.nbr[e];
-        un[e] = 0.5 * ((wind[3 * i] + wind[3 * j]) * ops.nrm[3 * e] + (wind[3 * i + 1] + wind[3 * j + 1]) * ops.nrm[3 * e + 1] + (wind[3 * i + 2] + wind[3 * j + 2]) * ops.nrm[3 * e + 2]);
-      }
-    }
+    balance(1, un, wind);
+    // the wind that carries the vapour: the lowest couple of km, where friction is weaker
+    if (P.transportFriction !== 1) balance(P.transportFriction, unT, windT);
     for (let i = 0; i < N; i++) {
       speed[i] = Math.hypot(wind[3 * i], wind[3 * i + 1], wind[3 * i + 2]);
       let s = 0;
@@ -338,7 +355,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let maxOut = 0;
     for (let i = 0; i < N; i++) {
       let o = 0;
-      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; if (un[e] > 0) o += un[e] * ops.len[e]; }
+      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; if (unT[e] > 0) o += unT[e] * ops.len[e]; }
       maxOut = Math.max(maxOut, o * R / (ops.area[i] * R2));
     }
     const sub = Math.min(P.maxSubsteps || Infinity, Math.max(1, Math.ceil(dt * maxOut / 0.5), Math.ceil(dt / (6 * 3600))));
@@ -350,7 +367,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     for (let q = 0; q < nEdge; q++) {
       // air crossing into or out of a column over high ground is only as deep as that column:
       // the rest goes around or over, so vapour moves as humidity times the shallower column
-      const e = edgeSlot[q], c = un[e] * ops.len[e] * R * h * Math.min(colMass[edgeA[q]], colMass[edgeB[q]]);
+      const e = edgeSlot[q], c = unT[e] * ops.len[e] * R * h * Math.min(colMass[edgeA[q]], colMass[edgeB[q]]);
       edgeC[q] = c;
     }
     // storminess: midlatitude weather systems lift air where the zonal-mean temperature
