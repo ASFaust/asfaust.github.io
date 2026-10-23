@@ -124,7 +124,9 @@
 
     <p>Now use a single noise and read it as a direction:</p>
 
-    <p class="eq">&theta;(x) = 2&pi; &middot; P(x), &nbsp;&nbsp; v = (cos &theta;, sin &theta;)</p>
+    <p class="eq">&theta;(x) = 2&pi; &middot; 4 &middot; P(x), &nbsp;&nbsp; v = (cos &theta;, sin &theta;)</p>
+
+    <p>The factor of four matters. Perlin noise is not uniformly distributed: its values pile up around zero, so a plain 2&pi;&middot;<em>P</em> favors one direction and every path drifts that way. Multiplying by four makes &theta; sweep the circle several times, and wrapping it through cos and sin spreads the directions out almost evenly while keeping everything continuous. It also makes the angle change four times faster, so the noise lattice here is about three times wider to keep the curves gentle.</p>
 
     <div class="flow-demo" data-demo="angle"></div>
 
@@ -132,7 +134,7 @@
 
     <p>The reason is topological. Walk once around any closed loop and watch the direction of the arrows. In the component field the arrow can rotate by a full turn along the way, and whenever it does, there must be a zero inside the loop: sinks, sources and whirls turn it by +1, saddles by &minus;1. In the angle field the direction is &theta;, a single continuous function, so when you get back to the start it is back at the value it started with. The winding number is zero around every loop, for free.</p>
 
-    <p>The same argument rules out closed orbits. A path that closed into a loop would turn its own tangent by one full revolution, which requires a zero inside. No zeros, no loops. So a path cannot cross itself and cannot return, and by Poincar&eacute;&ndash;Bendixson it cannot stay in any bounded region either. Every path eventually leaves. Locally it cannot curl up: the tangent direction along the path is just &theta;(<em>x</em>(<em>t</em>)), so its total turning is bounded by the range of &theta;. It can make U-turns, but it cannot spiral.</p>
+    <p>The same argument rules out closed orbits. A path that closed into a loop would turn its own tangent by one full revolution, which requires a zero inside. No zeros, no loops. So a path cannot cross itself and cannot return, and by Poincar&eacute;&ndash;Bendixson it cannot stay in any bounded region either. Every path eventually leaves. Its turning is limited too: the tangent direction along the path is just &theta;(<em>x</em>(<em>t</em>)), so its total turning is bounded by the range of &theta;. It can make U-turns and the odd curl, but it can never wind itself up.</p>
 
     <p>Here is a single path, followed by the camera for as long as you keep watching.</p>
 

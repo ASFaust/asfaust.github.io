@@ -58,11 +58,11 @@
   // ---------- fields and integration ----------
 
   // mode: 'raw' (vx, vy) = (a, b); 'normalized' the same divided by its length;
-  // 'angle' (cos θ, sin θ) with θ = amp · a.
-  function makeVelocity(noise, mode, amp) {
+  // 'angle' (cos θ, sin θ) with θ = amp · a sampled at freq times the lattice frequency.
+  function makeVelocity(noise, mode, amp, freq) {
     if (mode === 'angle') {
       return function (x, y, out) {
-        var t = amp * noise.a(x, y);
+        var t = amp * noise.a(x * freq, y * freq);
         out[0] = Math.cos(t); out[1] = Math.sin(t);
       };
     }
@@ -213,8 +213,11 @@
     this.root = root;
     this.cfg = cfg;
     this.mode = cfg.mode;
-    // θ = 2π · noise, with the noise scaled to [-1, 1].
-    this.amp = 360;
+    // θ = 2π · 4 · Perlin (raw Perlin, about ±0.7, is our noise / sqrt(2)). Four turns
+    // of range wrap around the circle so all directions get nearly equal share; the
+    // lattice is widened to keep the curves from getting four times tighter.
+    this.amp = 4 * 360 / Math.SQRT2;
+    this.freq = 0.3;
     this.seed = 1 + Math.floor(Math.random() * 1e6);
     this.paths = [];
     this.starts = [];
@@ -309,7 +312,7 @@
   };
 
   Demo.prototype.velocity = function () {
-    return makeVelocity(this.noise, this.mode, this.amp * Math.PI / 180);
+    return makeVelocity(this.noise, this.mode, this.amp * Math.PI / 180, this.freq);
   };
 
   Demo.prototype.computeZeros = function () {
