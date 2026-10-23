@@ -79,6 +79,7 @@ js/frame.js               whiten (ZCA), the old adjustments (still replayed), sh
 js/readable.js            Readable optimizer; readability()
 js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGroup(), views() (symmetric orientations)
 js/viewer.js              three.js scene, painted-edges shader, materials, palette colouring, export render
+js/selfx.js               selfIntersections(): which pairs of faces pass through each other (X1)
 js/tiles.js               detached faces (R7): the tiles' faces and positions
 js/lines.js               edges drawn on the screen: face-ID buffer, capsule lines, ink composite
 js/blender.js             the Blender scene script: the RT scene as data plus Python that builds it for Cycles
@@ -121,11 +122,12 @@ Match the surrounding code: comments explain *why*, in full sentences; British s
   - `node tests/symmetry.mjs [-v]`: automorphism counts and point-group names for 36 shapes; symmetrize exactness.
   - `node tests/realize.mjs [--mode chain] [--sym] [--flags w] [--weights regular=1,flat=0.5] [--random N] [--max-it N] [--regularity x] [strings…]`: the realization benchmark. The chain is optimizers run in turn from the built shape (`canonical,regular`), metrics after the last; metrics are explained in [realization/README.md](realization/README.md#measuring).
   - `node tests/examples.mjs [--print] [filter]`: replays every entry of the examples menu (`js/examples.js`) through `js/chain.js`, as the page does, and checks faces, inward faces and reflex edges against [catalogue.md](catalogue.md). Run it after any change to an optimizer or to the chain format: an old link must still give the same shape. A few minutes.
+  - `node tests/survey.mjs [--chain c] [--random N] [--catalogue] [--json] [--out f] [--shots dir] [strings…]`: one chain over many strings, a row of graph features and outcomes per shape ([exploration.md](exploration.md#x2-survey-harness)).
   - `node tests/optimizers.mjs`: whitening, `shapeDistance`, Stellate, mix = regularity blend, equal edges, shake and the symmetry, pruning a chain.
   - `node tests/spectral.mjs [-v] [strings…]`: the eigensolver, the spectral starts, star faces reaching the uniform star polyhedra; with strings, lists their starts.
   - `node tests/planes.mjs [--start raw|canonical] [strings…]`: the readability loss on its own ([realization/readable.md](realization/readable.md)).
   - `node tests/screenshot.mjs <url> <out.png> [waitMs] [js…]`: headless Chrome over CDP (SwiftShader, so slow on big shapes). Do not path-trace on the GPU headless without asking the owner: the GPU drives their desktop, which freezes. Run one at a time (they share a debug port). Prints console errors and the values of the given JS expressions; `sleep:ms` waits. Use it to look at renders.
-- `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, `metrics`, `balance`.
+- `tests/lib.mjs` has the shared helpers: a seeded random generator, the random-string generator, `census`, `metrics` (now with `selfX`), `balance`.
 
 ## Decisions and their reasons
 

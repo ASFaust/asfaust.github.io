@@ -2,6 +2,7 @@
 
 import { centroids, normals, topology } from '../js/mesh.js';
 import { readability } from '../js/readable.js';
+import { selfIntersections } from '../js/selfx.js';
 
 // a seeded random generator (mulberry32), so the random strings are the same every run
 import { rng } from '../js/frame.js';
@@ -135,6 +136,8 @@ export function metrics(P) {
     planarMax: pmax / elen, planarMean: psum / pn / elen,
     inward, reflex, reflexCorners, edgeRatio: emax / emin, areaRatio: amax / amin,
     faceEdgeMax, turnMin, roundMin, sizeRatio, degreeSlope,
+    // pairs of faces that pass through each other (js/selfx.js)
+    selfX: selfIntersections(P.faces, p).pairs,
   };
 }
 

@@ -20,12 +20,10 @@ Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the 
 
 ## Exploration (X): [exploration.md](exploration.md)
 
-X1 and X2 are the tools the questions need; do them first.
+The tools (X1 self-intersection, X2 survey harness) are built; each question starts with a survey.
 
 | ID | item | done when |
 |---|---|---|
-| X1 | **Self-intersection test** (`selfX` in `metrics()`), calibrated on `ebC`, `knJ17`, a stellation and the catalogue. → [X1](exploration.md#x1-self-intersection-test) | In `metrics()` and `tests/realize.mjs`, with the calibration recorded. |
-| X2 | **Survey harness**: one chain over many strings, graph features and outcomes per row, CSV/JSON, optional screenshots. → [X2](exploration.md#x2-survey-harness) | A script in `tests/`, documented in README's testing list. |
 | X3 | **Shapes realizable with regular faces only non-convexly** (`ebC`): direct constraint solver (also settles `sktJ45`), a search, predictors (the symmetry-adapted constraint count), classes by look. → [X3](exploration.md#x3-shapes-realizable-with-regular-faces-only-non-convexly) | A first list of such shapes and a tested predictor, or a recorded negative result. |
 | X4 | **When does regular-then-flat stay clean** (no self-intersection; convex faces); deltahedra as the special case. → [X4](exploration.md#x4-when-does-regular-then-flat-stay-clean) | A survey and a rule with its counterexamples. |
 | X5 | **Which graphs give affine stars**; test the zone hypothesis (self-crossing zones collapse). → [X5](exploration.md#x5-which-graphs-give-affine-stars) | Zone counts and collapse predictions checked on the known cases. |
@@ -58,6 +56,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-23.** X1 self-intersection test (`js/selfx.js`, `selfX` in `metrics()`), calibrated: 0 on every catalogue shape, many on stellations; X2 survey harness (`tests/survey.mjs`, CSV or JSON, optional screenshots). → [exploration.md](exploration.md#tools)
 - **2026-10-23.** R7 Detached solid faces: *Detach faces* and *Tile thickness* in Appearance (URL `gap`, `thk`); the tiles are drawn, traced, sent to Blender and saved as OBJ/STL in place of the faces (`js/tiles.js`). → [rendering.md](rendering.md#r7-detached-solid-faces)
 - **2026-10-23.** R4 Depth of field: *Depth of field* and *Focus* in the Scene panel (URL `dof`, `fo`), traced by RT (PhysicalCamera) and carried into the Blender scene; the fast view stays sharp, and the drawn lines stay sharp. Found on the way: a white background traced black (library bug, worked round). → [rendering.md](rendering.md#r4-depth-of-field)
 - **2026-10-23.** U1 Examples menu under Named shapes: all 29 catalogue entries in five groups, with the owner's short names (`js/examples.js`); choosing one opens its link. The chain format moved to `js/chain.js` so `tests/examples.mjs` replays every link exactly as the page does; all match the catalogue's faces, inward faces and reflex edges (and its round counts), about 4 minutes in all.

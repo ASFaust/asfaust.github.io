@@ -13,7 +13,8 @@
 //
 // Columns: rounds and time of the last step (after the build, which relaxes between operators,
 // and the earlier steps, which are not timed), then the metrics of tests/lib.mjs: planarity (max, relative to the mean edge),
-// faces pointing inward, reflex edges, reflex corners (faces turning the wrong way), longest/shortest edge, and balance: the worst longest/shortest
+// faces pointing inward, reflex edges, reflex corners (faces turning the wrong way), selfX (pairs of faces passing through
+// each other, js/selfx.js), longest/shortest edge, and balance: the worst longest/shortest
 // edge within one face, the smallest corner turn relative to a regular face's, the least round face,
 // largest/smallest face size against a regular polygon of its degree, and the slope of size
 // against degree.
@@ -44,7 +45,7 @@ const strings = [...(args.length ? args : random ? [] : LIST), ...randomStrings(
 
 const f = (x, d = 1) => x.toExponential(d);
 console.log(`steps ${chain.join(' → ')}${sym ? ', symmetric' : ''}${chain.includes('regular') ? `, regularity ${regularity}` : ''}`);
-console.log('string        edges  rounds      ms   planar  inward reflex corner  edge×  fedge×  turn  round  size×  slope');
+console.log('string        edges  rounds      ms   planar  inward reflex corner  selfX  edge×  fedge×  turn  round  size×  slope');
 let total = 0;
 for (const s of strings) {
   const { P } = build(s);
@@ -69,6 +70,6 @@ for (const s of strings) {
   }
   total += ms;
   const m = metrics(P);
-  console.log(`${s.padEnd(12)} ${String(P.ne).padStart(6)} ${String(R.it).padStart(7)} ${ms.toFixed(0).padStart(7)}  ${f(m.planarMax)} ${String(m.inward).padStart(7)} ${String(m.reflex).padStart(6)} ${String(m.reflexCorners).padStart(6)} ${m.edgeRatio.toFixed(1).padStart(6)} ${m.faceEdgeMax.toFixed(1).padStart(7)} ${m.turnMin.toFixed(2).padStart(5)}   ${m.roundMin.toFixed(2)} ${m.sizeRatio.toFixed(1).padStart(6)} ${(isNaN(m.degreeSlope) ? '—' : m.degreeSlope.toFixed(2)).padStart(6)}`);
+  console.log(`${s.padEnd(12)} ${String(P.ne).padStart(6)} ${String(R.it).padStart(7)} ${ms.toFixed(0).padStart(7)}  ${f(m.planarMax)} ${String(m.inward).padStart(7)} ${String(m.reflex).padStart(6)} ${String(m.reflexCorners).padStart(6)} ${String(m.selfX).padStart(6)} ${m.edgeRatio.toFixed(1).padStart(6)} ${m.faceEdgeMax.toFixed(1).padStart(7)} ${m.turnMin.toFixed(2).padStart(5)}   ${m.roundMin.toFixed(2)} ${m.sizeRatio.toFixed(1).padStart(6)} ${(isNaN(m.degreeSlope) ? '—' : m.degreeSlope.toFixed(2)).padStart(6)}`);
 }
 console.log(`total ${(total / 1000).toFixed(1)} s`);

@@ -1,5 +1,5 @@
 // Replays every example of the menu (js/examples.js) as the page does, and checks the numbers
-// docs/catalogue.md gives for it, so that a change to the optimizers or to the chain format that
+// docs/catalogue.md gives for it (and that it does not pass through itself), so that a change to the optimizers or to the chain format that
 // would change an old link shows up. Slow: a few minutes, most of it in the near misses.
 // node tests/examples.mjs [--print] [name filter]
 
@@ -41,6 +41,7 @@ const EXPECTED = {
 
 const args = process.argv.slice(2), print = args.includes('--print'), filter = args.find(a => !a.startsWith('--'));
 const NAMES = ['faces', 'inward', 'reflex'];
+// none of the owner's shapes passes through itself (X1, 2026-10-23)
 for (const [, list] of EXAMPLES) {
   for (const [name, link] of list) {
     if (filter && !name.includes(filter) && !link.includes(filter)) continue;
@@ -50,9 +51,10 @@ for (const [, list] of EXAMPLES) {
     S.symmetries();
     const rounds = parseSteps(q.m || 'canonical').map(t => S.run(message(t))?.it ?? 0);
     const m = metrics(S.P), got = [S.P.nf, m.inward, m.reflex];
-    if (print) console.log(`${name.padEnd(28)} ${link.split('&').slice(0, 2).join('&').padEnd(44)} faces ${got[0]}, inward ${got[1]}, reflex ${got[2]}, planar ${m.planarMax.toExponential(1)}, rounds ${rounds.join('+')}, ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    if (print) console.log(`${name.padEnd(28)} ${link.split('&').slice(0, 2).join('&').padEnd(44)} faces ${got[0]}, inward ${got[1]}, reflex ${got[2]}, selfX ${m.selfX}, planar ${m.planarMax.toExponential(1)}, rounds ${rounds.join('+')}, ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     const want = EXPECTED[link];
     if (want) want.forEach((w, i) => expect(w === null || w === got[i], `${name} (${link}): ${NAMES[i]} ${got[i]}, catalogue ${w}`));
+    expect(m.selfX === 0, `${name} (${link}): ${m.selfX} pairs of faces pass through each other`);
   }
 }
 finish('examples');
