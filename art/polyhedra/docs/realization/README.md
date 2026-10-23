@@ -1,35 +1,31 @@
 # Realization: From a Graph to a Shape
 
-The operators produce only a **graph**: which vertices lie on which face, in which order. A **realization** assigns a 3D position to every vertex. This is the page's main open problem. The owner worked on it for months in PolyOp without finding a satisfying general method. This file frames the problem; each approach has its own file.
+> **Status:** framing doc for all optimizers. **Code:** `js/pipeline.js` (`OPTIMIZERS`, `Realization`, `Session`), `tests/lib.mjs` (`metrics`, `balance`). **Tests:** `tests/realize.mjs`. **Backlog:** A1, O1.
+
+The operators produce only a **graph**: which vertices lie on which face, in which order. A **realization** assigns a 3D position to every vertex. This was the page's main open problem: the owner worked on it for months in PolyOp without finding a satisfying general method, and goal A is now mostly solved here. This file frames the problem; each optimizer family has its own file.
 
 ## Two goals: keep them apart
 
 Ideas in this area tend to mix two goals that are often unrelated and sometimes in conflict. **Every experiment should say which one it serves.**
 
-### Goal A: a general solver
-For *any* graph the page can produce, give a shape that is a faithful, good-looking picture of the polyhedron.
-- **Hard requirements:**
-  - convex,
-  - flat faces,
-  - every symmetry of the graph realized as a rotation or reflection,
-  - deterministic,
-  - never fails or explodes.
-- **Soft requirements:**
-  - **balanced**: every corner of every face can be seen, so that no hexagon reads as a pentagon ([Balance](#balance)),
-  - fast: seconds for up to about 10k edges, in a browser worker.
-- **Baseline:** the canonical polyhedron ([canonical.md](canonical.md)). It meets every hard requirement, but it is badly unbalanced on graphs with very unequal faces (`tttttD`, `kkkD`) and slow to converge on them.
+### Goal A: nice shapes
+For *any* graph the page can produce, give a shape that is a faithful, good-looking picture of the polyhedron. *Mostly solved* (owner, 2026-10-23); the open cases are in the backlog (`A1`).
+- **Hard requirements:** convex; flat faces; every symmetry of the graph realized as a rotation or reflection; deterministic; never fails or explodes.
+- **Soft requirements:** **balanced**, every corner of every face can be seen, so that no hexagon reads as a pentagon ([Balance](#balance)); fast, seconds for up to about 10k edges in a browser worker.
+- **Tools:** Canonical ([canonical.md](canonical.md)), the baseline that meets every hard requirement but is unbalanced on graphs with very unequal faces; Readable ([readable.md](readable.md)) for simple and simplicial graphs; Face mean with Whiten as a start when those tangle; Flat faces to finish.
 
 ### Goal B: artsy shapes
-For a graph plus some style controls, give a shape that looks interesting. The two axes (owner, 2026-10-21): **non-convexity and symmetry**. Regular faces and affine faces aim at it directly: regular or affine-regular faces, which the graph can usually only have by folding ([regular-faces.md](regular-faces.md)). The controls are the buttons themselves: an init (as built, random points, or a spectral layout), then optimizers and shakes chained and stopped part-way, each with the switches whiten and keep symmetry, and the Mix of several targets with weights ([../user-experience.md](../user-experience.md)).
-- **Allowed:** non-convex shapes, slightly bent faces, stellations, self-intersections when they look good.
-- **Required:**
-  - controllable: the chain of optimizers, where each is stopped, and regularity, decide the shape,
-  - stable: it settles and does not flicker or explode,
-  - reproducible from the URL.
-- Quality is judged by eye. The reference renders in `PolyOp/polyop_ref/` show the taste: folded, crumpled, spiky and stellated shapes, and soft organic ones.
+**Artsy means non-convex** (owner, 2026-10-23), with the symmetry kept. Allowed: non-convex shapes, slightly bent faces, stellations, self-intersections when they look good. Required: controllable (the chain, where each step is stopped, and the parameters decide the shape), stable (settles, does not flicker or explode), reproducible from the URL. Judged by eye; the taste is in `PolyOp/polyop_ref/` and in [../catalogue.md](../catalogue.md).
+
+**What is known about artsy optimizers** (owner, 2026-10-23):
+- **There is no single "artsy solver", and no continuum of them.** Each optimizer that makes non-convex shapes does it in its own way, specific to it, and new ones are hard to invent. The search for new artsy optimizers is mostly paused; the one experiment still wanted is the symmetry-only optimizer (`O1`, below).
+- **Regular faces is the best so far.** Its non-convexity comes from *pressure between the faces*: there is not enough room for the regular faces, so the shape bulges in and out and makes symmetric creases, like the folds in the "turning a sphere inside out" video. The owner usually wants flat faces at the end, which often disagrees with what the regular pass settled on; hence the regular-then-flat chain. Some graphs have a non-convex realization with exactly regular faces and no convex one (`ebC`; the research is [../exploration.md](../exploration.md#x3-shapes-realizable-with-regular-faces-only-non-convexly)). Regular faces can have several separate resting points (`X6`).
+- **Affine faces is close to Regular in spirit**, the exception to the rule above. It needs Whiten or it often collapses the whole shape, and even then some faces collapse to segments ([../exploration.md](../exploration.md#x5-which-graphs-give-affine-stars)).
+- **Spectral starts** are the other source: the adjacency matrix often gives interesting non-convex starts, the face-mean matrix reliably good starts for goal A. The owner's explanation of why: [spectral.md](spectral.md#owners-observations).
+- **Freedom instead of pressure** is the idea behind `O1`: start from random points and enforce only a symmetry group (or a subgroup), so non-convexity comes from the start, not from the faces pushing, and every start looks different. The owner expects it to look too messy alone, and wants to see it anyway, to learn what then needs forcing.
 
 ### Where they meet
-They share machinery: per-face projections, symmetry averaging, the metrics below, and the benchmark. A goal-B method restricted to safe parameters can become a goal-A candidate; regular faces with low regularity is close to the canonical shape. A goal-A method stopped early, or pushed past its target, is often a goal-B effect.
+They share machinery: per-face projections, symmetry averaging, the metrics below, and the benchmark. A goal-B method restricted to safe parameters can become a goal-A candidate (regular faces at low regularity is close to canonical; tangent + regular in the Mix is a canonical shape pulled towards regular faces). A goal-A method stopped early, or pushed past its target, is often a goal-B effect.
 
 ## Facts to build on
 
@@ -77,7 +73,7 @@ They share machinery: per-face projections, symmetry averaging, the metrics belo
 
 **The minimal definition (owner, 2026-10-21): every corner of every face can be seen.** A face whose edges have wildly different lengths is a "weird adapter". Two of its corners nearly merge, and a hexagon reads as a pentagon. A corner that is nearly straight vanishes in the same way. Two per-face measures (`balance()` in `tests/lib.mjs`, which also returns the per-face values), both 1 for a regular face:
 - **Edge ratio** `edge_f`: longest / shortest edge of the face. `faceEdgeMax` is the worst face.
-- **Turn** `turn_f`: the smallest turn at a corner (the angle between its two edges, unsigned, in space), over the regular n-gon's turn 2π/n. `turnMin` is the worst face. It is relative because a regular 160-gon's corners turn only 2.25°. It is unsigned and taken in space, so that it means the same on the bent faces of detached faces. Reflex corners are still visible corners, and convexity is counted apart (`inward`, `reflex`).
+- **Turn** `turn_f`: the smallest turn at a corner (the angle between its two edges, unsigned, in space), over the regular n-gon's turn 2π/n. `turnMin` is the worst face. It is relative because a regular 160-gon's corners turn only 2.25°. It is unsigned and taken in space, so that it means the same on the bent faces of regular faces. Reflex corners are still visible corners, and convexity is counted apart (`inward`, `reflex`).
 
 Each catches cases the other misses. A hexagon with one edge shrunk to nothing is a regular pentagon, which is round (0.95) and turns well, so only the edge ratio sees it. A thin rhombus has equal edges, so only the turn sees it.
 
@@ -110,9 +106,9 @@ The ordering matches the eye in every case, and `areaRatio` gets several of them
 - **By this definition canonical is already balanced on most of the benchmark list** (edge ratio ≤ 3.4), including `tktkI`, whose sizes vary 14×. It fails on `kkkD` (slivers) and `tttttD` (adapters).
 - **The `tttttD` adapters are not in the wedge itself.** Faces next to the shared 160-gon edges have edge ratio about 9. The worst faces (about 140) are the 24-gons three faces away: their edges next to triangles and hexagons are about 1e-2, but those shared with a 160-gon or a 48-gon are 2e-4 to 7e-4, so each of them reads as roughly a 21-gon. (Unconverged: planar 6e-3 and 600 inward faces at 30k rounds.)
 - **Detached faces is readable everywhere** (edge ratio ≤ 2.0, turn ≥ 0.46), but on `tttttD` only by giving up convexity and flatness.
-- **A convex, flat, readable `tttttD` exists**: optimizing face planes directly gives edge ratio 3.4 and turn 0.59 ([planes.md](planes.md)), now the page's "Readable" mode.
-- **The readable loss does not suit simplicial graphs.** Freed from the convexity boundary, it flattens kis pyramids into flat triangulated patches; the attempt was rejected ([planes.md](planes.md#simplicial-graphs-a-rejected-fix-2026-10-21)).
-- **Not every graph has one.** At a convex vertex of degree d surrounded by triangles, some triangle has edge ratio at least sin 54° / sin(360°/d) if all its corners are readable. That is 6.2 for `kkkkD`, so no convex realization of it is readable ([planes.md](planes.md#a-lower-bound-high-degree-vertices)). Goal A must therefore aim for "as readable as the graph allows", not a fixed threshold.
+- **A convex, flat, readable `tttttD` exists**: optimizing face planes directly gives edge ratio 3.4 and turn 0.59 ([readable.md](readable.md)), now the page's "Readable" mode.
+- **The readable loss does not suit simplicial graphs.** Freed from the convexity boundary, it flattens kis pyramids into flat triangulated patches; the attempt was rejected ([readable.md](readable.md#simplicial-graphs-a-rejected-fix-2026-10-21)).
+- **Not every graph has one.** At a convex vertex of degree d surrounded by triangles, some triangle has edge ratio at least sin 54° / sin(360°/d) if all its corners are readable. That is 6.2 for `kkkkD`, so no convex realization of it is readable ([readable.md](readable.md#a-lower-bound-high-degree-vertices)). Goal A must therefore aim for "as readable as the graph allows", not a fixed threshold.
 
 Other candidates considered: a neighbour-size measure (implied by the edge ratio, see above); the inradius per face (close to `s_f` for round faces, adds nothing).
 
@@ -134,38 +130,35 @@ An optimizer is a class with:
 
 `build()` in `pipeline.js` relaxes canonically between operators (not after the last), so the shape as built is close to canonical except for the last operator's construction; the default chain is `canonical`.
 
-## Approaches
+## The optimizers
 
-| approach | serves | status | file |
+Every button in the page's Realization panel, as of 2026-10-23.
+
+| button | what it does | serves | details |
 |---|---|---|---|
-| Canonical (Hart's iteration, with fixes) | A: the baseline | "Canonical" button, the default chain | [canonical.md](canonical.md) |
-| Flat faces only | B, gently: keeps the shape close to where it was | "Flat faces" button | [canonical.md](canonical.md#planar-mode) |
-| As built | the operators' construction (relaxed between operators); a starting point for chains | "As built" button | — |
-| Regular faces: per-face regular target, then merge | B | "Regular faces" button, with regularity | [regular-faces.md](regular-faces.md) |
-| Affine faces: per-face affine-regular target (nozono's `P_F`), then merge | B | "Affine faces" button | [regular-faces.md](regular-faces.md), [nozono.md](nozono.md) |
-| Face mean: each vertex to the mean of its faces' centres (power iteration) | B; with orthogonalise + normalise, the spectral face-mean layout | "Face mean" button | [regular-faces.md](regular-faces.md#face-mean-2026-10-21), [spectral.md](spectral.md) |
-| Star-polygon target | B: stellations | idea | [regular-faces.md](regular-faces.md#per-face-targets) |
-| Readable: optimize edge ratio and turn over face planes or vertices | A: simple and simplicial graphs | "Readable" button; `tttttD` convex, flat, readable | [planes.md](planes.md) |
-| Spectral: eigenvectors of graph matrices | B (stellations); seeds for A | not implemented | [spectral.md](spectral.md) |
-| Symmetry averaging (a component, not a method) | A and B | always on in regular and affine faces; hurts canonical, so not used there | [../symmetry.md](../symmetry.md) |
-| Artsy deformations (below) | B | ideas | this file |
+| As built | the operators' construction, relaxed canonically between operators (init) | start | [../README.md](../README.md#core-data-structures-and-conventions) |
+| Random | random points from a seed; the symmetry is not kept afterwards (init) | B | — |
+| Spectral ‹ n › | eigenvectors of a graph matrix (adjacency, Laplacian, vertex mean, face mean), browsable (init) | B; starts for A | [spectral.md](spectral.md) |
+| Canonical | Hart's iteration to the midsphere polyhedron | A, the default | [canonical.md](canonical.md) |
+| Readable | balance optimized over face planes or vertices, convex and flat | A: simple and simplicial graphs | [readable.md](readable.md) |
+| Flat faces | canonical's planarity step alone; keeps the shape close to where it was | both: the usual last step | [canonical.md](canonical.md#planar-mode) |
+| Regular faces (regularity) | detach, make each face regular, merge | B: the main artsy optimizer | [regular-faces.md](regular-faces.md) |
+| Affine faces | the same with affine-regular faces (nozono's `P_F`) | B: stars | [regular-faces.md](regular-faces.md), [nozono.md](nozono.md) |
+| Star faces (pointedness) | the same with star polygons `{n/k}` | B: finishing stellations | [regular-faces.md](regular-faces.md#star-faces) |
+| Stellate | affine star faces with whitening: subspace iteration to a stellation | B | [regular-faces.md](regular-faces.md#stellate-2026-10-22) |
+| Face mean | each vertex to the mean of its faces' centres (power iteration); with Whiten, the spectral face-mean layout | starts for A | [regular-faces.md](regular-faces.md#face-mean-2026-10-21) |
+| Equal edges | the same scheme over edges | Mix ingredient | [regular-faces.md](regular-faces.md#equal-edges-and-the-mix-2026-10-22) |
+| Mix | several targets with weights (flat, regular, star, affine, stellate, mean, edges, tangent, sphere) | both | [regular-faces.md](regular-faces.md#mixing) |
+| Shake | moves every vertex by 0.1 mean edge lengths from a seed, symmetrized when the symmetry is kept | both: leave a fixed point, test stability | — |
 
-### Artsy deformations (small ideas, no file yet)
-These move vertices without changing the graph:
-- **Scrape-off morph**, `scrape_off(t)` from PolyOp: one parameter going from truncate (t < 0.5) to ambo. It needs the old and new graphs mapped onto each other, so it fits better as an operator with a parameter.
-- **Stop early**: now done by clicking the running optimizer. Adding noise and relaxing a little: the Shake button (2026-10-22).
-- **Spherical projection**: put every vertex on the unit sphere; the faces then bend. Now the Mix's sphere target (2026-10-22), which can be weighted against flat or regular.
-- **Per-face extrusion and insets**: these change the geometry but not the graph, if done as a displacement.
-- **Ramped regularity**: now done by chaining Regular faces at rising regularity (0.3, then 0.6, then 1).
+**Switches** (global, recorded per step): **Whiten**, symmetric (ZCA) whitening after every round, `X ← X C^{-1/2}` scaled to keep the size, with `C` the covariance of the centred positions; it commutes with rotations, so it never breaks the symmetry ([regular-faces.md](regular-faces.md#whiten)). **Keep symmetry**, averaging over the automorphisms every 10 rounds in the face optimizers, the Mix, Readable and Shake; Canonical and Flat faces keep the symmetry by themselves and never average (it slowed Canonical 2× by breaking its momentum, [../symmetry.md](../symmetry.md)).
 
-Topology-changing styles (wireframe tubes, detached tiles) are rendering, in [../rendering.md](../rendering.md).
+**Ideas not built**, parked by the owner's decision to stop looking for new artsy optimizers (2026-10-23), listed in the backlog's *Parked* section: per-orbit k for Star faces, an isotoxal star target (`anzD`'s concave star faces), the scrape-off morph (PolyOp's `scrape_off(t)`, truncate ↔ ambo, which needs the two graphs mapped onto each other), per-face extrusion as a displacement, random weights per symmetry orbit ([spectral.md](spectral.md#owners-observations)). Wireframe tubes and detached tiles are rendering ([../rendering.md](../rendering.md)).
 
 ## Open questions (cross-cutting)
 
-1. **What is "balanced"?** Defined now: every corner readable, measured by the edge ratio and turn within each face ([Balance](#balance)). Thresholds: edge ratio 4, turn 0.45 (accepted, revisable). Settled: not every graph has a convex, flat realization within them (`kkkkD` has none; `tttttD` has one), see [planes.md](planes.md). Size and slope remain descriptive; whether big faces should be smaller than regular is a taste question for goal B, not part of goal A.
-2. **Why are big faces sluggish?** Probably conditioning: a face of degree n couples n vertices, and its averaged pull on each vertex is weak. Ideas to try:
-   - weighting by degree,
-   - preconditioning,
-   - coarse-to-fine schemes; relaxing after each operator is already a weak version of this.
-3. **Symmetry with momentum.** Averaging over the symmetries breaks the momentum in canonical mode. Projecting the velocity onto the symmetric subspace as well might fix it ([../symmetry.md](../symmetry.md)).
-4. **Convexity for goal-B methods.** Measure it always. Enforce it optionally, for example by projecting each vertex to the inner side of its neighbouring faces' planes.
+1. **Why are big faces sluggish?** Probably conditioning: a face of degree n couples n vertices, and its averaged pull on each vertex is weak. Ideas: weighting by degree, preconditioning, coarse-to-fine (relaxing after each operator is a weak version). No current task depends on it.
+2. **Symmetry with momentum.** Averaging breaks Canonical's momentum. Projecting the velocity onto the symmetric subspace as well might fix it ([../symmetry.md](../symmetry.md)).
+3. **What will an optimizer make of a given graph?** That is the research project in [../exploration.md](../exploration.md).
+
+Settled: what "balanced" means ([Balance](#balance)); not every graph has a convex, flat, readable realization (`kkkkD` has none, [readable.md](readable.md#a-lower-bound-high-degree-vertices)); how big big faces should be is a goal-B taste question.

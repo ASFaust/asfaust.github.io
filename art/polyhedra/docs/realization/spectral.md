@@ -1,12 +1,12 @@
 # Spectral Realizations
 
-**Serves:**
-- goal B: stellated and spiky shapes,
-- possibly a starting point for goal A (see [README.md](README.md)).
+> **Status:** in the page as the "Spectral" init (2026-10-21) with a matrix dropdown (adjacency, Laplacian, vertex mean, face mean) and a stepper over the starts, up to 1,500 vertices. **Code:** `js/spectral.js`. **Tests:** `tests/spectral.mjs`. **Backlog:** parked leftovers (mirrored duplicates, 4+-dimensional eigenspaces, characters, a sparse solver), the per-orbit weights idea.
 
-**Status:** in the page as the "Spectral" init (2026-10-21) with a matrix dropdown (adjacency, Laplacian, vertex mean, face mean; owner's request) and a stepper over the starts, up to 1,500 vertices. **Code:** `js/spectral.js`; tests `tests/spectral.mjs`. The face-mean layout is also reachable by iteration: the "Face mean" optimizer with orthogonalise and normalise on ([regular-faces.md](regular-faces.md#face-mean-2026-10-21)). Not done: characters and isotypic types, a self-intersection check. It existed in PolyOp (C++). **Prerequisite, done:** automorphisms ([../symmetry.md](../symmetry.md)).
+**Serves** goal B (non-convex and stellated starts; the adjacency matrix especially) and goal A (the face-mean layout is a reliable start; owner, 2026-10-23). The face-mean layout is also reachable by iteration: Face mean with Whiten ([regular-faces.md](regular-faces.md#face-mean-2026-10-21)). It existed in PolyOp (C++).
 
-## The implementation (2026-10-21)
+**Idea:** take an n×n matrix built from the graph and three of its eigenvectors `u, v, w`, and place vertex `i` at `(u_i, v_i, w_i)`. For many graphs the right three eigenvectors give a convex realization directly; others give a stellated version, or something degenerate.
+
+## How it works
 
 - **Matrices** (`graphMatrix`): adjacency A; Laplacian D − A, given to the solver as A − D so that the smoothest eigenvectors are again the largest (the note shows the eigenvalues of D − A); vertex mean D⁻¹A and face mean D⁻¹B (`B_ij = Σ_{f ∋ i,j} 1/|f|`) through the similar symmetric D^{-1/2} M D^{1/2}, the eigenvectors mapped back by D^{-1/2}, so PolyOp's lower-triangle bug does not arise. The mapping keeps the layouts exactly symmetric (a symmetry keeps degrees), and within an irreducible eigenspace Schur's lemma keeps the columns orthogonal and equally long. Adjacency, Laplacian and vertex mean have the same eigenvectors on graphs with one vertex degree; face mean depends on the faces and differs even there (`P6`: 1 start against 4).
 - **Starts** (`spectralStarts`): whole eigenspaces of the chosen matrix, so every start is exactly symmetric: each 3-dimensional eigenspace, each 2-dimensional one with each 1-dimensional one, and triples of the six strongest 1-dimensional ones (for groups without 2- or 3-dimensional representations). The top eigenspace (Perron vector, trivial representation) is skipped. A start is kept if the fitted matrices are all different (the representation is faithful), none is singular, and no two vertices coincide. Each is centred, its columns scaled to equal spread, mirrored to positive density. Candidates are tried smoothest first (by the mean of the three eigenvalues), and the list stops at 100 starts or 3,000 candidates: on graphs with little symmetry the pairs run into the thousands (`zcmJ17`: 72,493 faithful starts, which first made the survey time out).
@@ -29,13 +29,9 @@
 
   With flat faces required, only 8–10 first starts are convex. The matrices are close; face mean is last, not first as in PolyOp (whose solver read only the lower triangle of the non-symmetric matrix). Shapes with little symmetry (Johnson-seed strings, groups of order 8–16) almost never get a convex start; `ajaO` (Oh) has none in any matrix. `eY6` has no start at all (likely its faithful 2-dimensional eigenspace merges with another eigenvalue, making a 4-dimensional space, which is skipped). Spectral is a source of symmetric stellated starts, not a convex realizer. For the icosahedron the convex one is +√5 and the great icosahedron −√5; for the dodecahedron the great stellated dodecahedron is −√5. So the "Galois conjugate" hypothesis below holds for these two.
 - **Stellations are common**: densities seen 1, 7, 11, 13, 17, 19, 31, 37, 43, 47 (`tD`, `sD`, `gD`). On non-uniform graphs (`gD`) the stellated starts have bent faces (planar 0.05–0.6).
-- **Star faces from a stellated start gives the uniform star polyhedra exactly, with the symmetry kept**: `D` → great stellated dodecahedron, `aD` → great icosidodecahedron, `tI` → truncated great icosahedron, `tC` → stellated truncated hexahedron (all density 7), `tD` → great stellated truncated dodecahedron (13), `sD` → great snub icosidodecahedron (7) and great retrosnub icosidodecahedron (37). Spread below 1e-7, all edges equal, all vertices on one sphere ([regular-faces.md](regular-faces.md#per-face-targets)).
-- **A favourite from the first start** (owner, 2026-10-22): `ocA6`, spectral start 1 (adjacency, 2 + 1 eigenspaces, density 1, faces bent 0.18), then Flat faces (50 rounds): a non-convex shape with 228 reflex edges and every face convex, "concave detail with small protruding pyramids inset". The smoothest layout is often not convex, and Flat faces keeps its folds. [../user-experience.md](../user-experience.md#owners-favourites).
+- **Star faces from a stellated start gives the uniform star polyhedra exactly, with the symmetry kept**: `D` → great stellated dodecahedron, `aD` → great icosidodecahedron, `tI` → truncated great icosahedron, `tC` → stellated truncated hexahedron (all density 7), `tD` → great stellated truncated dodecahedron (13), `sD` → great snub icosidodecahedron (7) and great retrosnub icosidodecahedron (37). Spread below 1e-7, all edges equal, all vertices on one sphere ([regular-faces.md](regular-faces.md#star-faces)).
+- **A favourite from the first start** (owner, 2026-10-22): `ocA6`, spectral start 1 (adjacency, 2 + 1 eigenspaces, density 1, faces bent 0.18), then Flat faces (50 rounds): a non-convex shape with 228 reflex edges and every face convex, "concave detail with small protruding pyramids inset". The smoothest layout is often not convex, and Flat faces keeps its folds. [../catalogue.md](../catalogue.md#spectral-starts-and-the-built-shape).
 - **Mirrored duplicates**: some starts optimize to a convex shape turned inside out (density −1, every edge reflex; `tI` start 3) or to a mirror image of another stellation (−7). Harmless, but the list could be shortened by dropping them.
-
-## Idea
-
-Take an n×n matrix built from the graph and three of its eigenvectors `u, v, w`, and place vertex `i` at `(u_i, v_i, w_i)`. For many graphs, the right three eigenvectors give a valid convex realization directly, without iteration. For others they give a stellated version, or something degenerate.
 
 ## What PolyOp did (for reference)
 
@@ -51,7 +47,9 @@ Take an n×n matrix built from the graph and three of its eigenvectors `u, v, w`
 
 ## Owner's observations
 
-- Face-mean gives a valid realization most often, adjacency sometimes.
+- **Adjacency gives interesting shapes, face mean good starts** (owner, 2026-10-23). The face-mean matrix very reliably gives good starts for nice shapes. The adjacency matrix often gives interesting non-convex ones, and the owner's explanation is that an adjacency layout is a kind of spring equilibrium in which the total spring weight on a vertex grows with its degree, so high- and low-degree vertices settle at different radii: inset and protruding vertices, a non-convex shape. (Consistent with the face-mean and vertex-mean matrices, which are row-normalized, so every vertex has the same total weight, and which give convex layouts more often. Not tested.)
+- **Idea, not to be built yet** (owner, 2026-10-23): if unequal weights per vertex make interesting shapes, other optimizers could take **random weights per symmetry orbit**, perhaps as a checkbox next to Whiten and Keep symmetry. Weights per orbit keep the symmetry. Parked in the backlog.
+- Face-mean gives a valid realization most often, adjacency sometimes (from PolyOp).
 - **Multiplicity is not the test.** The hexagonal prism realizes correctly from eigenvectors of *two different* eigenvalues: a 2-dimensional eigenspace (the hexagons) and a 1-dimensional one (the axis).
 - **Stellations appear in the spectrum.** Other eigenvector triples give stellated versions of the same graph, with faces realized as star polygons or wound the wrong way.
 
@@ -62,7 +60,7 @@ Take an n×n matrix built from the graph and three of its eigenvectors `u, v, w`
   - 2 + 1 for prisms: the rotation about the axis acts in 2D, and the axis flip acts in 1D.
 
   This explains the hexagonal prism, and suggests choosing eigenvectors by their isotypic component rather than by index.
-- **Stellations as Galois conjugates.** For the icosahedron, mapping `√5 ↦ −√5` sends its coordinates to those of the great icosahedron, the same graph realized as a stellation. Eigenvalues of integer matrices are algebraic numbers. Conjugating the convex realization's eigenvalue may be exactly what picks out the stellated eigenspace. Test on the icosahedron, dodecahedron and `tI` first.
+- **Stellations as Galois conjugates.** For the icosahedron, mapping `√5 ↦ −√5` sends its coordinates to those of the great icosahedron, the same graph realized as a stellation. Eigenvalues of integer matrices are algebraic numbers. Conjugating the convex realization's eigenvalue may be exactly what picks out the stellated eigenspace. Confirmed for the icosahedron and the dodecahedron (Findings).
 - **Convex form is extremal.** For the mean matrices, the second-largest eigenspace is the "smoothest" non-trivial layout, as in spectral graph drawing. The convex realization should come from the smoothest faithful 3-dimensional representation, and the stellated ones from rougher ones.
 
 ## Checking a candidate realization
@@ -74,17 +72,10 @@ All of these are cheap, and the page needs them anyway:
 - **no coincident vertices**, and no zero-area faces,
 - **no self-intersections**: the expensive one; needed only for goal B, to tell stellations from garbage.
 
-## Implementation plan
+## Open (parked; only if the owner finds a concrete need)
 
-1. **Eigen-solver in JS.**
-   - Small graphs (up to ~2,000 vertices): Jacobi or QR on the dense symmetric matrix, in the worker.
-   - Larger ones: the matrices are sparse, so use Lanczos or subspace iteration for the top k eigenpairs.
-   - No library is vendored yet; a small one might be acceptable, but nothing needs a build step.
-2. **Matrices.** Adjacency, the symmetrized face-mean (`D^{-1/2}`-similarity) and vertex-mean, and a proper Laplacian `D − A` (use its *smallest* non-zero eigenvalues).
-3. **Grouping.** Group eigenvalues into eigenspaces (with a tolerance), and label each with its dimension. Later, use the automorphisms to compute characters, and so the isotypic type.
-4. **Search.** Enumerate the candidate triples (3-dimensional eigenspaces, 2+1 combinations, 1+1+1), run the checks, and classify each as convex, stellated or degenerate.
-5. **Page.** A "Spectral" optimizer button with a stepper that browses the triples and shows each one's classification. The convex one can be the default. It can also seed canonical or detached faces.
-6. **Tests.**
-   - Platonic solids, prisms, antiprisms (the PolyOp failure case) and `tI` give convex shapes.
-   - The icosahedron's stellated triple is found.
-   - Record which matrix works for how much of the random suite.
+- Drop mirrored duplicates from the list.
+- Eigenspaces of dimension 4 or more (accidental merges; `eY6` has no start).
+- Characters and isotypic types, to name each start ([../symmetry.md](../symmetry.md#open)).
+- A sparse solver (Lanczos with the symmetry) for more than 1,500 vertices.
+- A self-intersection check to tell stellations from garbage: being built for the shape research ([../exploration.md](../exploration.md#x1-self-intersection-test)).

@@ -13,10 +13,11 @@
       }
     })();
   </script>
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
-      --font-serif: Georgia, 'Times New Roman', serif;
-      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+      --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --color-text-primary: #1a1a1a;
       --color-text-secondary: #555;
       --color-border-secondary: #ccc;
@@ -73,6 +74,14 @@
     .essay-meta .lang-links a { color: var(--color-text-secondary); text-decoration: none; font-size: 12px; }
     .essay-meta .lang-links a:hover { color: var(--color-text-primary); }
     .essay-meta .lang-links .sep { color: var(--color-border-secondary); margin: 0 0.2rem; }
+
+    /* Generative art: a fixed preview image (art/<name>/preview.webp) beside each entry */
+    .art-list li { display: flex; align-items: center; gap: 1rem; }
+    .art-list .thumb { flex: none; width: 96px; height: 96px; }
+    .art-list span.thumb { height: 0; }  /* no preview yet: keep the column, not the height */
+    .art-list .thumb img { display: block; width: 100%; height: 100%; border-radius: 3px; }
+    .art-list .essay-meta { flex-wrap: wrap; row-gap: 0.2rem; }
+    @media (max-width: 420px) { .art-list .thumb { width: 72px; height: 72px; } }
   </style>
 </head>
 <body>
@@ -84,7 +93,71 @@
     <h1>Andreas Faust</h1>
     <p class="tagline">Essays, generative art and research &middot; <a href="about/">About</a></p>
 
-    <h2>Essays</h2>
+    <h2>Generative art</h2>
+    <ul class="essay-list art-list">
+      <li>
+        <a class="thumb" href="art/polar_waves/#5,2,12,8,-1.31,0.27,-0.03,2" aria-hidden="true" tabindex="-1"><img src="art/polar_waves/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="art/polar_waves/">Polar Waves</a>
+          </div>
+          <div class="essay-meta">
+            <span>Interactive black and white shapes from nested sine waves</span>
+            <span class="lang-links">
+              <a href="art/polar_waves/">Interactive</a>
+              <span class="sep">/</span>
+              <a href="art/polar_waves/live.html">Live</a>
+            </span>
+          </div>
+        </div>
+      </li>
+      <li>
+        <a class="thumb" href="art/buddhabrot/#gradient=000000%400%2C3a0d05%400.3%2Cc0502a%400.55%2C8fd0e8%400.85%2Cffffff%401&amp;min_clip=0.2&amp;midtone=0.75" aria-hidden="true" tabindex="-1"><img src="art/buddhabrot/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="art/buddhabrot/">Buddhabrot Explorer</a>
+          </div>
+          <div class="essay-meta">
+            <span>The Mandelbrot set, drawn by the orbits of its escaping points</span>
+          </div>
+        </div>
+      </li>
+      <li>
+        <a class="thumb" href="art/mandelbrot/#s=3063673471&amp;v=-1.0850314970212198,0.23714452232877586,0.00000801418&amp;h=97&amp;l=0.01,0.97&amp;ch=0.075,0.04&amp;c=0" aria-hidden="true" tabindex="-1"><img src="art/mandelbrot/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="art/mandelbrot/">Minimal Mandelbrot</a>
+          </div>
+          <div class="essay-meta">
+            <span>Random places on the border of the Mandelbrot set, in a single hue</span>
+          </div>
+        </div>
+      </li>
+      <li>
+        <a class="thumb" href="art/kleinian/#ta=1.9656%2B0.99536i&amp;tb=3&amp;col=mono&amp;lw=2&amp;bg=dark&amp;v=0,0,0.82" aria-hidden="true" tabindex="-1"><img src="art/kleinian/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="art/kleinian/">Kleinian Limit Sets</a>
+          </div>
+          <div class="essay-meta">
+            <span>Fractals from two Möbius maps, after <em>Indra’s Pearls</em></span>
+          </div>
+        </div>
+      </li>
+      <li>
+        <a class="thumb" href="art/polyhedra/#n=jtJ37&amp;m=regular,flat&amp;c=single&amp;pal=mono&amp;gr=backdrop&amp;bg=light" aria-hidden="true" tabindex="-1"><img src="art/polyhedra/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="art/polyhedra/">Conway Polyhedra</a>
+          </div>
+          <div class="essay-meta">
+            <span>Polyhedra built from simple seeds by Conway’s operators, in canonical form</span>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <h2 class="section-gap">Essays</h2>
     <ul class="essay-list">
       <li>
         <div class="essay-title">
@@ -132,55 +205,6 @@
             <span class="sep">/</span>
             <a href="essays/meaning/meaning_en.html">EN</a>
           </span>
-        </div>
-      </li>
-    </ul>
-
-    <h2 class="section-gap">Generative</h2>
-    <ul class="essay-list">
-      <li>
-        <div class="essay-title">
-          <a href="art/polar_waves/">Polar Waves</a>
-        </div>
-        <div class="essay-meta">
-          <span>Interactive black and white shapes from nested sine waves</span>
-          <span class="lang-links">
-            <a href="art/polar_waves/">Interactive</a>
-            <span class="sep">/</span>
-            <a href="art/polar_waves/live.html">Live</a>
-          </span>
-        </div>
-      </li>
-      <li>
-        <div class="essay-title">
-          <a href="art/buddhabrot/">Buddhabrot Explorer</a>
-        </div>
-        <div class="essay-meta">
-          <span>The Mandelbrot set, drawn by the orbits of its escaping points</span>
-        </div>
-      </li>
-      <li>
-        <div class="essay-title">
-          <a href="art/mandelbrot/">Minimal Mandelbrot</a>
-        </div>
-        <div class="essay-meta">
-          <span>Random places on the border of the Mandelbrot set, in a single hue</span>
-        </div>
-      </li>
-      <li>
-        <div class="essay-title">
-          <a href="art/kleinian/">Kleinian Limit Sets</a>
-        </div>
-        <div class="essay-meta">
-          <span>Fractals from two Möbius maps, after <em>Indra’s Pearls</em></span>
-        </div>
-      </li>
-      <li>
-        <div class="essay-title">
-          <a href="art/polyhedra/">Conway Polyhedra</a>
-        </div>
-        <div class="essay-meta">
-          <span>Polyhedra built from simple seeds by Conway’s operators, in canonical form</span>
         </div>
       </li>
     </ul>

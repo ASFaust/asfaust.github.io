@@ -7,22 +7,36 @@ import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.j
 import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from '../vendor/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
+import { Lines } from './lines.js';
 
 export const STYLES = ['solid', 'glass', 'frame'];
 export const COLOURINGS = ['origin', 'sides', 'orbit', 'single'];
-export const MATERIALS = ['matte', 'glossy', 'metal', 'iridescent'];
+export const MATERIALS = ['matte', 'glossy', 'iridescent'];
 
-// material settings; the environment map matters most for metal
+// Material settings. Matte has no specular term at all (no highlights, no reflected environment,
+// no Fresnel rim), so a face's brightness depends only on its orientation and can be read; the
+// environment still lights it diffusely. Glass takes the material's (owner, 2026-10-23: matte
+// glass without highlights looks right).
 const LOOKS = {
-  matte: { roughness: 0.55, metalness: 0, clearcoat: 0, iridescence: 0, env: 0.6 },
-  glossy: { roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08, iridescence: 0, env: 0.8 },
-  metal: { roughness: 0.28, metalness: 1, clearcoat: 0, iridescence: 0, env: 1.4 },
+  matte: { roughness: 1, metalness: 0, specularIntensity: 0, clearcoat: 0, iridescence: 0, env: 0.6 },
+  glossy: { roughness: 0.35, metalness: 0, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.08, iridescence: 0, env: 0.8 },
   // mostly metallic, so that the thin film colours the whole reflection, not just the rims
-  iridescent: { roughness: 0.2, metalness: 0.85, clearcoat: 0, iridescence: 1, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 900], env: 1.4 },
+  iridescent: { roughness: 0.2, metalness: 0.85, specularIntensity: 1, clearcoat: 0, iridescence: 1, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 900], env: 1.4 },
 };
 export const INKS = ['auto', 'dark', 'light', 'colour'];
+// painted: bands on the faces, as wide as a fraction of the edge length; screen: the same bands,
+// as wide as a number of pixels; drawn: lines over the picture (lines.js)
+export const LINES = ['painted', 'screen', 'drawn'];
 
 const HOME = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, -0.5, 0));
+export const GROUNDS = ['none', 'floor', 'backdrop'];
+// where the key light comes from, in the camera's frame turned only about the vertical (x right,
+// y up, z towards the camera), so a preset keeps its place in the picture as the camera goes round
+const LIGHTS = { soft: [-2, 3, 4], top: [0.3, 4, 0.8], side: [-4, 1.2, 0.6], rim: [1.5, 2.5, -3] };
+export const LIGHT_NAMES = Object.keys(LIGHTS);
+const DEG = Math.PI / 180;
+// Render: trace after this long without a change, up to this many samples
+const STILL_MS = 250, TRACE_MAX = 2048;
 const SPIN = 0.25; // radians per second when turning by itself
 const FAR = 1e9;   // the distance to a line that does not count
 
@@ -30,7 +44,9 @@ const FAR = 1e9;   // the distance to a line that does not count
 // boundary: for the fan triangle of side k, the lines through sides k − 1, k and k + 1. Distance
 // to a line is affine in the plane, so it interpolates exactly; the fragment takes the smallest
 // and paints the edge where that is below the half-width. In the frame style everything else is
-// cut away.
+// cut away. With uScreen the distances are measured in pixels instead: an affine function divided
+// by the length of its screen gradient is the distance in pixels to where it is zero, so the band
+// keeps its width however the face is tilted (each face paints half the line).
 function paintEdges(material, uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
@@ -38,11 +54,20 @@ function paintEdges(material, uniforms) {
       .replace('#include <common>', '#include <common>\nattribute vec3 edist;\nvarying vec3 vEdist;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdist = edist;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nvarying vec3 vEdist;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nuniform float uScreen;\nuniform float uDepth;\nuniform float uRef;\nvarying vec3 vEdist;')
       .replace('#include <color_fragment>', `#include <color_fragment>
-        float ed = min(vEdist.x, min(vEdist.y, vEdist.z));
-        float fw = fwidth(ed);
-        float line = uWidth > 0.0 ? 1.0 - smoothstep(uWidth - fw, uWidth + fw, ed) : 0.0;
+        float line = 0.0;
+        if (uScreen > 0.5) {
+          vec3 g = vec3(length(vec2(dFdx(vEdist.x), dFdy(vEdist.x))), length(vec2(dFdx(vEdist.y), dFdy(vEdist.y))), length(vec2(dFdx(vEdist.z), dFdy(vEdist.z))));
+          vec3 px = vEdist / max(g, vec3(1e-12));
+          float ed = min(px.x, min(px.y, px.z));
+          float w = uWidth * pow(uRef / vViewPosition.z, uDepth);
+          line = uWidth > 0.0 ? 1.0 - smoothstep(w - 0.5, w + 0.5, ed) : 0.0;
+        } else {
+          float ed = min(vEdist.x, min(vEdist.y, vEdist.z));
+          float fw = fwidth(ed);
+          line = uWidth > 0.0 ? 1.0 - smoothstep(uWidth - fw, uWidth + fw, ed) : 0.0;
+        }
         diffuseColor.rgb = mix(diffuseColor.rgb, uInk, line);
         diffuseColor.a = mix(diffuseColor.a, 1.0, line);
         if (uFrame > 0.5) {
@@ -62,16 +87,45 @@ export class Viewer {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.6;
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
-    key.position.set(-2, 3, 4);
-    this.scene.add(key, new THREE.HemisphereLight(0xffffff, 0x888888, 0.5));
+    this.key = new THREE.DirectionalLight(0xffffff, 1.6);
+    // the shadow on the ground: the shape fits the unit sphere, so a small box around it will do
+    Object.assign(this.key.shadow.camera, { left: -1.6, right: 1.6, top: 1.6, bottom: -1.6, near: 1, far: 14 });
+    this.key.shadow.mapSize.set(2048, 2048);
+    this.key.shadow.bias = -0.0005;
+    this.scene.add(this.key, this.key.target, new THREE.HemisphereLight(0xffffff, 0x888888, 0.5));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
     this.group = new THREE.Group();
-    this.group.quaternion.copy(HOME);
+    this.free = HOME.clone();   // the rotation in the free orientation, turned by dragging
     this.scene.add(this.group);
+    this.target = new THREE.Vector3();   // the shape's centre, which the camera looks at
 
-    this.uniforms = { uInk: { value: new THREE.Color(0x1c1c20) }, uWidth: { value: 0 }, uFrame: { value: 0 } };
+    // The stage: a floor, and for the backdrop a wall curving up from it behind the shape. The wall
+    // turns with the camera, so it is always behind; the floor is far wider than the view.
+    this.stageMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, envMapIntensity: 0.15 });
+    this.stage = new THREE.Group();
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), this.stageMat);
+    floor.rotation.x = -Math.PI / 2;
+    this.wall = new THREE.Group();
+    const R = 2.5, back = 3.5;
+    const curve = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 80, 48, 1, true, Math.PI, Math.PI / 2), this.stageMat);
+    curve.rotation.z = Math.PI / 2;
+    curve.position.set(0, R, -back + R);
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), this.stageMat);
+    wall.position.set(0, R + 20, -back);
+    this.wall.add(curve, wall);
+    for (const m of [floor, curve, wall]) m.receiveShadow = true;
+    curve.material = this.stageMat.clone(); curve.material.side = THREE.BackSide;
+    this.stage.add(floor, this.wall);
+    this.scene.add(this.stage);
+    this.views = [];
+
+    this.uniforms = {
+      uInk: { value: new THREE.Color(0x1c1c20) }, uWidth: { value: 0 }, uFrame: { value: 0 },
+      uScreen: { value: 0 }, uDepth: { value: 0 }, uRef: { value: 1 },
+    };
     this.faceMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.45, metalness: 0 });
     this.backMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.BackSide });
     paintEdges(this.faceMat, this.uniforms);
@@ -93,10 +147,12 @@ export class Viewer {
     this.gtao.updatePdMaterial({ lumaPhi: 6, depthPhi: 2, normalPhi: 8, radius: 12, radiusExponent: 1.5, rings: 3, samples: 24 });
     this.composer.addPass(this.gtao);
     this.composer.addPass(new OutputPass());
+    this.lines = new Lines();
 
     this.opts = {
       style: 'solid', material: 'matte', ao: 0, aoSize: 1, colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
-      edge: 0.5, fov: 30, spin: false, ink: 'auto', dark: false,
+      edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, spin: false, ink: 'auto', dark: false,
+      orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
     this.zoom = 1;
@@ -123,6 +179,14 @@ export class Viewer {
     for (const name of ['position', 'normal', 'color', 'edist']) {
       g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9 * tris), 3));
     }
+    // the face of every corner, for the face buffer of the drawn lines
+    const fid = new Float32Array(3 * tris);
+    for (let f = 0, k = 0; f < m.nf; f++) {
+      const d = m.fo[f + 1] - m.fo[f];
+      for (let i = 3 * (d === 3 ? 1 : d); i > 0; i--) fid[k++] = f;
+    }
+    g.setAttribute('fid', new THREE.BufferAttribute(fid, 1));
+    this.lines.setMesh(m);
     this.faces.geometry.dispose();
     this.faces.geometry = g; this.backs.geometry = g;
     this.faceOrbit = null;
@@ -195,7 +259,9 @@ export class Viewer {
     attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
     this.meanEdge = len / m.fv.length;
-    this.uniforms.uWidth.value = this.opts.edge * 0.08 * this.meanEdge;
+    this.lines.setPositions(p);
+    this.orient();
+    this.placeLines();
     this.placeAO();
     this.request();
   }
@@ -209,7 +275,7 @@ export class Viewer {
     const glass = o.style === 'glass', frame = o.style === 'frame';
     this.backs.visible = glass;
     const look = LOOKS[o.material] || LOOKS.matte;
-    for (const k of ['roughness', 'metalness', 'clearcoat', 'clearcoatRoughness', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange']) {
+    for (const k of ['roughness', 'metalness', 'specularIntensity', 'clearcoat', 'clearcoatRoughness', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange']) {
       if (look[k] !== undefined) { this.faceMat[k] = look[k]; if (k !== 'roughness') this.backMat[k] = look[k]; }
     }
     this.scene.environmentIntensity = look.env;
@@ -223,7 +289,11 @@ export class Viewer {
     this.faceMat.alphaToCoverage = frame;
     this.faceMat.needsUpdate = true;
     this.uniforms.uFrame.value = frame ? 1 : 0;
-    this.uniforms.uWidth.value = o.edge * 0.08 * this.meanEdge;
+    this.placeLines();
+    this.faces.castShadow = !frame;
+    const stage = new THREE.Color(o.stage);
+    this.stageMat.color.copy(stage); this.wall.children[0].material.color.copy(stage);
+    this.orient();
     // auto: dark lines on solid faces, otherwise whatever stands out from the background
     const ink = o.ink === 'auto' ? (o.style === 'solid' || !o.dark ? 'dark' : 'light') : o.ink;
     // the colour ink is the palette's first colour, darker
@@ -233,6 +303,21 @@ export class Viewer {
     if (prev.fov !== o.fov) this.resize();
     this.placeAO();
     this.request();
+  }
+
+  // The width of a line drawn on the screen, in pixels: a fraction of the picture, so that an
+  // export at a higher resolution looks like the view.
+  linePixels() {
+    const s = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    return this.opts.edge * 0.01 * Math.min(s.x, s.y);
+  }
+
+  // the painted bands: their half-width per face, in world units or in pixels
+  placeLines() {
+    const o = this.opts, u = this.uniforms;
+    u.uScreen.value = o.lines === 'screen' ? 1 : 0;
+    u.uWidth.value = o.lines === 'painted' ? o.edge * 0.08 * this.meanEdge : o.lines === 'screen' ? this.linePixels() / 2 : 0;
+    u.uDepth.value = o.depthWidth;
   }
 
   // the occlusion reaches aoSize mean edge lengths; ao is its strength
@@ -264,6 +349,8 @@ export class Viewer {
   // the face orbits under the symmetries (from the worker's 'symmetry' message)
   setSymmetry(sym) {
     this.faceOrbit = sym.faceOrbit;
+    this.views = sym.views || [];
+    this.orient();
     if (this.opts.colouring === 'orbit') this.recolour();
   }
 
@@ -290,20 +377,134 @@ export class Viewer {
     this.request();
   }
 
+  // ---------- scene ----------
+
+  // the chosen symmetric view, if the shape has it
+  view() { return this.opts.orient === 'free' ? null : this.views.find(w => w.key === this.opts.orient) || null; }
+
+  // Turns and places the shape. A symmetric view turns the chosen face, vertex or edge straight
+  // down, so the shape stands on it; a second direction (a vertex of the face, a neighbour, an end
+  // of the edge) fixes the turn about the vertical, so that the same view always faces the camera
+  // the same way. On the ground the lowest point touches the floor, plus the lift.
+  orient() {
+    const o = this.opts, p = this.pos, w = this.view();
+    if (!p) return;
+    const q = this.group.quaternion;
+    if (!w) q.copy(this.free);
+    else {
+      const m = this.mesh, P = i => new THREE.Vector3(p[3 * i], p[3 * i + 1], p[3 * i + 2]);
+      const c = new THREE.Vector3();
+      for (let i = 0; i < p.length; i += 3) c.add(new THREE.Vector3(p[i], p[i + 1], p[i + 2]));
+      c.multiplyScalar(3 / p.length);
+      let dir, ref;
+      if (w.kind === 'f') {
+        const a = m.fo[w.rep], d = m.fo[w.rep + 1] - a, n = new THREE.Vector3(), mid = new THREE.Vector3();
+        for (let k = 0; k < d; k++) {
+          const u = P(m.fv[a + k]), v = P(m.fv[a + (k + 1) % d]);
+          n.x += (u.y - v.y) * (u.z + v.z); n.y += (u.z - v.z) * (u.x + v.x); n.z += (u.x - v.x) * (u.y + v.y);
+          mid.add(u);
+        }
+        dir = n; ref = P(m.fv[a]).sub(mid.multiplyScalar(1 / d));
+      } else if (w.kind === 'v') {
+        dir = P(w.rep).sub(c);
+        let f = 0;
+        while (f < m.nf && !m.fv.slice(m.fo[f], m.fo[f + 1]).includes(w.rep)) f++;
+        const a = m.fo[f], d = m.fo[f + 1] - a, k = m.fv.slice(a, a + d).indexOf(w.rep);
+        ref = P(m.fv[a + (k + 1) % d]).sub(P(w.rep));
+      } else {
+        const [a, b] = w.rep, mid = P(a).add(P(b)).multiplyScalar(0.5);
+        dir = mid.clone().sub(c); ref = P(a).sub(mid);
+      }
+      const down = new THREE.Vector3(0, -1, 0);
+      q.setFromUnitVectors(dir.normalize(), down);
+      ref.applyQuaternion(q).setY(0);
+      if (ref.lengthSq() > 1e-12) {
+        ref.normalize();
+        const turn = Math.atan2(ref.z, ref.x);   // about +y, a turn by this takes ref to +x
+        q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), turn));
+      }
+    }
+    let low = 0;
+    if (o.ground !== 'none') {
+      const v = new THREE.Vector3();
+      low = Infinity;
+      for (let i = 0; i < p.length; i += 3) low = Math.min(low, v.set(p[i], p[i + 1], p[i + 2]).applyQuaternion(q).y);
+    }
+    this.group.position.set(0, o.ground === 'none' ? 0 : o.lift - low, 0);
+    this.target.copy(this.group.position);
+    this.placeStage();
+    this.request();
+  }
+
+  // the stage, the light and the background follow the ground, the light preset and the camera
+  placeStage() {
+    const o = this.opts, on = o.ground !== 'none', az = o.azim * DEG;
+    this.stage.visible = on;
+    this.wall.visible = o.ground === 'backdrop';
+    this.wall.rotation.y = az;
+    this.scene.background = on ? new THREE.Color(o.stage) : null;
+    const k = LIGHTS[o.light] || LIGHTS.soft;
+    this.key.position.set(k[0], k[1], k[2]).applyAxisAngle(new THREE.Vector3(0, 1, 0), az).add(this.target);
+    this.key.target.position.copy(this.target);
+    this.key.castShadow = on;
+  }
+
   placeCamera(aspect) {
-    const c = this.camera, fov = this.opts.fov;
+    const c = this.camera, o = this.opts, fov = o.fov;
     c.fov = fov; c.aspect = aspect;
     // far enough that the unit sphere fits the narrower side
     const half = Math.atan(Math.tan(fov * Math.PI / 360) * Math.min(1, aspect));
-    const d = 1.08 / Math.sin(half) * this.zoom;
-    c.position.set(0, 0, d);
-    c.near = Math.max(0.01, d - 3); c.far = d + 3;
+    // with ground, farther: the picture needs some of it round the shape
+    const d = 1.08 / Math.sin(half) * this.zoom * (o.ground === 'none' ? 1 : 1.35);
+    const az = o.azim * DEG, el = o.elev * DEG;
+    c.position.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(d).add(this.target);
+    c.lookAt(this.target);
+    // the floor reaches far past the shape, and comes close below the camera
+    const on = o.ground !== 'none';
+    c.near = on ? 0.05 : Math.max(0.01, d - 3); c.far = on ? d + 80 : d + 3;
+    this.scene.fog = o.ground === 'floor' ? new THREE.Fog(o.stage, d + 2, d + 25) : null;
     c.updateProjectionMatrix();
   }
 
-  resetView() { this.group.quaternion.copy(HOME); this.zoom = 1; this.spinVel = null; this.request(); }
+  resetView() {
+    this.free.copy(HOME); this.zoom = 1; this.spinVel = null;
+    this.opts.azim = 0; this.opts.elev = 0;
+    if (this.onOrbit) this.onOrbit(0, 0, true);
+    this.orient();
+  }
 
-  request() { this.dirty = true; }
+  // Something changed: draw again, and with Render on, trace the scene again once it is still.
+  request() { this.dirty = true; this.changed = performance.now(); this.stale = true; }
+
+  // ---------- render (path tracing) ----------
+
+  // Render on: the view traces the scene whenever nothing has moved for a moment, refining up to
+  // TRACE_MAX samples; while anything moves it shows the fast view. The tracer is loaded the first
+  // time.
+  async setTrace(on) {
+    if (on && !this.tracer) {
+      const { Tracer } = await import('./trace.js');
+      this.tracer = new Tracer(this.renderer);
+    }
+    this.tracing = on;
+    this.request();
+  }
+
+  setDenoise(on) { if (this.tracer) this.tracer.denoise = on; this.request(); }
+
+  // still enough to trace: no drag, no turning, nothing changed for a moment
+  still(now) { return !this.pointers.size && !this.spinVel && !this.opts.spin && now - this.changed > STILL_MS; }
+
+  trace(now) {
+    if (!this.tracing || !this.tracer || this.exporting) return;
+    if (!this.still(now)) { if (this.traced) { this.traced = false; this.dirty = true; } return; }
+    if (this.stale) { this.stale = false; this.placeCamera(this.aspect || 1); this.tracer.build(this); }
+    if (this.tracer.samples >= TRACE_MAX && this.traced) return;
+    this.tracer.render();
+    this.drawLines(true);
+    this.traced = true;
+    if (this.onTrace) this.onTrace(this.tracer.samples);
+  }
 
   loop(now) {
     const dt = Math.min(100, now - this.last);
@@ -314,24 +515,53 @@ export class Viewer {
         this.spinVel[1] *= Math.pow(0.996, dt);
         if (Math.abs(this.spinVel[1]) < 2e-5) this.spinVel = null;
       } else if (this.opts.spin) {
-        this.rotate(new THREE.Vector3(0, 1, 0), SPIN * dt / 1000);
+        if (this.view()) this.orbit(SPIN * dt / 1000 / DEG, 0, false);
+        else this.rotate(new THREE.Vector3(0, 1, 0), SPIN * dt / 1000);
       }
     }
-    if (this.dirty) {
+    if (this.dirty && !this.exporting) {
       this.dirty = false;
       this.placeCamera(this.aspect || 1);
       this.draw();
+      if (this.tracing && this.onTrace) this.onTrace(null);
     }
+    this.trace(now);
     requestAnimationFrame(this.loop);
   }
 
   draw() {
-    if (this.opts.ao > 0 && this.opts.style === 'solid') this.composer.render();
+    const o = this.opts;
+    this.placeLines();
+    this.uniforms.uRef.value = this.camera.position.distanceTo(this.target);
+    if (o.ao > 0 && o.style === 'solid') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+    this.drawLines(false);
   }
 
+  // The drawn lines over the picture. Over a traced picture they stand in for every edge type,
+  // since the tracer cannot paint bands onto the faces.
+  drawLines(traced) {
+    const o = this.opts;
+    if (o.lines !== 'drawn' && !(traced && o.edge > 0)) return;
+    this.lines.draw(this.renderer, this.scene, this.camera, this.group, {
+      width: this.linePixels(), depth: o.depthWidth, hidden: o.style === 'solid' ? 0 : o.hidden, ink: this.uniforms.uInk.value, hide: [this.stage],
+    });
+  }
+
+  // turns the shape in the free orientation; the axis is in the camera's frame
   rotate(axis, angle) {
-    this.group.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, angle));
+    const a = axis.clone().applyQuaternion(this.camera.quaternion);
+    this.free.premultiply(new THREE.Quaternion().setFromAxisAngle(a, angle));
+    this.orient();
+  }
+
+  // moves the camera round the shape, in degrees; onOrbit tells the page (end: the drag is over)
+  orbit(dAz, dEl, end) {
+    const o = this.opts;
+    o.azim = ((o.azim + dAz + 540) % 360) - 180;
+    o.elev = Math.max(-89, Math.min(89, o.elev + dEl));
+    if (this.onOrbit) this.onOrbit(o.azim, o.elev, end);
+    this.placeStage();
     this.request();
   }
 
@@ -358,6 +588,8 @@ export class Viewer {
         return;
       }
       const size = Math.min(el.clientWidth, el.clientHeight) || 1;
+      // a symmetric view fixes the shape: dragging moves the camera round it instead
+      if (this.view()) { this.orbit(-dx / size * 180, dy / size * 180, false); lastT = e.timeStamp; this.spinVel = null; return; }
       const angle = Math.hypot(dx, dy) / size * Math.PI;
       if (!angle) return;
       const axis = new THREE.Vector3(dy, dx, 0).normalize();
@@ -371,6 +603,7 @@ export class Viewer {
       pinch = 0;
       if (!this.pointers.size) {
         el.parentElement.classList.remove('dragging');
+        if (this.view()) this.orbit(0, 0, true);
         // keep turning only after a flick, not after holding still
         if (e.timeStamp - lastT > 60) this.spinVel = null;
       }
@@ -397,20 +630,35 @@ export class Viewer {
   }
 
   // Renders the current view again as a size × size PNG; transparent leaves out the background.
-  async snapshot(size, background) {
+  // With Render on it is traced to samples samples, yielding to the page between batches and
+  // reporting onProgress(samples done).
+  async snapshot(size, background, { samples = 256, onProgress } = {}) {
     const r = this.renderer;
     const ratio = r.getPixelRatio();
-    r.setPixelRatio(1);
-    r.setSize(size, size, false);
-    this.composer.setPixelRatio(1);
-    this.composer.setSize(size, size);
-    if (background) r.setClearColor(background, 1); else r.setClearColor(0x000000, 0);
-    this.placeCamera(1);
-    this.draw();
-    const blob = await new Promise(res => this.canvas.toBlob(res, 'image/png'));
-    r.setClearColor(0x000000, 0);
-    r.setPixelRatio(ratio);
-    this.resize();
-    return blob;
+    this.exporting = true;
+    try {
+      r.setPixelRatio(1);
+      r.setSize(size, size, false);
+      this.composer.setPixelRatio(1);
+      this.composer.setSize(size, size);
+      if (background) r.setClearColor(background, 1); else r.setClearColor(0x000000, 0);
+      this.placeCamera(1);
+      if (this.tracing && this.tracer) {
+        this.tracer.build(this, !background);
+        // a tile per frame, so the page and the desktop stay responsive
+        while (this.tracer.samples < samples) {
+          this.tracer.render();
+          if (onProgress) onProgress(this.tracer.samples);
+          await new Promise(res => requestAnimationFrame(res));
+        }
+        this.drawLines(true);
+      } else this.draw();
+      return await new Promise(res => this.canvas.toBlob(res, 'image/png'));
+    } finally {
+      r.setClearColor(0x000000, 0);
+      r.setPixelRatio(ratio);
+      this.exporting = false;
+      this.resize();
+    }
   }
 }

@@ -18,7 +18,7 @@
 //
 // out: { type: 'stage', text }                      what it is doing
 //      { type: 'mesh', fv, fo, ftags, ... }         the faces, once
-//      { type: 'symmetry', group, order, faceOrbit, nFaceOrbits }
+//      { type: 'symmetry', group, order, faceOrbit, nFaceOrbits, views }
 //      { type: 'start', id }                        a step starts
 //      { type: 'pos', pos, it, err, moved }         positions as the step moves them, repeatedly
 //      { type: 'done', id, it, err, stopped }       a step finished, or was stopped after it rounds;
@@ -32,7 +32,7 @@
 import { describe } from './notation.js';
 import { faceCensus } from './mesh.js';
 import { Session, INSTANT, prune } from './pipeline.js';
-import { fitMatrices, pointGroup } from './symmetry.js';
+import { fitMatrices, pointGroup, views } from './symmetry.js';
 import { density } from './spectral.js';
 
 const FRAME_MS = 40;
@@ -124,7 +124,7 @@ self.onmessage = e => {
     post({ type: 'stage', text: 'symmetries' });
     const sym = S.symmetries();
     const group = pointGroup(fitMatrices(P.pos, sym.maps).Rs);
-    post({ type: 'symmetry', group, order: sym.maps.length, faceOrbit: sym.faceOrbit, nFaceOrbits: sym.nFaceOrbits });
+    post({ type: 'symmetry', group, order: sym.maps.length, faceOrbit: sym.faceOrbit, nFaceOrbits: sym.nFaceOrbits, views: views(P, sym.maps, sym.faceOrbit) });
   } catch (err) {
     post({ type: 'error', message: err.message });
     return;

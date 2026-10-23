@@ -4,7 +4,7 @@ This folder documents the Buddhabrot page at `art/buddhabrot/` on the personal w
 
 ## What the page is
 
-An interactive page in the website's *Generative* section (the "(WIP)" label was dropped on 2026-10-22, owner). It computes a Buddhabrot in the browser: it picks starting points `c`, traces their orbits under `z ← z² + c`, and counts every orbit point in a histogram. A display pipeline (blur, scaling, clipping, colour) then turns the histogram into an image. That pipeline runs without recomputing the orbits.
+An interactive page in the website's *Generative art* section (the "(WIP)" label was dropped on 2026-10-22, owner). The home page shows `art/buddhabrot/preview.webp` beside it, a fixed render of the "Ember and ice" preset (192 px, 2026-10-23); the thumbnail links to that preset. It computes a Buddhabrot in the browser: it picks starting points `c`, traces their orbits under `z ← z² + c`, and counts every orbit point in a histogram. A display pipeline (blur, scaling, clipping, colour) then turns the histogram into an image. That pipeline runs without recomputing the orbits.
 
 It is a port of the owner's desktop app **Buddhabrot Explorer** (`/home/andi/code/github-website/buddha/`, outside the website repo; Python, PySide6, Numba). Differences from the desktop app:
 - **Inside/outside pairs.** Like the desktop app, the web page takes its pairs from a coarse Mandelbrot grid (the border grid), but it bisects them much closer to the set, and the grid's resolution is fixed, not a control.

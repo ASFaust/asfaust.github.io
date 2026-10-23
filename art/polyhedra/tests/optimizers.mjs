@@ -1,4 +1,4 @@
-// The optimizer machinery added for the owner's requests of 2026-10-22 (docs/user-experience.md):
+// The optimizer machinery added for the owner's requests of 2026-10-22 (docs/realization/regular-faces.md, docs/README.md):
 // whitening, the shape distance, stellate, the mix, shake and pruning a chain for a link.
 // node tests/optimizers.mjs
 

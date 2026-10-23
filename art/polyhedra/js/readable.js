@@ -14,7 +14,7 @@
 // non-convex, so it stays a convex polyhedron of the same graph throughout. It starts from the shape
 // as it is if that is convex, else from the operators' own construction if that is, else it runs
 // the canonical iteration until the shape becomes convex.
-// Details and findings: docs/realization/planes.md.
+// Details and findings: docs/realization/readable.md.
 
 import { topology, ring } from './mesh.js';
 import { Realizer, flatten } from './canonical.js';

@@ -1,61 +1,87 @@
 # Backlog
 
-The task list only. Every item links to the file that explains it. When you finish an item:
-- move it to "Done" with a date and one line,
-- put the findings, including negative results, in the linked file.
+The only task list. Every item has an ID, says why it exists, where to start, and when it is done; the knowledge behind it lives in the linked doc. To work on an item, read [README.md](README.md) first, then the item, then its linked section.
 
-## Artsy realization (goal B: non-convexity and symmetry; read [realization/README.md](realization/README.md) first)
+When you finish an item: move it to *Done* with the date and one line; put the findings, including negative results, in the linked doc; fix anything stale you noticed. When the owner raises something new, add it here with an ID in the right track, and the details in a topic doc.
 
-- **Spectral, what is left**: drop mirrored duplicates from the list; eigenspaces of dimension 4+ (accidental merges; `eY6` has no start); characters and isotypic types to name each start; a sparse solver for more than 1,500 vertices. Only if the owner finds a concrete need. → [realization/spectral.md](realization/spectral.md)
-- **Star faces, per-orbit k**: on top of the pointedness rule, once faces can be picked (see per-face painting under Rendering). Does the viewer draw self-intersecting star faces right? Check on renders. → [realization/regular-faces.md](realization/regular-faces.md#per-face-targets)
-- **Subgroup symmetry dial**: keep only some symmetries, for controlled symmetry breaking. → [symmetry.md](symmetry.md#open)
-- **Exact regular faces for near misses** (owner's `sktJ45`: regular faces settles at spread 0.015 from every start): a direct solver for unit edges and flat regular faces (Gauss–Newton on the constraints, symmetric), to find a regular realization or locate the obstruction. → [realization/regular-faces.md](realization/regular-faces.md#open-questions)
-- **Isotoxal star target** (owner's `anzD`: concave five- and six-pointed star faces straight from the build): even faces fitted to Fourier modes 1 and m+1, a face target or a Mix ingredient. → [realization/regular-faces.md](realization/regular-faces.md#per-face-targets)
-- **Self-intersection test, then: which all-triangle graphs fold into non-convex deltahedra without crossing** (owner's class, example `knJ17`: regular faces makes every edge equal on every all-triangle graph tried). → [realization/regular-faces.md](realization/regular-faces.md#findings)
-- **Which graphs suit affine faces**: clean, flat, spiky shapes (`ozJ45`) against collapsed faces (`jsdJ29`, `dA5`); all-quadrilateral graphs first. → [realization/regular-faces.md](realization/regular-faces.md#open-questions)
-- **More optimizer buttons from PolyOp's ideas**: scrape-off morph (truncate ↔ ambo, needs the two graphs mapped). Stopping early and ramped regularity are done by chaining and stopping buttons; spherical projection is the Mix's sphere target (2026-10-22). → [realization/README.md](realization/README.md#artsy-deformations-small-ideas-no-file-yet)
+**Tracks, in the owner's order of priority (2026-10-23):** Rendering (R) is the next big task. Examples (U) is small and independent. Exploration (X) is a separate research project. Optimizers (O) are mostly paused. Goal A (A) and low priority (L) are leftovers.
 
-## Goal A
+## Rendering (R): [rendering.md](rendering.md)
 
-- **Canonical tangles on `ckmU5` and `cmU5`** (owner's example): inward faces after 60,000 rounds, from the build and from Face mean; Readable inherits it. Find out whether it is the basin or the iteration. → [realization/canonical.md](realization/canonical.md#failure-modes)
+Suggested start: R21, R22 (the confirmed workflow; R20 is in), then R1 once the owner has confirmed the looks.
 
-## Low priority
+| ID | item | done when |
+|---|---|---|
+| R1 | **Looks instead of materials × palettes × styles.** A Look choice (paper, mathy, and what the owner confirms from the proposed list), each with only its own controls; colour only in mathy; delete unused presets; old URLs map to the nearest look. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles) | The owner has picked the looks from sample renders, and the panel offers them. |
+| R3 | **AO that works**, replacing GTAO: analytic polygon AO, baked ray-traced AO, or the path tracer. → [R3](rendering.md#r3-ambient-occlusion-that-works) | Creases shade cleanly, without grain or smudges, on the catalogue's folded shapes. |
+| R4 | **Depth of field**, live (BokehPass) and in final renders. → [R4](rendering.md#r4-depth-of-field) | A focus/aperture control; export uses it. |
+| R7 | **Detached solid faces** render mode: shrink and extrude each face into a solid. → [R7](rendering.md#r7-detached-solid-faces) | The mode works on convex, folded and stellated shapes, including export. |
+| R8 | **Iridescent reworked**: no colour controls, a rainbow sweep within each face. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
+| R21 | **Render toggle**, built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
+| R22 | **Blender scene script** in Export: a Python file that builds mesh, materials, lights, camera and backdrop (from the spike's `cycles.py`). Needs R20. → [workflow](rendering.md#the-workflow-proposed-by-a-session-confirmed-by-the-owner-2026-10-23) | `blender --python scene.py` opens the page's scene ready to render. |
+| R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
+| R11–R19 | Older ideas: staging, glow lines and bloom, tubes, smooth subdivision, fake SSS, real glass, per-face painting, turntable export, orthographic camera. → [rendering.md](rendering.md#older-ideas-still-open) | Each when its look is confirmed. |
 
-- Canonical speed-ups: 3 of 60 random strings hit the 60,000-round cap (`zcmJ17`, `nzbY6`, `kksJ17`); the page shows progress live. → [realization/canonical.md](realization/canonical.md#ideas)
-- Vertex and edge orbits; camera presets down symmetry axes. → [symmetry.md](symmetry.md#open)
+## Examples (U)
 
-## Rendering ([rendering.md](rendering.md#open-items))
+| ID | item | done when |
+|---|---|---|
+| U1 | **Selectable examples** from [catalogue.md](catalogue.md): a menu (next to the named solids, or its own) that loads an entry's link (notation, chain, look). Keep the list in one JS module generated or copied from the catalogue, with the owner's short name for each ("drum", "tomahawk", "low-poly virus"). Old links must still give the same shape (notation and chain; their look may change), so test every entry after changes to the chain format (a test that replays each link and compares metrics would catch it). | Every catalogue entry is in the menu and replays to the documented numbers. |
 
-The direction comes from the owner's renders; the techniques are a session's suggestions. Owner to prune by which looks are wanted.
+## Exploration (X): [exploration.md](exploration.md)
 
-- Analytic ambient occlusion for flat faces (replaces GTAO for creases).
-- Fake subsurface scattering.
-- Staging: backdrop, contact shadow, lighting presets, depth of field.
-- Glow lines and bloom; real glass (transmission).
-- Per-face painting (click a face, or its whole orbit).
-- Colour by balance (diagnostic for the readability research; drop if that research stops).
-- Geometry styles: wireframe + subdivide, detached tiles, smooth subdivision.
-- Turntable export; orthographic toggle.
+X1 and X2 are the tools the questions need; do them first.
+
+| ID | item | done when |
+|---|---|---|
+| X1 | **Self-intersection test** (`selfX` in `metrics()`), calibrated on `ebC`, `knJ17`, a stellation and the catalogue. → [X1](exploration.md#x1-self-intersection-test) | In `metrics()` and `tests/realize.mjs`, with the calibration recorded. |
+| X2 | **Survey harness**: one chain over many strings, graph features and outcomes per row, CSV/JSON, optional screenshots. → [X2](exploration.md#x2-survey-harness) | A script in `tests/`, documented in README's testing list. |
+| X3 | **Shapes realizable with regular faces only non-convexly** (`ebC`): direct constraint solver (also settles `sktJ45`), a search, predictors (the symmetry-adapted constraint count), classes by look. → [X3](exploration.md#x3-shapes-realizable-with-regular-faces-only-non-convexly) | A first list of such shapes and a tested predictor, or a recorded negative result. |
+| X4 | **When does regular-then-flat stay clean** (no self-intersection; convex faces); deltahedra as the special case. → [X4](exploration.md#x4-when-does-regular-then-flat-stay-clean) | A survey and a rule with its counterexamples. |
+| X5 | **Which graphs give affine stars**; test the zone hypothesis (self-crossing zones collapse). → [X5](exploration.md#x5-which-graphs-give-affine-stars) | Zone counts and collapse predictions checked on the known cases. |
+| X6 | **Several resting points of Regular faces**: list them by many symmetric starts and clustering. → [X6](exploration.md#x6-several-resting-points-of-regular-faces) | Counts for `dosmA5` and a few others. |
+| X7 | **Predict and classify in general**, from the accumulated surveys. → [X7](exploration.md#x7-predicting-and-classifying-in-general) | Ongoing; rules recorded as found. |
+
+## Optimizers (O): [realization/README.md](realization/README.md#goal-b-artsy-shapes)
+
+The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One experiment is wanted:
+
+| ID | item | done when |
+|---|---|---|
+| O1 | **Symmetry-only optimizer** (owner, 2026-10-23, not fully defined): from a random init, enforce only the symmetry, or a subgroup of it, and nothing else, so non-convexity comes from the start rather than from face pressure and every seed looks different. The owner expects it to be too messy on its own and wants to see it anyway, to learn what then needs forcing. Needs subgroups ([symmetry.md](symmetry.md#open)). Note: from random points the fitted matrices mean nothing, so take the representation from the canonical (or a spectral) shape and project the random points onto it with those fixed matrices; then perhaps follow with Flat faces. → [realization/README.md](realization/README.md#goal-b-artsy-shapes) | Renders over several seeds and subgroups shown to the owner, with notes on what looks wrong. |
+
+**Parked** (do not start without the owner): random weights per symmetry orbit, as a switch next to Whiten ([spectral.md](realization/spectral.md#owners-observations)); per-orbit k for Star faces; the isotoxal star target for `anzD`-like faces ([regular-faces.md](realization/regular-faces.md#open-questions)); the scrape-off morph; spectral leftovers (mirrored duplicates, 4+-dimensional eigenspaces, characters, a sparse solver: [spectral.md](realization/spectral.md#open-parked-only-if-the-owner-finds-a-concrete-need)).
+
+## Goal A (A)
+
+| ID | item | done when |
+|---|---|---|
+| A1 | **Canonical tangles on `ckmU5` and `cmU5`** (owner's example): inward faces after 60,000 rounds, from the build and from Face mean; Readable inherits it. Is it the basin or the iteration? → [canonical.md](realization/canonical.md#failure-modes) | The cause is known, and fixed or documented as a limit. |
+
+## Low priority (L)
+
+| ID | item |
+|---|---|
+| L1 | Canonical speed-ups: 3 of 60 random strings hit the 60,000-round cap (`zcmJ17`, `nzbY6`, `kksJ17`); the page shows progress live. → [canonical.md](realization/canonical.md#ideas) |
+| L2 | Vertex and edge orbits for colouring and ink (the orbits exist in `views()`; camera presets are done in R20). → [symmetry.md](symmetry.md#open) |
 
 ## Done
 
-- **2026-10-22.** Optimizer UX, the owner's requests ([user-experience.md](user-experience.md)): Whiten (symmetric whitening, keeps the symmetry) replaces centre/orthogonalise/normalise; Keep symmetry switch; spectral stepper with ‹ › for touch; clickable list of steps (instant, states kept in the worker); Share link prunes the chain by replay (same shape up to rotation); Stellate (affine star faces: the great stellated `D`, `tD`, `tI` from the built shape); Equal edges; Mix (weighted targets, chips and sliders; the single buttons on the same engine, bit-identical); Shake. `tests/optimizers.mjs`.
-- **2026-10-21.** Spectral matrix dropdown: adjacency, Laplacian, vertex mean, face mean; the list capped at 100 starts. Survey: the first start is convex on about half of the random strings, Laplacian slightly best, face mean last. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
-- **2026-10-21.** Spectral init (`js/spectral.js`): exactly symmetric starts from whole adjacency eigenspaces, browsable, labelled by density; eigensolver rewritten to compute eigenvectors on demand (6× faster). Star faces optimizer with a pointedness rule for k. From the stellated starts it finds the uniform star polyhedra exactly with the symmetry kept. → [realization/spectral.md](realization/spectral.md#findings-2026-10-21)
-
-- **2026-10-21.** Face mean optimizer (each vertex to the mean of its faces' centres): power iteration; with orthogonalise and normalise, the spectral face-mean layout. → [realization/regular-faces.md](realization/regular-faces.md#face-mean-2026-10-21)
-
-- **2026-10-21.** Init buttons (As built, Random with a seed) apart from the optimizers; per-round adjustments centre, orthogonalise (Gram–Schmidt), normalise, recorded per step; a new polyhedron empties the chain. Normalise stops the global collapses of affine faces, at the price of new, non-flat resting points. → [realization/regular-faces.md](realization/regular-faces.md#adjustments-and-random-starts-2026-10-21)
-
-- **2026-10-21.** Optimizers as buttons that chain from the current positions (Canonical, Readable, Regular faces with a regularity field, Affine faces, Flat faces, As built), stoppable, the chain in the URL with stop rounds; detached faces renamed regular faces, stiffness and the symmetry checkbox removed; affine faces (nozono's `P_F`) added. Affine finds flat, very non-convex shapes regular faces cannot (`ozJ45`, owner's example). → [realization/regular-faces.md](realization/regular-faces.md)
-- **2026-10-21.** Backlog audit: every item checked for a concrete observed problem. Dropped: readable for general graphs and its speed, target size, tangential/equiangular targets, solver variants for detached faces. Found: canonical is unreadable on 9 of 60 random strings, mostly cupola and Johnson seeds (`ntU4` edge ratio 20.7); regular faces makes those regular by going non-convex.
-
-- **2026-10-21.** Soft convexity in the readable mode tried and rejected: freed from the convexity boundary, the loss flattens kis pyramids. Kept: a vertex angle-sum test in the convexity check (tangled simplicial shapes passed it). The old note that `kkkD` ends worse than its start was a wrong comparison. → [realization/planes.md](realization/planes.md#simplicial-graphs-a-rejected-fix-2026-10-21)
-
-- **2026-10-21 v1.** Seeds (Platonic, P/A/Y/U, 35 Johnson solids via hull); half-edge operators `d a t k j g p c r` with composites and `tₙ kₙ`; notation parser; canonical, planar and raw realizations in a worker; three.js viewer; PNG, OBJ and STL export; URL state; Info dialog; home-page link.
-- **2026-10-21.** Edges painted flat in the shader (replacing tubes and balls); detached-faces realization with regularity and stiffness, and the joint least-squares fix.
-- **2026-10-21.** Test harness (`tests/`, with the build shared through `js/pipeline.js`); automorphisms, point-group names, orbit colouring, "keep the symmetry"; GTAO with strength and reach sliders; physical materials (matte, glossy, metal, iridescent); palette presets and editable swatches.
-- **2026-10-21.** Docs restructured into `docs/`; findings moved next to the approaches they belong to.
-- **2026-10-21.** Readable mode: tie-breaker preferring alike corners (fixes lopsided hexagons on `czD`, reported by the owner) and a stopping rule for losses that head to zero. → [realization/planes.md](realization/planes.md#the-loss-and-the-solver)
-- **2026-10-21.** "Readable" mode (`js/readable.js`): convex, exactly flat, readable realizations of simple and simplicial graphs by optimizing face planes or vertices; `tttttD` edge ratio 3.2 against canonical's 143; symmetry kept; other graphs fall back to canonical. Lower bound proving that `kkkkD` has no convex readable realization. `metrics()` now counts reflex corners. → [realization/planes.md](realization/planes.md)
-- **2026-10-21.** Balance defined: every corner of every face readable, measured by `faceEdgeMax` (edge ratio within a face) and `turnMin` (corner turn relative to regular), with roundness, size and degree slope as descriptive measures (`balance()` in `tests/lib.mjs`); calibrated against renders, with the owner's wedge argument for why sizes may differ. Findings: canonical is readable except on `kkkD` (slivers) and `tttttD` (adapters, edge ratio 143); detached faces is readable everywhere but not convex on `tttttD`. → [realization/README.md](realization/README.md#balance)
+- **2026-10-23.** R20 Scene panel: orientation (free, or symmetric views from `views()` in symmetry.js: stand on a face, vertex or edge orbit, labelled by axis order; dragging then orbits the camera), ground (none, floor with fog, curved backdrop that turns with the camera), height above the ground, camera height, light presets in the camera's frame, shadow on the ground, explicit light/dark background (seeded by the theme), perspective and spin moved here. Owner to try composing with it. → [rendering.md](rendering.md#the-scene-r20)
+- **2026-10-23.** R9 spike: three-gpu-pathtracer 0.0.23 runs on three r170 without a build step, 256 samples at 2048² in 21 s on the RTX 3090; Cycles is 2.5–5× faster but leaves the page. Recommendation: a path-traced Render in the page (R20). Spike in `spikes/r9-pathtracer/`. → [rendering.md](rendering.md#r9-ray-tracer-spike)
+- **2026-10-23.** R5 closed by the owner: the drawn lines' *Hidden lines* slider covers frame and glass; fog and lighter back faces not needed so far. → [rendering.md](rendering.md#r5-attenuate-what-is-behind-glass-and-frame)
+- **2026-10-23.** R6: *Edge type* dropdown (painted, painted even width, drawn on the screen); drawn lines (`js/lines.js`) use a face-ID buffer for visibility, so they work with faces on and off; hidden-line opacity and thinner-with-depth sliders. Owner chose drawn. Glass now follows the material's specular. → [rendering.md](rendering.md#r6-lines-drawn-onto-the-screen)
+- **2026-10-23.** R2, small form: matte is diffuse-only (`specularIntensity` 0), metal deleted; glossy, iridescent and glass keep specular (owner unsure what looks good). → [rendering.md](rendering.md#r2-no-specular-highlights)
+- **2026-10-23.** Docs consolidated: one backlog with IDs; uniform status blocks; favourites merged into [catalogue.md](catalogue.md); user-experience.md folded into README (workflows, decisions) and regular-faces.md (Whiten, Mix, Stellate); planes.md renamed readable.md; new [exploration.md](exploration.md) and a rewritten [rendering.md](rendering.md) from the owner's notes of this date. Dropped: "colour by balance" (the readability research it served is done).
+- **2026-10-22.** Optimizer UX, the owner's seven requests: Whiten (ZCA) replaces centre/orthogonalise/normalise; Keep symmetry switch; spectral stepper for touch; clickable Steps list (states kept in the worker); Share prunes the chain by replay; Stellate; Equal edges; Mix (the single buttons on the same engine, bit-identical); Shake. `tests/optimizers.mjs`. → [regular-faces.md](realization/regular-faces.md)
+- **2026-10-21.** Spectral matrix dropdown (adjacency, Laplacian, vertex mean, face mean), starts capped at 100; the first start is convex on about half of the random strings. → [spectral.md](realization/spectral.md#findings-2026-10-21)
+- **2026-10-21.** Spectral init: exactly symmetric starts from whole eigenspaces, labelled by density; eigensolver 6× faster. Star faces with the pointedness rule; from stellated starts it finds the uniform star polyhedra exactly. → [spectral.md](realization/spectral.md)
+- **2026-10-21.** Face mean optimizer (power iteration; with whitening, the spectral face-mean layout). → [regular-faces.md](realization/regular-faces.md#face-mean-2026-10-21)
+- **2026-10-21.** Init buttons (As built, Random) apart from the optimizers; per-round adjustments (since replaced by Whiten). → [regular-faces.md](realization/regular-faces.md#whiten-and-the-old-adjustments-it-replaced)
+- **2026-10-21.** Optimizers as buttons that chain from the current positions, stoppable, the chain in the URL; detached faces renamed regular faces, stiffness removed; affine faces added (`ozJ45`). → [regular-faces.md](realization/regular-faces.md)
+- **2026-10-21.** Backlog audit: every item checked for a concrete observed problem. Dropped: readable for general graphs and its speed, target size, tangential/equiangular targets, solver variants for detached faces.
+- **2026-10-21.** Soft convexity in Readable tried and rejected (it flattens kis pyramids); a vertex angle-sum test kept. → [readable.md](realization/readable.md#simplicial-graphs-a-rejected-fix-2026-10-21)
+- **2026-10-21.** Readable (`js/readable.js`): convex, flat, readable realizations of simple and simplicial graphs (`tttttD` edge ratio 3.2 against canonical's 143); corner tie-breaker (`czD`); lower bound: `kkkkD` has no convex readable realization. → [readable.md](realization/readable.md)
+- **2026-10-21.** Balance defined (every corner readable: edge ratio and turn within a face), calibrated against renders. → [realization/README.md](realization/README.md#balance)
+- **2026-10-21.** Test harness; automorphisms, point groups, orbit colouring, keep the symmetry; GTAO; physical materials; palettes; edges painted in the shader; detached-faces realization.
+- **2026-10-21 v1.** Seeds (Platonic, P/A/Y/U, 35 Johnson solids via hull); half-edge operators `d a t k j g p c r` with composites and `tₙ kₙ`; notation parser; canonical, planar and raw realizations in a worker; three.js viewer; PNG, OBJ, STL export; URL state; Info dialog; home-page link.

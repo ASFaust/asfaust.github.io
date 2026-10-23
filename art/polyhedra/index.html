@@ -13,10 +13,11 @@
       }
     })();
   </script>
+  <link rel="stylesheet" href="../../fonts/fonts.css">
   <link rel="stylesheet" href="style.css">
   <script src="../../js/oklch-picker.js"></script>
   <!-- the vendored three.js add-ons import 'three' by name -->
-  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three-mesh-bvh": "./vendor/three-mesh-bvh.js", "three/examples/jsm/postprocessing/Pass.js": "./vendor/addons/postprocessing/Pass.js" } }</script>
 </head>
 <body>
   <nav class="site-nav">
@@ -31,10 +32,12 @@
         <canvas id="canvas" aria-label="The polyhedron in 3D. Drag to turn, scroll or pinch to zoom, double-click to reset the view."></canvas>
         <div class="status" id="status">Starting…</div>
         <div class="progress"><div id="progress"></div></div>
+        <div class="trace-note" id="traceNote"></div>
       </div>
       <div class="controls">
         <button id="randomBtn" title="A random seed with a few random operators">Random</button>
         <button id="resetBtn" title="Turn back to the starting view">Reset view</button>
+        <button id="renderBtn" aria-pressed="false" title="Path-trace the scene: soft shadows, light between the faces, real glass. It refines while the view is still.">Render</button>
         <button id="saveBtn" title="Save the image as shown">Save PNG</button>
         <button id="infoBtn" title="What is this, and how does it work?">Info</button>
       </div>
@@ -170,7 +173,6 @@
             <select id="p-material">
               <option value="matte">Matte</option>
               <option value="glossy">Glossy</option>
-              <option value="metal">Metal</option>
               <option value="iridescent">Iridescent</option>
             </select>
           </div>
@@ -219,8 +221,27 @@
           </div>
           <div class="param">
             <label for="p-edge"><span>Edges</span><span id="v-edge"></span></label>
-            <small>width of the lines drawn on the faces, relative to the edge length</small>
+            <small>width of the lines: relative to the edge length when painted, to the picture otherwise</small>
             <input type="range" id="p-edge" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-lines"><span>Edge type</span></label>
+            <small>&nbsp;</small>
+            <select id="p-lines">
+              <option value="painted">Painted on the faces</option>
+              <option value="screen">Painted, even width</option>
+              <option value="drawn">Drawn on the screen</option>
+            </select>
+          </div>
+          <div class="param" id="depthwidth-param">
+            <label for="p-depthwidth"><span>Thinner with depth</span><span id="v-depthwidth"></span></label>
+            <small>how much farther lines thin out</small>
+            <input type="range" id="p-depthwidth" min="0" max="1" step="0.05">
+          </div>
+          <div class="param" id="hidden-param">
+            <label for="p-hidden"><span>Hidden lines</span><span id="v-hidden"></span></label>
+            <small>0 leaves out the lines behind, 1 draws them like the others; glass and frame only</small>
+            <input type="range" id="p-hidden" min="0" max="1" step="0.05">
           </div>
           <div class="param">
             <label for="p-ink"><span>Edge colour</span></label>
@@ -230,6 +251,54 @@
               <option value="dark">Dark</option>
               <option value="light">Light</option>
               <option value="colour">Colour</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Scene</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-orient"><span>Orientation</span></label>
+            <small>free: dragging turns the shape; a symmetric view stands it on a face, vertex or edge, and dragging moves the camera round it</small>
+            <select id="p-orient"><option value="free">Free</option></select>
+          </div>
+          <div class="param">
+            <label for="p-ground"><span>Ground</span></label>
+            <small>&nbsp;</small>
+            <select id="p-ground">
+              <option value="none">None</option>
+              <option value="floor">Floor</option>
+              <option value="backdrop">Backdrop</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-lift"><span>Height above the ground</span><span id="v-lift"></span></label>
+            <small>0 sits on it</small>
+            <input type="range" id="p-lift" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-elev"><span>Camera height</span><span id="v-elev"></span></label>
+            <small>the angle above the horizon</small>
+            <input type="range" id="p-elev" min="-89" max="89" step="1">
+          </div>
+          <div class="param">
+            <label for="p-bg"><span>Background</span></label>
+            <small>starts as the page's theme</small>
+            <select id="p-bg">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-light"><span>Light</span></label>
+            <small>where the main light comes from</small>
+            <select id="p-light">
+              <option value="soft">Upper left</option>
+              <option value="top">Above</option>
+              <option value="side">Side</option>
+              <option value="rim">Behind</option>
             </select>
           </div>
           <div class="param">
@@ -261,6 +330,19 @@
           </div>
           <div class="param check wide">
             <label><input type="checkbox" id="p-transparent"> <span>Transparent background</span></label>
+          </div>
+          <div class="param">
+            <label for="p-samples"><span>Render samples</span></label>
+            <small>with Render on: rays per pixel in the saved image; more is smoother and slower</small>
+            <select id="p-samples">
+              <option value="64">64</option>
+              <option value="256" selected>256</option>
+              <option value="1024">1024</option>
+              <option value="4096">4096</option>
+            </select>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-denoise" checked> <span>Denoise</span></label>
           </div>
           <div class="param wide">
             <label><span>3D files</span></label>
@@ -300,9 +382,9 @@
       <p>Spectral starts come straight from the graph. Write down its adjacency matrix, with a 1 wherever two vertices share an edge, and take three of its eigenvectors as the x, y and z coordinates. The dropdown offers three relatives too: the Laplacian, the degrees minus the adjacency, whose smoothest eigenvectors have the smallest eigenvalues; vertex mean, which moves each vertex to the mean of its neighbours; and face mean, to the mean of its faces’ centres. Where every vertex has the same number of edges, the first three agree. Every symmetry of the graph only permutes the vertices, and that permutation commutes with the matrix, so each eigenspace is carried into itself, and a layout from whole eigenspaces is exactly symmetric. The page keeps the ones in which every symmetry acts as a different rotation or reflection, and lists them from the smoothest down. The first is often convex, on about half of a random sample, the Laplacian slightly more often than the others. Later ones are often stellations: for the dodecahedron, the eigenvalue √5 gives the dodecahedron itself and −√5 the great stellated dodecahedron, the same graph with pentagrams for faces, winding seven times round its centre. The number by the button steps through them, and the note says how often each winds round. Star faces then makes every face a regular star polygon: a face with n sides becomes {n/k}, its corners joined every k-th, with k nearest the pointedness times n, so that at 0.3 pentagons become pentagrams and decagons {10/3}. Triangles, squares and hexagons have no star and stay regular. A convex face has nothing of a star in it, so from a convex shape it cannot even start; from a stellated spectral start it finds the uniform star polyhedra, such as the great stellated truncated dodecahedron from <code>tD</code>, with every edge the same length. Stellate finds such a start without the list. Affine faces keeps the part of each face that goes once round evenly, an ellipse polygon; stellate keeps the part that goes round k times, the star {n/k} stretched by an affine map. That is a linear map of the positions, so with whitening every round it settles, like face mean, on three eigenvectors: those of the layouts whose faces are closest to affine stars. On <code>D</code> that is the great stellated dodecahedron itself. A convex face has nothing of a star in it, so stellate first shakes the shape a little. Where the faces have no star polygon, as triangles, squares and hexagons do not, it finds no stellation.</p>
       <p>The readable shape asks for something weaker than regular faces, and so can keep the shape convex and flat. A face reads wrong when two of its corners nearly merge, so that a hexagon looks like a pentagon, or when a corner is nearly straight. So it asks that the edges of each face be about equally long and that every corner turn at least 60% as much as a regular polygon’s corner does; how big each face is may vary as much as the graph needs. Where that still leaves a choice, as in <code>czD</code>, whose hexagons can all have equal edges in many ways, it prefers corners that are alike, so that faces come out as regular as the shape allows. It changes the shape in a way that cannot bend a face: when every vertex has three edges, as after a truncation, it moves the planes of the faces and puts each vertex where its three planes meet; when every face is a triangle, it moves the vertices, since a triangle is always flat. Any step that would dent the shape is refused, so it needs a convex shape to start from: the current one if it is convex, else the one the operators built, else it first runs the canonical optimizer until the shape is convex. On other shapes it runs the canonical optimizer instead. On <code>tttttD</code> the faces next to the big ones become even ovals instead of spiky slivers. Not every graph can be made fully readable: where many triangles meet at one corner of a convex shape, some of them must be thin.</p>
       <h3>Symmetry</h3>
-      <p>A symmetry of the graph, an automorphism, is pinned down by where it sends a single half-edge and whether it keeps or reverses the orientation. So the page tries every half-edge that looks alike, grows the map from there along the faces, and keeps the ones that close up. The canonical polyhedron shows every automorphism as a rotation or reflection, so fitting a matrix to each names the point group, shown under the picture as its Schoenflies symbol: <code>Ih</code> for the full symmetry of the icosahedron, <code>I</code> for its rotations alone, <code>D5h</code> for a pentagonal prism. Colouring by symmetry orbit gives faces that the symmetries carry into each other the same colour. Every optimizer averages the shape over all its symmetries every few rounds; that stops it drifting off and makes regular faces settle much sooner.</p>
+      <p>A symmetry of the graph, an automorphism, is pinned down by where it sends a single half-edge and whether it keeps or reverses the orientation. So the page tries every half-edge that looks alike, grows the map from there along the faces, and keeps the ones that close up. The canonical polyhedron shows every automorphism as a rotation or reflection, so fitting a matrix to each names the point group, shown under the picture as its Schoenflies symbol: <code>Ih</code> for the full symmetry of the icosahedron, <code>I</code> for its rotations alone, <code>D5h</code> for a pentagonal prism. Colouring by symmetry orbit gives faces that the symmetries carry into each other the same colour. The orientations in the Scene panel come from the same symmetries: the faces, vertices and edges fall into orbits, and every orbit that sits on a rotation axis is a way to stand the shape, labelled by how many times a turn about that axis brings it back to itself. Every optimizer averages the shape over all its symmetries every few rounds; that stops it drifting off and makes regular faces settle much sooner.</p>
       <h3>Drawing</h3>
-      <p>The edges are painted onto the faces rather than built as tubes. Every triangle on the screen knows its distance to the nearby sides of its face, and the pixels closer than the line width take the edge colour. The width is measured on the shape, not on the screen, so an export at 8192 pixels looks like the view, only sharper.</p>
+      <p>The edges are painted onto the faces rather than built as tubes. Every triangle on the screen knows its distance to the nearby sides of its face, and the pixels closer than the line width take the edge colour. The width is measured on the shape, not on the screen, so an export at 8192 pixels looks like the view, only sharper. Drawn on the screen, the edges are instead lines of the same width everywhere, laid over the picture like ink. Which parts of a line are hidden is decided by drawing the faces once more, each in a colour that is its number: a point of an edge counts as seen when a pixel beside it belongs to one of the edge's own two faces. So the lines keep their full width at the outline and in the valleys, and with the faces turned off the hidden ones can be shown faintly, or left out.</p>
       <h3>Origin</h3>
       <p>This is a port of PolyOp, an earlier C++ library with Python bindings, rewritten from scratch around half-edges. The regular-faces optimizer (there called detached faces) and the spectral layouts come from there.</p>
     </div>

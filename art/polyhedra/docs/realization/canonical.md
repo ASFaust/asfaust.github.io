@@ -1,6 +1,8 @@
 # Canonical Realization (Hart's Iteration)
 
-**Serves:** goal A, as the baseline (see [README.md](README.md)). **Status:** implemented, the "Canonical" button and the default chain. **Code:** `js/canonical.js` (`Realizer`), driven by `js/pipeline.js`.
+> **Status:** implemented: the "Canonical" button (the default chain) and the "Flat faces" button (planar mode). **Code:** `js/canonical.js` (`Realizer`), driven by `js/pipeline.js`. **Tests:** `tests/realize.mjs`. **Backlog:** A1 (tangles on `ckmU5`), L1 (speed).
+
+**Serves** goal A, as the baseline ([README.md](README.md#goal-a-nice-shapes)). Flat faces serves both goals: it is the usual last step of an artsy chain.
 
 ## Target
 
@@ -68,7 +70,7 @@ Reaching a visual tolerance (about 1e-4) takes far fewer rounds than reaching 1e
 - **Weird adapters** (`tttttD`): faces with edge ratio up to 143, where a face bridges the corner spacing of a 160-gon and that of the small faces. See [README.md](README.md#balance).
 - **High-degree vertices** (`kkkD`): the faces stay flat (they are triangles), but tangency converges very slowly (stuck near `1e-4`). The triangles are slivers (round 0.36, edge ratio 5.7).
 - **Pyramids** of six or more sides are tall spikes (`Y6`: round 0.54); the canonical shape is correct, just not pretty.
-- **Tangled from the build: the trapezohedron family** (owner's example `ckmU5`, 2026-10-22). Canonical never converges and the shape is tangled at 60,000 rounds: `ckmU5` (300 triangles, 450 hexagons) 220 inward faces, 595 reflex edges, edge ratio 5,500; `cmU5` 44 inward. `mU5` and `kmU5` converge but are unbalanced (edge ratio 9 and 19). Starting canonical from Face mean with all three adjustments (which itself gives no inward faces, but faces bent by 1.1 edge lengths and 400 reflex edges) does not help: 362 inward. Readable fails the same way, since it needs a convex start and falls back to canonical. Not yet known whether the canonical iteration has a wrong fixed point here or only a bad basin; the build relaxes between operators, so the parent `kmU5` is already unbalanced. Only Face mean with the adjustments gives something the owner calls usable. A goal-A test case.
+- **Tangled from the build: the trapezohedron family** (owner's example `ckmU5`, 2026-10-22). Canonical never converges and the shape is tangled at 60,000 rounds: `ckmU5` (300 triangles, 450 hexagons) 220 inward faces, 595 reflex edges, edge ratio 5,500; `cmU5` 44 inward. `mU5` and `kmU5` converge but are unbalanced (edge ratio 9 and 19). Starting canonical from Face mean with Whiten (then: all three old adjustments; it itself gives no inward faces, but faces bent by 1.1 edge lengths and 400 reflex edges) does not help: 362 inward. Readable fails the same way, since it needs a convex start and falls back to canonical. Not yet known whether the canonical iteration has a wrong fixed point here or only a bad basin; the build relaxes between operators, so the parent `kmU5` is already unbalanced. Only Face mean with Whiten (then Flat faces) gives something the owner calls usable. A goal-A test case: backlog `A1`.
 - **Symmetry averaging hurts here:** about 2× slower and no fewer rounds. It is not used for this optimizer; see [../symmetry.md](../symmetry.md).
 
 ## Ideas

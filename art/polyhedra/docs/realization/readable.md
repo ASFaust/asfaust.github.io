@@ -1,6 +1,8 @@
 # Readable Realization: Optimizing Readability over Planes or Vertices
 
-**Serves:** goal A (see [README.md](README.md)). **Status:** in the page as the "Readable" optimizer button, for simple and simplicial graphs; on other graphs it runs canonical instead. **Code:** `js/readable.js` (`Readable`, `readability()`), driven by `js/pipeline.js`; the standalone experiment `tests/planes.mjs` has the same loss without the corner tie-breaker, and knobs for τ, λ and the power.
+> **Status:** in the page as the "Readable" button, for simple and simplicial graphs; on other graphs it runs canonical instead. **Code:** `js/readable.js` (`Readable`, `readability()`), driven by `js/pipeline.js`. **Tests:** `tests/realize.mjs --mode readable`; the standalone experiment `tests/planes.mjs` has the same loss without the corner tie-breaker, and knobs for τ, λ and the power. **Backlog:** none open.
+
+**Serves** goal A ([README.md](README.md#goal-a-nice-shapes)).
 
 ## The idea
 

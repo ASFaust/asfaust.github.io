@@ -74,6 +74,50 @@ export function automorphisms(P, T = topology(P)) {
   return { maps, faceOrbit, nFaceOrbits: label.size };
 }
 
+// The symmetric ways to stand the shape: one per orbit of faces, vertices and edges, each with the
+// order of the rotation axis through it (the rotations that fix one member: n for an n-fold axis).
+// A view is { key, kind, rep, order, size, sides }: key names the orbit for links ('f2', 'v0',
+// 'e1'), rep is one member (a face index, a vertex, or an edge's two vertices). Axes with a
+// rotation come first; a shape without any gets its largest faces only.
+export function views(P, maps, faceOrbit) {
+  const nv = P.nv, faces = P.faces;
+  const union = n => {
+    const parent = Int32Array.from({ length: n }, (_, i) => i);
+    const root = i => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    return { root, join: (a, b) => { a = root(a); b = root(b); if (a !== b) parent[a] = b; } };
+  };
+  // edges, numbered by their sorted ends
+  const edgeOf = new Map(), ends = [];
+  for (const f of faces) for (let k = 0; k < f.length; k++) {
+    const a = f[k], b = f[(k + 1) % f.length], key = a < b ? a * nv + b : b * nv + a;
+    if (!edgeOf.has(key)) { edgeOf.set(key, ends.length); ends.push([a, b]); }
+  }
+  const V = union(nv), E = union(ends.length);
+  for (const { v } of maps) {
+    for (let i = 0; i < nv; i++) V.join(i, v[i]);
+    ends.forEach(([a, b], e) => { const x = v[a], y = v[b]; E.join(e, edgeOf.get(x < y ? x * nv + y : y * nv + x)); });
+  }
+  const rotations = maps.filter(m => !m.flip);
+  const out = [];
+  const collect = (kind, n, orbitOf, fixed, extra) => {
+    const seen = new Map();
+    for (let i = 0; i < n; i++) {
+      const o = orbitOf(i);
+      if (seen.has(o)) { seen.get(o).size++; continue; }
+      const w = { key: kind + seen.size, kind, rep: i, size: 1, order: rotations.filter(m => fixed(i, m.v)).length, ...extra(i) };
+      seen.set(o, w);
+      out.push(w);
+    }
+  };
+  collect('f', faces.length, f => faceOrbit[f], (f, v) => faces[f].every(u => faces[f].includes(v[u])), f => ({ sides: faces[f].length }));
+  collect('v', nv, V.root, (i, v) => v[i] === i, () => ({}));
+  collect('e', ends.length, E.root, (e, v) => { const [a, b] = ends[e]; return (v[a] === a && v[b] === b) || (v[a] === b && v[b] === a); }, e => ({ rep: ends[e] }));
+  const rank = { f: 0, v: 1, e: 2 };
+  out.sort((a, b) => b.order - a.order || rank[a.kind] - rank[b.kind] || a.size - b.size);
+  const axes = out.filter(w => w.order > 1);
+  return (axes.length ? axes : out.filter(w => w.kind === 'f').sort((a, b) => b.sides - a.sides).slice(0, 3)).slice(0, 16);
+}
+
 // ---------- 3 × 3 matrices, row-major Float64Array(9) ----------
 
 const mul = (A, B) => {

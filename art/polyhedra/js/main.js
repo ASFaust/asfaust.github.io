@@ -1,7 +1,7 @@
 import { parse, describe, estimate } from './notation.js';
 import { OPS } from './operators.js';
 import { seed, JOHNSON_NAMES, MAX_N } from './seeds.js';
-import { Viewer, STYLES, COLOURINGS, INKS, MATERIALS } from './viewer.js';
+import { Viewer, STYLES, COLOURINGS, INKS, MATERIALS, LINES, GROUNDS, LIGHT_NAMES } from './viewer.js';
 import { OPTIMIZERS, INITS, INSTANT } from './pipeline.js';
 import { TARGETS } from './faces.js';
 import { SPECTRAL_MAX, MATRICES } from './spectral.js';
@@ -15,7 +15,8 @@ const $ = id => document.getElementById(id);
 const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', ao: 0.6, aoSize: 1, colouring: 'origin', palette: 'generated', custom: [],
-  hue: 230, chroma: 0.12, edge: 0.5, ink: 'auto', fov: 30, spin: false,
+  hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, spin: false,
+  orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
 // the longest chain of optimizers kept in the URL
@@ -41,15 +42,27 @@ function sanitize(s) {
     hue: Math.round(NUM(s.hue, 0, 359, DEFAULTS.hue)),
     chroma: NUM(s.chroma, 0, 0.25, DEFAULTS.chroma),
     edge: NUM(s.edge, 0, 1, DEFAULTS.edge),
+    lines: ONE(s.lines, LINES, DEFAULTS.lines),
+    depthWidth: NUM(s.depthWidth, 0, 1, DEFAULTS.depthWidth),
+    hidden: NUM(s.hidden, 0, 1, DEFAULTS.hidden),
     ink: ONE(s.ink, INKS, DEFAULTS.ink),
     fov: Math.round(NUM(s.fov, 2, 70, DEFAULTS.fov)),
     spin: typeof s.spin === 'boolean' ? s.spin : DEFAULTS.spin,
+    orient: typeof s.orient === 'string' && /^(free|[fve]\d{1,5})$/.test(s.orient) ? s.orient : DEFAULTS.orient,
+    ground: ONE(s.ground, GROUNDS, DEFAULTS.ground),
+    lift: NUM(s.lift, 0, 1, DEFAULTS.lift),
+    elev: Math.round(NUM(s.elev, -89, 89, DEFAULTS.elev)),
+    azim: Math.round(NUM(s.azim, -180, 180, DEFAULTS.azim)),
+    light: ONE(s.light, LIGHT_NAMES, DEFAULTS.light),
+    // '' follows the page's theme until a background is chosen
+    bg: ONE(s.bg, ['light', 'dark'], ''),
   };
 }
 
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat', ao: 'ao', aoSize: 'aos',
-  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', ink: 'ink', fov: 'fov', spin: 'spin',
+  colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', spin: 'spin',
+  orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
 function hashText(st) {
@@ -148,6 +161,12 @@ let worker = null, job = 0;
 
 const stage = $('stage'), status = $('status'), bar = $('progress');
 const viewer = new Viewer($('canvas'));
+// dragging round a symmetric view moves the camera; the link keeps where it ended up
+viewer.onOrbit = (az, el, end) => {
+  st.azim = Math.round(az); st.elev = Math.round(el);
+  $('p-elev').value = st.elev; $('v-elev').textContent = st.elev + '°';
+  if (end) writeHash();
+};
 let mesh = null;      // the last 'mesh' message, for the stats and the 3D files
 let positions = null; // the latest positions
 let symmetry = null;  // the last 'symmetry' message
@@ -212,6 +231,7 @@ function run() {
     } else if (m.type === 'symmetry') {
       symmetry = m;
       viewer.setSymmetry(m);
+      showViews(m.views);
       showStats();
       showLook();
     } else if (m.type === 'start') {
@@ -652,17 +672,49 @@ function showLook() {
   $('p-hue').value = st.hue; $('v-hue').textContent = st.hue + '°';
   $('p-chroma').value = st.chroma; $('v-chroma').textContent = st.chroma.toFixed(2);
   $('p-edge').value = st.edge; $('v-edge').textContent = st.edge.toFixed(2);
+  $('p-lines').value = st.lines;
+  $('p-depthwidth').value = st.depthWidth; $('v-depthwidth').textContent = st.depthWidth ? st.depthWidth.toFixed(2) : 'off';
+  $('p-hidden').value = st.hidden; $('v-hidden').textContent = st.hidden ? st.hidden.toFixed(2) : 'off';
+  $('depthwidth-param').classList.toggle('hidden', st.lines === 'painted');
+  // hidden lines are known only to the drawn ones, and solid faces cover them
+  $('hidden-param').classList.toggle('hidden', st.lines !== 'drawn');
+  $('p-hidden').disabled = st.style === 'solid';
   $('p-ink').value = st.ink;
   $('p-fov').value = st.fov; $('v-fov').textContent = st.fov + '°';
+  $('p-orient').value = [...$('p-orient').options].some(o => o.value === st.orient) ? st.orient : 'free';
+  $('p-ground').value = st.ground;
+  $('p-lift').value = st.lift; $('v-lift').textContent = st.lift ? st.lift.toFixed(2) : 'on it';
+  $('p-lift').disabled = st.ground === 'none';
+  $('p-elev').value = st.elev; $('v-elev').textContent = st.elev + '°';
+  $('p-light').value = st.light;
+  $('p-bg').value = background();
+  $('stage').style.background = stageBackground();
   $('p-spin').checked = st.spin;
   // the hue means nothing without chroma
   $('p-hue').disabled = st.chroma === 0;
   viewer.set({
     style: st.style, material: st.material, ao: st.ao, aoSize: st.aoSize, colouring: st.colouring, palette: currentPalette(),
-    edge: st.edge, ink: st.ink, fov: st.fov, spin: st.spin,
-    dark: document.documentElement.getAttribute('data-theme') === 'dark',
+    orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
+    edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, spin: st.spin,
+    dark: background() === 'dark',
   });
   showSwatches();
+}
+
+// The symmetric views of the shape for the orientation menu: "5-fold, on a pentagon". A view the
+// link asked for that this shape does not have falls back to free.
+const POLYGONS = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'nonagon', 10: 'decagon', 12: 'dodecagon' };
+function showViews(views = []) {
+  const sel = $('p-orient');
+  const name = w => w.kind === 'f' ? `a ${POLYGONS[w.sides] || w.sides + '-gon'}` : w.kind === 'v' ? 'a vertex' : 'an edge';
+  const labels = views.map(w => `${w.order > 1 ? w.order + '-fold, on ' : 'On '}${name(w)}`);
+  sel.replaceChildren(new Option('Free', 'free'), ...views.map((w, i) => {
+    // the same label twice (two orbits of pentagons on 5-fold axes) gets a number
+    const same = labels.filter(l => l === labels[i]).length > 1 ? ` (${labels.slice(0, i + 1).filter(l => l === labels[i]).length})` : '';
+    return new Option(labels[i] + same, w.key);
+  }));
+  if (st.orient !== 'free' && !views.some(w => w.key === st.orient)) { st.orient = 'free'; writeHash(); }
+  showLook();
 }
 
 // the palette as hex strings, as many as the colouring needs (for the generated one)
@@ -728,8 +780,17 @@ function bindLook() {
   look('p-hue', 'hue', el => +el.value);
   look('p-chroma', 'chroma', el => +el.value);
   look('p-edge', 'edge', el => +el.value);
+  look('p-lines', 'lines', el => el.value);
+  look('p-depthwidth', 'depthWidth', el => +el.value);
+  look('p-hidden', 'hidden', el => +el.value);
   look('p-ink', 'ink', el => el.value);
   look('p-fov', 'fov', el => +el.value);
+  look('p-orient', 'orient', el => el.value);
+  look('p-ground', 'ground', el => el.value);
+  look('p-lift', 'lift', el => +el.value);
+  look('p-elev', 'elev', el => +el.value);
+  look('p-light', 'light', el => el.value);
+  look('p-bg', 'bg', el => el.value);
   look('p-spin', 'spin', el => el.checked);
 }
 
@@ -737,7 +798,7 @@ function bindLook() {
 
 buildPickers();
 bindLook();
-// the theme toggle lives in the page; the automatic edge colour follows it
+// the theme toggle lives in the page; the scene follows it until a background is chosen
 new MutationObserver(showLook).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 $('goBtn').addEventListener('click', () => setText($('p-notation').value));
@@ -780,21 +841,36 @@ $('randomBtn').addEventListener('click', () => setText(randomText()));
 $('resetBtn').addEventListener('click', () => viewer.resetView());
 
 const fileName = ext => `polyhedron-${st.text}.${ext}`;
-const stageBackground = () => getComputedStyle(document.documentElement).getPropertyValue('--stage-bg').trim() || '#ffffff';
+// The scene's background: chosen, or else the theme's. The scene does not change with the theme
+// once a background is chosen.
+function background() { return st.bg || (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'); }
+function stageBackground() { return background() === 'dark' ? '#0f0f10' : '#ffffff'; }
 $('saveBtn').addEventListener('click', () => {
   $('canvas').toBlob(b => b && download(b, fileName('png')), 'image/png');
 });
+// Render: the view path-traces the scene while it is still; the note says how far it has got
+$('renderBtn').addEventListener('click', async () => {
+  const on = $('renderBtn').getAttribute('aria-pressed') !== 'true';
+  $('renderBtn').setAttribute('aria-pressed', on);
+  $('traceNote').textContent = on ? 'loading the path tracer…' : '';
+  await viewer.setTrace(on);
+  viewer.setDenoise($('p-denoise').checked);
+});
+viewer.onTrace = n => { $('traceNote').textContent = viewer.tracing ? (n === null ? 'rendering when still' : `${n} samples`) : ''; };
+$('p-denoise').addEventListener('change', () => viewer.setDenoise($('p-denoise').checked));
 $('exportBtn').addEventListener('click', async () => {
   const want = +$('p-size').value, max = viewer.maxExport();
   const size = Math.min(want, max);
-  const btn = $('exportBtn');
+  const btn = $('exportBtn'), label = btn.textContent, samples = +$('p-samples').value;
   btn.disabled = true;
   try {
-    const blob = await viewer.snapshot(size, $('p-transparent').checked ? null : stageBackground());
+    const blob = await viewer.snapshot(size, $('p-transparent').checked ? null : stageBackground(), {
+      samples, onProgress: n => { btn.textContent = `${n} / ${samples}`; },
+    });
     if (blob) download(blob, fileName('png'));
     else alert('The browser could not make an image this large.');
     if (size < want) alert(`This graphics card renders at most ${max} × ${max}; saved at that size.`);
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; btn.textContent = label; }
 });
 $('objBtn').addEventListener('click', () => { if (mesh) download(obj(mesh, positions, st.text), fileName('obj')); });
 $('stlBtn').addEventListener('click', () => { if (mesh) download(stl(mesh, positions), fileName('stl')); });

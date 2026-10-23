@@ -6,7 +6,7 @@
 // A simple polyhedron (every vertex of degree 3: the result of t, z, …) is fixed by its face planes
 // {x : p_f·x = 1}: each vertex is where its three planes meet. Optimizing the p_f keeps every face
 // flat by construction. A simplicial one (all faces triangles: k, n, …) has flat faces whatever the
-// vertices do, so it is optimized in the vertex positions. Docs: docs/realization/planes.md.
+// vertices do, so it is optimized in the vertex positions. Docs: docs/realization/readable.md.
 //
 // The loss, per face f and its edges e, corners c:
 //   Σ |log ℓ_e − mean_f log ℓ|^pow                      edges of a face alike

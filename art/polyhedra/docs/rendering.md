@@ -1,84 +1,157 @@
-# Rendering: the Viewer and the Artsy Track
+# Rendering: Looks and the Viewer
 
-**Code:** `js/viewer.js` (three.js r170), `js/palettes.js`, `js/colour.js`, and the colour and look controls in `js/main.js`. This file covers how shapes are *drawn*. How they are *shaped* is [realization/](realization/README.md).
+> **Status:** first version in the page; the owner wants it redone (2026-10-23). It is not a reference: its materials and colour schemes were vibe-coded and can be deleted. **Code:** `js/viewer.js` (three.js r170), `js/palettes.js`, `js/colour.js`, the look controls in `js/main.js`, `js/export.js`. **Tests:** none; look at renders with `tests/screenshot.mjs`. **Backlog:** R1–R19.
 
-**Taste reference:** the owner's earlier Blender renders in `PolyOp/polyop_ref/` (outside the website repo). The open items below name the render they aim at.
+This file covers how shapes are *drawn*. How they are *shaped* is [realization/](realization/README.md).
+
+## The looks the page should make
+
+The owner wants a few distinct looks rather than a pile of independent material, palette and style controls (2026-10-23). Named by the owner:
+
+1. **Paper drawing.** Minimal and monochrome, like a drawing on paper: lines only, faces only (flat tones), or both. Maybe AO, maybe some grain. Closest reference: `diagram.png` (black ink on white, with lighter lines behind the shape).
+2. **Mathy.** What you find on Wikipedia: faces in flat colours (by number of sides, or by orbit) with dark edges; or transparent green faces with the edges drawn, the back edges visible. **Colour belongs to this look only; every other look is monochrome** (owner).
+
+Proposed from the reference renders (session, 2026-10-23; the owner to confirm or prune):
+
+3. **Sculpture.** A matte white, grey or black solid on a studio backdrop, with soft light, a soft contact shadow and dark creases. Most of the references are this: `Figure_10.png`, `Figure_11.png`, `fig5.jpg`, `untitled4.png`, `Figure_9.png` (black on white), `aafgsd.png` (one orange colour, deep crease shading).
+4. **Glowing lines on dark.** Emissive edges, the back ones dimmer or out of focus. `ref.jpg`, `untitlettzd.png`.
+5. **Tubes.** The edges as thick smooth tubes, the faces open. `hfgdhfgjd.png` (gold, depth of field), `unsstitled.png`.
+6. **Detached tiles.** Each face its own solid, shrunk and lifted. `untitled.png`. See R7.
+7. **Soft and organic.** Candy-like, smooth, translucent. `Figure_6.png` (red, depth of field), `Screenshot from 2026-10-21 16-20-56.png` (pale blue, smooth).
+8. **Glass.** `Figure_7.png`.
+9. **Iridescent.** Monochrome in the sense of having no colour controls; the colour comes from thin-film interference and changes like a rainbow *within* a single face (owner). See R8.
+
+### The workflow (proposed by a session, confirmed by the owner, 2026-10-23)
+
+**One scene, two renderers.** What is set up in the fast (rasterized) view is exactly what the path tracer renders; there is no second scene for rendering. The panels follow the workflow:
+
+1. **Shape, Realization:** explore by button mashing; the shape turns freely; nothing about the scene gets in the way.
+2. **Appearance (the Look, R1):** what the object is: material or tone, colours (mathy look only), edge type and width. No lights.
+3. **Scene** (R20): where the object is and how it is lit. *Orientation*: free, or one of the symmetric views from the automorphisms ("rest on" a face, vertex or edge orbit, labelled with the order of its rotation axis); choosing one fixes the shape's rotation, and dragging then moves the camera round the scene. *Ground*: none, floor, or a curved backdrop; sitting on it or floating. *Camera*: height above the ground, field of view. *Light*: a few presets, not free placement. The fast view shows ground and shadow roughly, so composing needs no tracing. A chosen orientation and the camera angles go in the link (small and exact; a free drag still does not, see README's decisions).
+4. **Render** (R21): a toggle in the view's toolbar, not a panel: the view itself becomes the path tracer, refines while still, drops to the fast view while dragging. Save PNG then renders at the export size to a chosen number of samples. The few tracer-only settings (samples, bounces) go in Export.
+5. **Export:** PNG, OBJ/STL, and a Blender scene script (R22). A page cannot start Blender (no registered link type), so the nearest thing is one downloaded Python file: `blender --python scene.py` opens the scene ready to render.
+
+Lights belong to the Scene, not the Look: a look should work under any staging, and staging is useful without the tracer too. Live denoising: three-gpu-pathtracer 0.0.23 has a simple edge-aware `DenoiseMaterial` (untested); Intel's OIDN in the browser exists but is heavy, better for the final PNG. Longer render times than Blender are fine (owner).
+
+### Reference renders
+
+The owner's Blender renders from PolyOp, in `PolyOp/polyop_ref/` (outside the website repo). The grouping above is a session's reading of them; a contact sheet is quick to make with PIL from `/home/andi/venv`.
+
+## The owner's critique of the current viewer (2026-10-23)
+
+| problem | why | item |
+|---|---|---|
+| Specular highlights | On a static print of a non-convex shape you ask yourself "why is that face so lit?" Softened later the same day: the owner is not *sure* what looks good; specular is what makes the current metal and iridescent work at all, metal looks bad anyway and can go, and iridescent is wrong as implemented (see R8) | R2 |
+| Colour everywhere | Colourful faces are the mathy look only | R1 |
+| Iridescent has colour controls and uniform faces | It should have no colour controls and vary within a face | R8 |
+| AO is terrible | GTAO gives smudges and grain at creases | R3 |
+| No depth of field | Wanted for the sculpture and line looks | R4 |
+| Glass and frame are confusing | The back faces are as strong as the front ones; they need attenuating, or depth fog | R5 |
+| The wireframe is not what was meant | It should look drawn onto the screen: the same width from every viewing angle, yet not sticking out of the surface; "comic style"; maybe thinner with depth, but not with the face's tilt. To be tested | R6 |
+| No detached-faces mode | Shrink each face inwards and extrude it, so every face is a solid; good for stellated shapes | R7 |
+| Quality ceiling | The owner is considering a ray tracer for really nice renders | R9 |
 
 ## How the viewer works now
 
-- **Geometry.**
-  - Faces are drawn flat-shaded, one normal per face (Newell). Triangles go as they are; larger faces as a fan around the centroid, which stays sensible while faces are not yet flat.
-  - Positions are scaled so the farthest vertex sits on the unit sphere.
-  - `setMesh()` builds the buffers once per shape; `setPositions()` rewrites them in place, once per animation frame at most.
-- **Edges are painted onto the faces in the shader** (`paintEdges()` patches the material through `onBeforeCompile`), as the owner prefers. There are no tubes or vertex balls.
-  - Each drawn triangle carries, at its corners, the signed distances to three boundary lines of its face: sides k−1, k and k+1 for fan triangle k. A neighbour's line is used only at convex corners.
-  - Distance to a line is affine in the plane, so it interpolates exactly. The fragment takes the minimum and paints the edge colour within the half-width `edge × 0.08 × mean edge length`, antialiased with `fwidth`.
-  - **Frame** style discards everything else, draws both sides, and uses alpha-to-coverage for smooth borders.
-- **Styles:**
-  - solid,
-  - glass: front faces at 0.35 opacity, plus back faces at 0.25 drawn first,
-  - frame.
-- **Materials:** `MeshPhysicalMaterial`, with presets in `LOOKS`; `env` is the environment-map intensity:
+- **Geometry.** Faces flat-shaded, one normal per face (Newell). Larger faces drawn as a fan around the centroid, which stays sensible while faces are not yet flat (but is wrong for self-intersecting star faces). Positions scaled so the farthest vertex is on the unit sphere. `setMesh()` builds the buffers once per shape; `setPositions()` rewrites them in place, at most once per animation frame.
+- **Edges are painted onto the faces in the shader** (`paintEdges()` patches the material through `onBeforeCompile`). Each fan triangle carries, at its corners, the signed distances to three boundary lines of its face (sides k−1, k, k+1; a neighbour's line only at convex corners). Distance to a line is affine in the plane, so it interpolates exactly. The fragment takes the minimum and paints within the half-width `edge × 0.08 × mean edge length` (world units), antialiased with `fwidth`. **Frame** style discards the rest, draws both sides, and uses alpha-to-coverage.
+- **Edge types** (`lines`, URL `ln`; R6, 2026-10-23): *painted* (above); *screen*, the same bands with the width in pixels (distance divided by the length of its screen gradient), half of it per face; *drawn* (`js/lines.js`), every edge a capsule of constant pixel width drawn over the picture, its visibility taken from a face-ID buffer (visible where a pixel beside the nearest point of the segment belongs to one of the edge's two faces), coverage blended by maximum so joins have no dark dots, then composited as ink; the default since 2026-10-23. Width in pixels is `edge × 0.01 ×` the shorter side of the drawing buffer, so exports match the view. *Thinner with depth* (`ed`) multiplies the width by `(camera distance / depth)^ed`. *Hidden lines* (`hid`, drawn only, not in solid) is the opacity of the occluded lines.
+- **Styles:** solid; glass (front faces at 0.35 opacity, back faces at 0.25 drawn first); frame.
+- **Materials:** `MeshPhysicalMaterial` with presets in `LOOKS`: matte (diffuse only: `specularIntensity` 0, so no highlights, reflections or Fresnel rim; since 2026-10-23, R2), glossy (roughness 0.35, clearcoat), iridescent (metalness 0.85, iridescence 1, thickness 250–900 nm; on a non-metal the film only tints the rims). Glass takes the material's specular, so matte glass has none (the owner disliked the highlight on glass, 2026-10-23). Metal was deleted (2026-10-23); old `mat=metal` links fall back to matte.
+- **Lighting:** RoomEnvironment map (PMREM), a key directional light, a hemisphere light, neutral tone mapping. The environment map was where the unexplained highlights came from; on matte it now only lights diffusely, which depends on the face's orientation alone. Lights are fixed to the world.
+- **Ambient occlusion:** `GTAOPass` in an `EffectComposer` (4× multisampled half-float targets), then `OutputPass`; solid style only. Radius and thickness `reach × mean edge length`, `distanceExponent` 2, 32 samples, Poisson denoise (`normalPhi` 8, radius 12, 3 rings).
+- **Colour:** a colouring gives each face a class (origin tags, number of sides, symmetry orbit, one colour); class k takes palette colour `k mod length`. Palettes: generated (OKLCh, golden-angle hues), pastel, earth, ocean, ember, mono, metals, pearl, custom (in the URL). Ink: auto, dark, light, or the first palette colour × 0.35.
+- **Camera:** perspective, field of view as a slider (2° is nearly orthographic), zoom, double-click to reset, optional spin. Placed by azimuth and elevation round the shape's centre (the Scene, below).
 
-  | look | settings |
-  |---|---|
-  | matte | roughness 0.55 |
-  | glossy | roughness 0.35, clearcoat 1 |
-  | metal | metalness 1, roughness 0.28, env 1.4 |
-  | iridescent | metalness 0.85, roughness 0.2, iridescence 1, IOR 1.8, thickness 250–900 nm |
+### The Scene (R20)
+Built 2026-10-23, in `js/viewer.js` (`orient`, `placeStage`, `placeCamera`, `orbit`) and the Scene panel:
+- **Orientation:** *free* (dragging turns the shape, an arcball in the camera's frame with inertia, as before) or a symmetric view from `views()` ([symmetry.md](symmetry.md#views-2026-10-23)), which stands the shape on that face, vertex or edge; dragging then orbits the camera (azimuth, elevation), and spin turns the camera. Recomputed from the positions every frame, so it follows a running optimizer.
+- **Ground:** none; floor (a wide plane fading into the background with fog); backdrop (floor plus a wall curving up behind, turning with the camera so it stays behind). On the ground the lowest point touches the floor, plus *height above the ground*. With ground the camera stands 1.35× farther back.
+- **Light:** the key light's direction as a preset (upper left, above, side, behind) in the camera's frame turned only about the vertical, so it keeps its place in the picture; it casts a PCF-soft shadow map onto the ground (faces cast, only the stage receives, so the faces stay readable). The stage takes little of the environment (`envMapIntensity` 0.15) so the shadow shows. With the default upper-left light the shadow falls mostly behind the shape.
+- **Background:** light (`#fff`) or dark (`#0f0f10`), explicit (owner, 2026-10-23: the scene must not depend on the page theme); unset, it follows the theme. It sets the stage colour, the scene background, the export background and the automatic edge colour.
+- The drawn lines leave the stage out of their face buffer.
+- URL keys: `or` orientation (`free` or a view key), `gr` ground, `lift`, `el` camera elevation, `az` azimuth, `li` light, `bg` background; `fov`, `spin` as before. A free drag is still not stored.
 
-  Iridescent needs high metalness: on a non-metal, the thin film only tints the rims.
-- **Lighting:** a RoomEnvironment environment map (PMREM), a key directional light and a hemisphere light, with neutral tone mapping.
-- **Ambient occlusion:** three.js `GTAOPass` inside an `EffectComposer` (4× multisampled half-float targets), followed by `OutputPass`. Solid style only. Its settings:
-  - radius and thickness: `reach × mean edge length`, so creases look alike at every subdivision,
-  - `distanceExponent` 2, 32 samples,
-  - denoise: Poisson with `normalPhi` 8, so it does not blur across faces; radius 12, 3 rings.
+### The Render toggle (R21)
+Built 2026-10-23: `js/trace.js` (`Tracer`), the trace loop in `js/viewer.js` (`setTrace`, `trace`, `drawLines`, `snapshot`), the Render button, and *Render samples* and *Denoise* in Export. three-gpu-pathtracer 0.0.23 and three-mesh-bvh 0.8.3 are vendored unmodified (with licence headers) in `vendor/`; the import map also resolves `three-mesh-bvh` and `three/examples/jsm/postprocessing/Pass.js`. `trace.js` is imported on the first switch-on, so page load is unchanged.
+- **The copy of the scene** (`Tracer.build`): the faces (position, normal, colours as RGBA), a traced material for the viewer's material (glass style: transmission 1, ior 1.5), the visible stage meshes in the stage colour, the key light as a 3×3 `RectAreaLight` where the directional one is (soft shadows), a grey-to-white gradient sky as environment (0.8), the stage colour as background (none for a transparent export). Frame style traces the stage only. Rebuilt whenever anything changes (cheap: the BVH takes tens of milliseconds); there is no separate camera update.
+- **When it traces:** after 250 ms without a change, drag, spin or running optimizer; up to 2048 samples, then it stops. Moving shows the fast view again. The drawn lines are laid over the traced picture, and stand in for every edge type, since the tracer cannot paint bands.
+- **Export with Render on:** re-traced at the export size to *Render samples*, the button showing progress.
+- **Freezes (2026-10-23):** one sample of the whole picture is one GPU job (40 ms at 900², 80 ms at 2048²), and a loop timing its calls in JavaScript queues many, since the GPU works asynchronously; this froze the owner's desktop, which shares the GPU. Now each sample is split into tiles of about 0.2 megapixels and one tile is traced per animation frame, live and in export. Not yet tested after that change.
+- **Bug found:** faces came out black at random. The tracer merges all meshes into one buffer and gives meshes without colours a 4-component colour attribute; the faces' 3-component colours were then read with the wrong stride. Fixed by passing RGBA.
+- **Not done:** depth of field (R4: `PhysicalCamera`), fog for the floor-only ground (the traced floor shows a horizon), tuning the light to the owner's taste, the library's denoiser judged against none (on by default).
+- **Export:** PNG as shown; PNG re-rendered at up to 8192² (GPU-capped), optionally transparent; OBJ (polygons); binary STL (centroid fans).
 
-  The first version used a radius of 0.35 of the whole shape, which gave smudges and banding. Now it is smooth, with slight grain right at creases. Exports keep a transparent background.
-- **Colour:** a colouring gives each face a class, and class k takes palette colour `k mod length`. Vertex colours are linear sRGB.
-  - Colourings: origin (tags), number of sides, symmetry orbit, one colour.
-  - Palettes: generated (OKLCh, golden-angle hue steps, alternating lightness), pastel, earth, ocean, ember, mono, metals, pearl, and custom (editable swatches, stored in the URL).
-- **Edge colour ("ink"):**
-  - auto: dark on solid faces; otherwise whichever contrasts with the theme,
-  - dark, light,
-  - colour: the first palette colour × 0.35.
-- **Camera:** perspective, with the field of view as a slider (2° is nearly orthographic). The distance is set so the unit sphere fits. Arcball dragging with inertia, wheel or pinch zoom, double-click to reset, optional slow spin.
-- **Export:**
-  - PNG of the current view as shown,
-  - PNG re-rendered at up to 8192², capped by the GPU's limits, with an optional transparent background,
-  - OBJ (polygons), binary STL (centroid fans).
+## Work items
 
-## Open items
+Suggested order: R20 Scene, R21 Render, R22 Blender (the confirmed workflow), then R1 once the owner has confirmed the list of looks; R3, R4, R11 and R16 mostly follow from R21 for final images.
 
-Roughly in order of value per effort.
+### R1. Looks instead of materials × palettes × styles
+Replace the Style, Material, Palette and Ink controls with a **Look** choice, each look with only the few controls it needs (paper: lines / faces / both, grain; mathy: colouring, palette, opaque or transparent; sculpture: tone, backdrop). Colour controls appear only in the mathy look. Delete the presets nothing uses. The URL keeps one `look` key plus that look's parameters; old links need not keep their look (owner, 2026-10-23: only the shape must replay). Needs the owner's confirmation of the look list above first: present renders of each candidate, made with `tests/screenshot.mjs`.
 
-### Look and light
-- **Analytic ambient occlusion for flat faces** (replaces GTAO for creases). The cosine-weighted visibility of a polygon from a point is Lambert's formula `(1/2π) Σ βᵢ (n·γᵢ)` over its edges. Summed in the fragment shader over the faces around the fragment's face (from a data texture, clipped to the upper hemisphere), it gives exact, noise-free, resolution-independent crease shading. It ignores occlusion between occluders: fine for creases, wrong for deep cavities. The hard part is that big neighbour faces have many edges. *Refs:* `aafgsd.png`, `untitled.png`.
-- **Fake subsurface scattering**, for an organic, candy-like look:
-  - wrap lighting `max(0, (N·L + w)/(1 + w))`,
-  - a tinted rim or back light,
-  - a thickness term from AO or from a back-face depth pass,
-  - three's `sheen` and `transmission` as cheaper approximations.
+### R2. No specular highlights
+Done in its small form (2026-10-23): matte, the default, has `specularIntensity` 0, so a face's brightness depends only on its orientation; metal is gone. Before/after on `jtJ37` and `oD` (regular, flat): the faces barely change, but the grey environment sheen on the ink bands and the bright rims at grazing faces disappear. Glossy, iridescent and glass keep their specular on purpose: the owner is not sure what looks good (2026-10-23), so glossy stays as the comparison, and iridescent gets redone in R8. The owner did not want R2 overthought, since the looks themselves (R1) are not built yet; whether each look is diffuse belongs to that look. Glass first kept its specular regardless of material; the owner disliked the highlight on a matte glass render, so glass now follows the material. Not tested: lights fixed to the camera rather than the world.
 
-  *Ref:* `Figure_6.png`.
-- **Staging:** a backdrop or floor with a soft contact shadow, studio lighting presets, depth of field. *Refs:* `Figure_6.png`, `Figure_9.png`, `hfgdhfgjd.png`.
-- **Glow lines on dark:** emissive painted edges plus a bloom pass (`UnrealBloomPass`, to be vendored the same way as GTAO). *Refs:* `ref.jpg`, `untitlettzd.png`.
-- **Real glass:** `transmission`, a thickness, and a rough backdrop to refract. *Ref:* `Figure_7.png`.
+### R3. Ambient occlusion that works
+GTAO is out (owner: "terrible"). Options, in order of how well they suit flat-faced shapes:
+- **Analytic polygon AO**: the cosine-weighted visibility of a polygon from a point is Lambert's formula `(1/2π) Σ βᵢ (n·γᵢ)` over its edges. Summed in the fragment shader over the faces near the fragment's face (from a data texture, clipped to the upper hemisphere), it gives exact, noise-free, resolution-independent crease shading. It ignores occlusion between occluders: right for creases, wrong for deep cavities. The hard part is big neighbour faces with many edges. *Refs:* `aafgsd.png`, `untitled.png`.
+- **Baked ray-traced AO**: once a shape settles, cast rays against a BVH of the mesh (in the worker) into a per-face texture atlas or a finely subdivided mesh. Correct for cavities, costs seconds, static only.
+- **The path tracer** (R9) for final renders, with a cheap approximation for the live view.
 
-### Colour
-- **Per-face painting:** click a face to colour it, or its whole orbit. Needs a raycast and a face id per drawn triangle; the fan layout already maps triangles to faces. Overrides go in the URL, compressed.
-- **Vertex and edge orbit colourings**, and per-orbit edge ink (needs [symmetry.md](symmetry.md) extras).
-- **Palette authoring extras:** reorder swatches; a "shuffle the assignment" button.
-- **Colour by balance:** a diagnostic colouring from each face's edge ratio, turn, roundness or size ([realization/README.md](realization/README.md#balance)), on a sequential ramp. It would show where weird adapters, slivers and oversized faces are, which the stats line cannot. Edge ratio and turn are `readability()` in `js/readable.js`; roundness and size are in `balance()` in `tests/lib.mjs`. The worker would compute them after `done`.
+### R4. Depth of field
+Live: three's `BokehPass` (vendor it like GTAO), focus on the shape's centre, aperture as a slider. Final: from the path tracer if R9 goes ahead. *Refs:* `Figure_6.png`, `hfgdhfgjd.png`, `untitlettzd.png`.
 
-### Geometry styles: render-time topology passes
-These change the mesh that is drawn, not the polyhedron:
-- **Wireframe + subdivide** gives organic tubes. Thicken each edge into a tube around the faces, with each face becoming a hole with an inset rim, then Catmull–Clark subdivide. In Conway terms: inset all faces ("loft"), delete the inner faces, solidify, subdivide. *Refs:* `hfgdhfgjd.png`, `unsstitled.png`.
-- **Detached face tiles:** each face becomes its own prism or pyramid, shrunk and moved out (PolyOp's `detach_faces(scale, move, thickness, pyramidal)`). *Ref:* `untitled.png`.
-- **Smooth-shaded subdivision** of non-convex realizations, for folded, crumpled and pleated looks. *Refs:* `Screenshot from 2026-10-21 16-20-56.png`, `fig5.jpg`, `untitled4.png`.
-- **Stellated and spiky shapes** come from realizations, not rendering: [realization/spectral.md](realization/spectral.md), and star-polygon targets in [realization/regular-faces.md](realization/regular-faces.md). *Refs:* `Figure_10.png`, `Figure_11.png`.
+### R5. Attenuate what is behind (glass and frame)
+**Closed (owner, 2026-10-23)** without further work: drawn lines (R6) dim or drop the hidden lines in frame and glass, and the owner's glass render (`bbJ29`, earth palette, orbit colours) read well without fog or lighter back faces. Reopen if a render shows the back competing with the front; the ideas below are what would be tried.
 
-### Viewer
-- Turntable GIF or WebM export.
-- Camera presets down symmetry axes ([symmetry.md](symmetry.md)).
-- An orthographic toggle; for now a 2° field of view works.
+In glass and frame styles every face and line counts the same, front or back, which is confusing. Options: draw back faces and back lines lighter (thinner, paler, more transparent); or depth fog, mixing towards the background with view depth across the shape's bounding sphere, so near lines are full ink and far ones fade, as in `diagram.png`. Probably both, as a strength slider.
+
+### R6. Lines drawn onto the screen
+**Done (2026-10-23): "Drawn on the screen" chosen** (owner: "looks amazing"; liked the render `#n=bbJ29&m=built&st=glass&c=orbit&pal=earth&e=0.35&ln=drawn&ink=dark` apart from the glass highlight, since removed). All three edge types stay in an *Edge type* dropdown until R1 decides per look. Findings, from renders of `jtJ37` (regular, flat):
+- *Painted, even width* works on the faces, but the silhouette shows half the width, as predicted; not worth an outline pass now that drawn exists.
+- *Drawn* with faces on gives full width at silhouettes and in valleys and never sticks out, because visibility comes from the face buffer, not depth. So the owner's doubt (screen lines with faces on) is resolved this way, not by painting.
+- With faces off (frame), drawn gives a true hidden-line drawing at *hidden lines* 0, the PolyOp look at 1, and the `diagram.png` look (lighter lines behind) in between: this covers part of R5 for the frame style.
+- Self-intersecting shapes: an edge passing behind a crossing face is hidden there, correctly; the crossing curve itself is not drawn (it is no edge).
+- Bug fixed the same day: edges went missing after Random. three caches an `InstancedBufferGeometry`'s instance count at its first draw (`_maxInstanceCount`), so a reused geometry drew only as many edges as the first shape had; `Lines.setMesh` now makes a new geometry per shape.
+- Not judged yet: *thinner with depth* (a slider, default off). Not tested: very large shapes in SwiftShader (three passes per frame; fine on a GPU).
+
+Original notes:
+**Faces on or off matters** (owner, 2026-10-23): the owner is not sure constant-width screen lines are possible *with faces turned on*; with faces off they are, and PolyOp did it (`PolyOp/src/Renderer.cpp`: a software rasteriser drawing each edge as a z-buffered, supersampled line, no faces). Test both cases separately. If only the faces-off case works well, either switch the line kind automatically with the style, or offer an edge-type dropdown (painted / screen lines / …). With faces off, three's `Line2`/`LineSegments2` (fat lines, pixel width) is the direct equivalent of PolyOp's approach; back lines can then be dimmed for R5.
+
+The current edges have a width in world units, so they get thin where a face is tilted away and thick where it faces the camera. The owner wants constant width on screen, still painted on the surface (not tubes sticking out): comic style. Lead (session): the shader already has the distance `d` to each edge line, affine across the triangle, so `d / length(vec2(dFdx(d), dFdy(d)))` is the distance *in pixels*, and a fixed pixel half-width gives the same line width at every tilt, painted on the face. Problems to test: at the silhouette only one of the two faces is visible, so the line there shows half its width (may need an outline pass); exports at higher resolution need the width scaled with the image size; the owner suggested width depending on depth but not on tilt, which is the pixel width times a depth factor. Compare by renders.
+
+### R7. Detached solid faces
+A render mode in which every face is shrunk towards its centroid (scale s) and extruded into a slab or pyramid of thickness t, so each face becomes a separate solid with sides; PolyOp's `detach_faces(scale, move, thickness, pyramidal)`. A geometry pass in the viewer, not a change to the polyhedron. Good for stellated shapes, where the faces cross each other. Self-intersecting star faces need a real polygon triangulation, not the centroid fan. Also worth exporting (OBJ/STL: printable as separate tiles). *Ref:* `untitled.png`.
+
+### R8. Iridescent, reworked
+No colour controls at all: hide the palette when this look is chosen. The colour comes from thin-film interference, computed per fragment from a film thickness that varies across each face (a smooth noise field in object space, or a function of the position) and the viewing angle, so a single face shows a rainbow sweep. three's `iridescenceThicknessMap` can carry the thickness, or a custom shader computes it directly; the current metalness hack (0.85) can go.
+
+### R9. Ray tracer spike
+**Done (2026-10-23).** The spike, rerunnable, is in `/home/andi/code/github-website/spikes/r9-pathtracer/` (outside the website repo; its README says how), with sample renders in `renders/`.
+
+*Findings:*
+- **three-gpu-pathtracer works on our three r170 with no build step.** Version 0.0.23 (June 2024, three ≥ 0.151) with three-mesh-bvh 0.8.3: two plain ES modules, 220 KB + 190 KB unminified, importing only `three`, `three-mesh-bvh` and `three/examples/jsm/postprocessing/Pass.js`, all resolvable by the import map (the last to `vendor/addons/postprocessing/Pass.js`). Releases from 0.0.24 on need three ≥ 0.180, later ≥ 0.185; upgrading three is a separate decision.
+- **Speed (RTX 3090, headless Chrome on ANGLE/OpenGL):** about 36 ms per sample at 900² and 82 ms at 2048²; 256 samples (slight grain on matte) take 9 s and 21 s. The BVH builds in under 60 ms for 2,000 triangles. Use one tile and several `renderSample()` calls per frame, or the loop is held to the frame rate (2×2 tiles at 60 fps gave 22 s for anything).
+- **Looks** (`renders/looks-256spp.png`), one area light, a gradient sky, a floor, matte materials: matte white, black, orange; transmissive red "candy"; metallic gold; glass; depth of field with `PhysicalCamera` (`fStop`, `focusDistance`, aperture blades). Matte sculpture renders get soft contact shadows and dark creases for free, which is what R3 (AO) and R11 (staging) were after. Glass (`bbJ29`) is still noisy at 256 samples and needs ~1,000. Black needs a rim light or a lighter tone to show its creases.
+- **Blender/Cycles** (Ubuntu's Blender 4.0, CUDA; that build has no OptiX and no denoiser): the same shape at 256 samples in 1.9 s at 900² and 7.7 s at 2048², 2.5–5× faster, same quality (`renders/browser-vs-cycles.png`; the lighting differs, not the engine). But it leaves the page: export, script, render.
+- **A spiky shape rests on one vertex** and looks as if it floats; staging should set the shape on a face (R11).
+- Drawn lines (R6) can be composited over a path-traced image unchanged: they need only the face buffer and the camera.
+- Not tried: a custom path tracer (no reason found: the library does what it would); the library's `DenoiseMaterial`.
+
+*Recommendation (session; the owner agreed, and the workflow above came out of it):* a **Render** action in the page with three-gpu-pathtracer, loaded on demand (dynamic `import()`, so the page loads no slower), refining progressively while the view stays still and exporting the PNG; the live view stays rasterized. This replaces GTAO for final images (R3), gives depth of field (R4), shadows and staging (R11) and real glass (R16), and keeps the button-mashing workflow in the browser. Blender export (glTF with camera and lights) only if the browser path proves too slow for some look.
+
+Find out whether a path tracer is worth it for "really nice renders". Candidates: `three-gpu-pathtracer` (WebGL path tracer on three.js, needs `three-mesh-bvh`; check it can be vendored as ES modules with no build step, and which three versions it supports), or a small custom one (the scenes are a few thousand flat polygons on a backdrop). A cheap alternative is exporting a scene for Blender/Cycles (glTF with camera, light and material), which is how the reference renders were made. Deliverable: a recommendation with sample renders (sculpture look with AO, glass, depth of field) and render times at 2048².
+
+### R10. Paper finish
+Off-white paper tone, optional grain (noise in screen space, fixed per pixel so it does not crawl when the shape turns), optional AO. Part of the paper look; separate because it is easy to overdo. Possibly hatching for shaded faces, if the owner wants it.
+
+### Older ideas, still open
+- **R11. Staging**: a backdrop or floor with a soft contact shadow, studio light presets. Part of the sculpture look. *Refs:* `Figure_6.png`, `Figure_9.png`, `hfgdhfgjd.png`.
+- **R12. Glow lines and bloom**: emissive edges plus `UnrealBloomPass` (vendored). The glowing-lines look. *Refs:* `ref.jpg`, `untitlettzd.png`.
+- **R13. Tubes and subdivision**: inset all faces, delete the inner faces, solidify, Catmull–Clark subdivide. The tubes look. *Refs:* `hfgdhfgjd.png`, `unsstitled.png`.
+- **R14. Smooth-shaded subdivision** of non-convex shapes, for folded and crumpled looks. *Refs:* `Screenshot from 2026-10-21 16-20-56.png`, `fig5.jpg`, `untitled4.png`.
+- **R15. Fake subsurface scattering**: wrap lighting `max(0, (N·L + w)/(1 + w))`, a tinted back light, a thickness term from AO or a back-face depth pass; or three's `sheen` and `transmission`. The soft look. *Ref:* `Figure_6.png`.
+- **R16. Real glass**: `transmission`, a thickness, a rough backdrop to refract; or from the path tracer. *Ref:* `Figure_7.png`.
+- **R17. Per-face painting**: click a face, or its whole orbit, to colour it. Needs a raycast and the triangle-to-face map the fan layout already has; overrides in the URL, compressed. Mathy look only.
+- **R18. Turntable export** (GIF or WebM).
+- **R19. Orthographic camera toggle**; for now a 2° field of view works.
