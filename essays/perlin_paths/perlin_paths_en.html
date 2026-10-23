@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paths That Never Cross</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../../fonts/fonts.css">
+  <style>
+    :root {
+      --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+      --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'Source Code Pro', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #555;
+      --color-border-secondary: #ccc;
+      --color-bg: #fff;
+      --color-code-bg: #f0f0f0;
+      --color-accent: #c0502a;
+      --color-warn: #d4145a;
+      --color-arrow: rgba(26, 26, 26, 0.32);
+    }
+    [data-theme="dark"] {
+      --color-text-primary: #e2e2e2;
+      --color-text-secondary: #888;
+      --color-border-secondary: #333;
+      --color-bg: #111;
+      --color-code-bg: #222;
+      --color-accent: #e8875c;
+      --color-warn: #ff4f8b;
+      --color-arrow: rgba(226, 226, 226, 0.28);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+    .site-nav {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.2rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .site-nav a { color: var(--color-text-secondary); text-decoration: none; }
+    .site-nav a:hover { color: var(--color-text-primary); }
+    .nav-right { display: flex; gap: 1.2rem; align-items: center; }
+    .lang-switch { display: flex; gap: 0.4rem; align-items: center; }
+    .lang-switch a { padding: 0.15rem 0.4rem; }
+    .lang-switch .active { color: var(--color-text-primary); font-weight: 500; pointer-events: none; }
+    .lang-switch .sep { color: var(--color-border-secondary); }
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      color: var(--color-text-secondary);
+      padding: 0.2rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--color-text-primary); }
+
+    .essay { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; font-family: var(--font-serif); }
+    .essay h1 { font-size: 22px; font-weight: 500; color: var(--color-text-primary); margin: 0 0 2rem; line-height: 1.3; }
+    .essay h2 { font-size: 19px; font-weight: 600; color: var(--color-text-primary); margin: 2.8rem 0 1.2rem; line-height: 1.4; }
+    .essay p { font-size: 17px; line-height: 1.85; color: var(--color-text-primary); margin: 0 0 1.4rem; }
+    .essay code { font-family: var(--font-mono); font-size: 14px; background: var(--color-code-bg); padding: 0.1rem 0.3rem; border-radius: 3px; }
+    .essay .eq { font-style: italic; text-align: center; margin: -0.4rem 0 1.4rem; font-size: 17px; }
+    .flow-demo { margin: 0.4rem 0 2rem; font-family: var(--font-sans); }
+    .flow-demo canvas { display: block; border: 1px solid var(--color-border-secondary); border-radius: 4px; cursor: crosshair; touch-action: manipulation; }
+    .flow-demo[data-demo="walk"] canvas { cursor: default; }
+    .flow-controls { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-top: 0.6rem; font-size: 13px; color: var(--color-text-secondary); }
+    .flow-controls button { font: inherit; color: var(--color-text-primary); background: none; border: 1px solid var(--color-border-secondary); border-radius: 3px; padding: 0.2rem 0.6rem; cursor: pointer; }
+    .flow-controls button:hover { border-color: var(--color-text-secondary); }
+    .flow-controls label { cursor: pointer; user-select: none; }
+    .flow-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; margin-top: 0.5rem; font-size: 12px; color: var(--color-text-secondary); }
+    .flow-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+    .flow-legend svg { width: 12px; height: 12px; color: var(--color-text-primary); }
+    .flow-status { margin-top: 0.4rem; font-size: 12px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <div class="nav-right">
+      <div class="lang-switch">
+        <span class="active">EN</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+    </div>
+  </nav>
+
+  <div class="essay">
+    <h1>Paths That Never Cross</h1>
+
+    <p>I wanted a way to procedurally generate linear levels: one long, winding route through terrain, the path a run follows from start to finish. It should look random and organic, it should never stall, and above all it should never cross itself. A linear level that runs into itself is no longer linear.</p>
+
+    <p>Random walks with collision checks are the obvious idea, and they are bad at this: they trap themselves in corners and need backtracking. So instead I let a differential equation draw the path. Pick a vector field <em>v</em> on the plane, start somewhere, and follow it:</p>
+
+    <p class="eq">x&prime;(t) = v(x(t))</p>
+
+    <p>What makes this promising is the Picard&ndash;Lindel&ouml;f theorem. If <em>v</em> is Lipschitz continuous, exactly one solution passes through every point. Two trajectories can never cross, since at the crossing the field would have to point in two directions at once, and they can never merge either. A single trajectory that came back to a point it had already visited would have to repeat itself exactly from there on, as a closed loop. So a smooth vector field gives you paths that never cross. Perlin noise is the standard source of smooth randomness, and the plan seems to write itself.</p>
+
+    <h2>Two noises, one per component</h2>
+
+    <p>The obvious way to build a random vector field from noise is one noise per component, <em>v</em> = (<em>P</em><sub>1</sub>(<em>x</em>), <em>P</em><sub>2</sub>(<em>x</em>)). Below are the arrows of such a field and a dozen paths integrated through it. Click anywhere to start another.</p>
+
+    <div class="flow-demo" data-demo="components"></div>
+
+    <p>Nothing crosses, so Picard&ndash;Lindel&ouml;f holds. But the paths die. Each component is zero along some curve, the two zero curves intersect at isolated points, and at every one of those the whole field vanishes. There are lots of them, marked in the figure. Near each zero the field looks like a linear map, which makes it a sink, a source, a saddle or a whirl. A path that wanders into a sink's basin slows down and stops, and one near a whirl spirals in. You get short stubs crawling to a halt, not a level.</p>
+
+    <p>The tempting fix is to normalize, using <em>v</em>/|<em>v</em>| so the path always moves at unit speed. Tick the box above. The paths no longer slow down, but the zeros have not gone anywhere. The normalized field is undefined at them, and near them its direction changes arbitrarily fast. It is not Lipschitz there, not even continuous, so the hypothesis of Picard&ndash;Lindel&ouml;f fails exactly at the points that mattered. A path now reaches a sink in finite time and has nowhere to go: the integrator overshoots, turns around, overshoots again and scribbles over itself. The red rings mark self-crossings. Normalization changes the lengths of the arrows. It cannot change where they vanish, because that is a matter of topology, not speed.</p>
+
+    <h2>One noise, as an angle</h2>
+
+    <p>Now use a single noise and read it as a direction:</p>
+
+    <p class="eq">&theta;(x) = 2&pi; &middot; P(x), &nbsp;&nbsp; v = (cos &theta;, sin &theta;)</p>
+
+    <div class="flow-demo" data-demo="angle"></div>
+
+    <p>Every arrow has length one, and <em>v</em> is a composition of smooth functions, so it is Lipschitz everywhere. There are no zeros, and so no sinks, no sources, no saddles and no whirls.</p>
+
+    <p>The reason is topological. Walk once around any closed loop and watch the direction of the arrows. In the component field the arrow can rotate by a full turn along the way, and whenever it does, there must be a zero inside the loop: sinks, sources and whirls turn it by +1, saddles by &minus;1. In the angle field the direction is &theta;, a single continuous function, so when you get back to the start it is back at the value it started with. The winding number is zero around every loop, for free.</p>
+
+    <p>The same argument rules out closed orbits. A path that closed into a loop would turn its own tangent by one full revolution, which requires a zero inside. No zeros, no loops. So a path cannot cross itself and cannot return, and by Poincar&eacute;&ndash;Bendixson it cannot stay in any bounded region either. Every path eventually leaves. Locally it cannot curl up: the tangent direction along the path is just &theta;(<em>x</em>(<em>t</em>)), so its total turning is bounded by the range of &theta;. It can make U-turns, but it cannot spiral.</p>
+
+    <p>Here is a single path, followed by the camera for as long as you keep watching.</p>
+
+    <div class="flow-demo" data-demo="walk"></div>
+
+    <p>It is a strange thing to watch. The line wanders, swerves, sometimes runs right alongside a stretch it drew earlier, and never touches it.</p>
+
+    <p>Two caveats from practice. No zeros does not mean divergence-free: streamlines bunch up along attracting rivers, and paths can get arbitrarily close to each other without touching, which matters if several paths should stay visibly apart. And the guarantee belongs to the exact equation. A finite-step integrator only inherits it approximately, so where streamlines converge hard a large step can still cross. The demos use small Runge&ndash;Kutta steps and count self-crossings so you can check. Tiled noise breaks the argument too, since on a torus a path can wrap around and close up without enclosing anything.</p>
+
+    <h2>The parametrization is the design</h2>
+
+    <p>Both fields are made from the same ingredient, smooth noise, and choosing between them looks like an implementation detail. It is not. (<em>P</em><sub>1</sub>, <em>P</em><sub>2</sub>) is a random map into the plane, and a random map into the plane hits the origin. (cos &theta;, sin &theta;) is a map into the circle that factors through the real line, so it can neither vanish nor wind. The way you parametrize your field decides its topological properties. It seems like a mundane choice, but one works and one does not.</p>
+  </div>
+
+  <script src="flow.js"></script>
+  <script>
+    var btn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    btn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = isDark ? '☀' : '☾';
+    });
+  </script>
+</body>
+</html>
