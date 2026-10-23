@@ -6,10 +6,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { restrict } from '../js/grid.js';
 import { buildOps } from '../js/climate/ops.js';
-import { runClimate } from '../js/climate/model.js';
 import { decodeGlobe } from '../js/globefile.js';
 import { gridAt, prepare, score, summary, toLevel, EVAL_LEVEL } from './metrics.mjs';
 
+// MODEL=2 runs js/climate/model2.js instead
+const { runClimate } = await import(process.env.MODEL === '2' ? '../js/climate/model2.js' : '../js/climate/model.js');
 const level = +(process.argv[2] || 5), years = +(process.argv[3] || 5);
 const params = JSON.parse(process.argv[4] || '{}'), outPath = process.argv[5] || '';
 const here = new URL('..', import.meta.url).pathname;
@@ -45,5 +46,6 @@ if (process.env.MAPS) {
   const fields = { Pm: M('precipitation'), Po: ann(prep.o.P), Tm: M('temperature'), To: ann(prep.o.T), E: M('evaporation'), W: M('vapour'),
     Um: M('wind_east'), Uo: ann(prep.o.U), Vm: M('wind_north'), Vo: ann(prep.o.V), H: prep.h,
     PmJul: toLevel(res.precipitation, level, L)[6], PoJul: prep.o.P[6], PmJan: toLevel(res.precipitation, level, L)[0], PoJan: prep.o.P[0] };
+  if (res.diag) for (const [k, v] of Object.entries(res.diag)) fields['d_' + k] = toLevel(Float32Array.from(v), level, L, 1)[0];
   for (const [k, v] of Object.entries(fields)) writeFileSync(`${d}/${k}.f32`, f32(v));
 }

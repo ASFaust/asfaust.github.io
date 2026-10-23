@@ -75,7 +75,6 @@ export const EARTH = {
   // damped balance ε φ + c² ∇·u = −Q, u the damped-geostrophic wind of φ, where the heating
   // Q asks for low-level convergence of gillCoupling × (P − mean P)/gillW, fading outside
   // the tropics
-  transportFriction: 1,      // friction on the wind that carries vapour, relative to the surface's
   gillCoupling: 0, gillC: 50, gillDamp: 1 / (3 * 86400), gillW: 40, gillLat: 25,
   // 1 counts the cooling with height twice: the vapour scale height already includes it, and
   // air climbing a slope would rain out everything it carries
@@ -155,7 +154,6 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   }
 
   const phi = new Float64Array(N), un = new Float64Array(E6), wind = new Float64Array(3 * N);
-  const unT = P.transportFriction !== 1 ? new Float64Array(E6) : un, windT = P.transportFriction !== 1 ? new Float64Array(3 * N) : wind;
   const speed = new Float64Array(N), div = new Float64Array(N), upslope = new Float64Array(N);
   const ekman = new Float64Array(3 * N), upwell = new Float64Array(N);
   const ones = new Float64Array(N).fill(1), mixK = new Float64Array(N), mixB = new Float64Array(N), mixX = new Float64Array(N);
@@ -262,8 +260,6 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       phi[i] = p * 100 / 1.2 + phiG[i];
     }
     balance(1, un, wind);
-    // the wind that carries the vapour: the lowest couple of km, where friction is weaker
-    if (P.transportFriction !== 1) balance(P.transportFriction, unT, windT);
     for (let i = 0; i < N; i++) {
       speed[i] = Math.hypot(wind[3 * i], wind[3 * i + 1], wind[3 * i + 2]);
       let s = 0;
@@ -355,7 +351,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let maxOut = 0;
     for (let i = 0; i < N; i++) {
       let o = 0;
-      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; if (unT[e] > 0) o += unT[e] * ops.len[e]; }
+      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; if (un[e] > 0) o += un[e] * ops.len[e]; }
       maxOut = Math.max(maxOut, o * R / (ops.area[i] * R2));
     }
     const sub = Math.min(P.maxSubsteps || Infinity, Math.max(1, Math.ceil(dt * maxOut / 0.5), Math.ceil(dt / (6 * 3600))));
@@ -367,7 +363,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     for (let q = 0; q < nEdge; q++) {
       // air crossing into or out of a column over high ground is only as deep as that column:
       // the rest goes around or over, so vapour moves as humidity times the shallower column
-      const e = edgeSlot[q], c = unT[e] * ops.len[e] * R * h * Math.min(colMass[edgeA[q]], colMass[edgeB[q]]);
+      const e = edgeSlot[q], c = un[e] * ops.len[e] * R * h * Math.min(colMass[edgeA[q]], colMass[edgeB[q]]);
       edgeC[q] = c;
     }
     // storminess: midlatitude weather systems lift air where the zonal-mean temperature
