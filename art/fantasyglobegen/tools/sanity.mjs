@@ -11,7 +11,7 @@ import { buildGrid } from '../js/grid.js';
 import { buildOps } from '../js/climate/ops.js';
 
 const level = +(process.argv[2] || 4), years = +(process.argv[3] || 4), params = JSON.parse(process.argv[4] || '{}');
-const { runClimate } = await import(process.env.MODEL === '2' ? '../js/climate/model2.js' : '../js/climate/model.js');
+const M = process.env.MODEL, { runClimate } = await import(!M ? '../js/climate/model.js' : M === '2' ? '../js/climate/model2.js' : `../js/climate/model_${M}.js`);
 const g = buildGrid(level), ops = buildOps(g), N = g.count, lat = ops.lat, area = ops.area;
 const lon = new Float64Array(N).map((_, i) => Math.atan2(g.pos[3 * i + 1], g.pos[3 * i]));
 const annual = f => { const a = new Float64Array(N); for (let m = 0; m < 12; m++) for (let i = 0; i < N; i++) a[i] += f[m * N + i] / 12; return a; };

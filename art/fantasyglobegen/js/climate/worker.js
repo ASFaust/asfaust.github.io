@@ -5,7 +5,7 @@ import { buildGrid, restrict, prolong } from '../grid.js';
 import { buildOps } from './ops.js';
 import { runClimate } from './model.js';
 
-const UNITS = { temperature: '°C', precipitation: 'mm/day', evaporation: 'mm/day', vapour: 'mm', wind_east: 'm/s', wind_north: 'm/s' };
+const UNITS = { temperature: '°C', precipitation: 'mm/day', evaporation: 'mm/day', vapour: 'mm', wind_east: 'm/s', wind_north: 'm/s', sea_ice: 'm' };
 
 self.onmessage = ({ data: { height, heightLevel, level, years, params } }) => {
   try {

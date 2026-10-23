@@ -53,6 +53,7 @@ const STYLES = {
   vapour: { cmap: 0, range: [0, 60] },
   wind_east: { cmap: 2, range: [-12, 12] },
   wind_north: { cmap: 2, range: [-8, 8] },
+  sea_ice: { cmap: 0, range: [0, 3] },
 };
 
 function layerField(name, layer) {

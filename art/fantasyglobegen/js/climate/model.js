@@ -39,56 +39,63 @@ export const EARTH = {
   albedo: 0.30, albedoP2: 0.09, albedoIce: 0.62, iceTemp: -10,
   heatDiffusion: 0.4,        // W/m²/K on the unit sphere
   landDiffusion: 1,          // its share over land, where less heat comes in from the sides
-  oceanDepth: 50,            // m of mixed layer
+  oceanDepth: 38,            // m of mixed layer
   // upwelling: wind pushes surface water sideways (Ekman transport); where it diverges, along
   // the equator and along coasts with the wind running down them, cold water comes up
   upwellTemp: 16,            // °C of the water that comes up (without ocean dynamics)
-  upwellEfficiency: 0.5,     // fraction of the full heat exchange
+  upwellEfficiency: 0.73,    // fraction of the full heat exchange
   // the ocean's warm upper layer over the thermocline, driven by the wind (a reduced-gravity
   // ocean, as in Cane & Zebiak 1985): ∂u/∂t + f k×u = −g'∇h + τ/(ρH) − r u + A∇²u,
   // ∂h/∂t = −H ∇·u − h/τ_h. The wind piles warm water up on the downwind side and draws the
   // thermocline up on the other; upwelled water is as cold as the thermocline is shallow,
   // T − (T − deepTemp) e^(−D/thermoScale) at depth D = H + h; the currents carry the heat
-  oceanDynamics: false,
-  thermoDepth: 150,          // m, H
-  reducedGravity: 0.03,      // m/s², g'
-  oceanDamping: 1 / (10 * 86400), // 1/s, r
-  thermoDamping: 1 / (365 * 86400), // 1/s, 1/τ_h
+  // sea ice (as in Wagner & Eisenman 2015): water colder than freezing turns to ice, which
+  // carries heat up by conduction, k (T_f − T)/h, so a thick sheet cuts the air off from the
+  // water below and its surface cools like land; it grows from the heat it loses and melts
+  // from the top once its surface reaches 0 °C, and from below by the heat the currents bring
+  seaIce: true, freezeTemp: -1.8, iceConductivity: 2, iceLatent: 3.0e8, iceAlbedo: 0.5, iceHeat: 1e7, iceMinThickness: 0.2,
+  iceBasalFlux: 2,           // W/m² from the ocean below to the ice, besides what upwelling brings
+  oceanDynamics: true,
+  thermoDepth: 143,          // m, H
+  reducedGravity: 0.039,     // m/s², g'
+  oceanDamping: 1.5e-6,      // 1/s, r
+  thermoDamping: 3.3e-8,     // 1/s, 1/τ_h
   oceanMinCoriolis: 0.5,     // degrees
-  oceanViscosity: 2e4,       // m²/s
-  deepTemp: 10, thermoScale: 50,
-  currentHeat: 1,            // share of the upper layer's current that moves the surface heat
+  oceanViscosity: 15e3,      // m²/s
+  deepTemp: 10, thermoScale: 54,
+  currentHeat: 0.94,         // share of the upper layer's current that moves the surface heat
   ekmanLat: 4,               // degrees: the Ekman transport fades to nothing at the equator
   landHeat: 1.5e7,           // J/m²/K
   lapseRate: 6.5e-3,         // K/m
   // pressure and wind
-  cellPressure: [-1.8, 3.9, -14.5, 3], // hPa: equatorial low, subtropical high, subpolar low, polar high
-  thermalLow: 0.84,          // hPa per K of land warmer than its latitude
-  thermalLowOcean: 0.62,     // the same over water, which drives the Walker circulation
-  convectionTemp: 26,        // °C: the equatorial low sits over water warmer than this
-  equatorialWidth: 23,       // degrees from the thermal equator where it can
-  minCoriolis: 7.5,          // degrees: near the equator the wind turns as if this far out
-  frictionOcean: 1 / 86400, frictionLand: 1 / 0.5 / 86400,
-  maxWind: 25,               // m/s
-  windMixing: 500e3,         // m: eddies mix momentum this far, so the trades reach the equator
+  cellPressure: [-2.9, 4.5, -15.2, 4.5], // hPa: equatorial low, subtropical high, subpolar low, polar high
+  baroRef: 1.1, baroExp: 1,  // K per 100 km; the eddy-driven pressures go as (gradient/baroRef)^baroExp
+  thermalLow: 0.63,          // hPa per K of land warmer than its latitude
+  thermalLowOcean: 1.06,     // the same over water, which drives the Walker circulation
+  convectionTemp: 25.8,      // °C: the equatorial low sits over water warmer than this
+  equatorialWidth: 28,       // degrees from the thermal equator where it can
+  minCoriolis: 9.9,          // degrees: near the equator the wind turns as if this far out
+  frictionOcean: 1.18e-5, frictionLand: 1.53e-5,
+  maxWind: 22,               // m/s
+  windMixing: 616e3,         // m: eddies mix momentum this far, so the trades reach the equator
   // moisture
   wsat0: 13,                 // mm of column vapour at saturation at 0 °C, sea level
   vapourScaleHeight: 2500,   // m
   evapCoeff: 1.56e-3,        // ρ·C_E, kg/m³
   gust: 4,                   // m/s added to the wind for evaporation
   bucket: 150,               // mm
-  moistureDiffusion: 2.1e6,  // m²/s
-  surfaceRH0: 0.31,          // near-surface humidity under a completely dry column
+  moistureDiffusion: 3.0e6,  // m²/s
+  surfaceRH0: 0.32,          // near-surface humidity under a completely dry column
   // rain rate exp(rainSteep (r − rainR0)) mm/day at column saturation r, the form Bretherton
   // et al. (2004) found over tropical oceans; rising air rains at lower r, sinking air at
   // higher. Their steepness of 15.6 holds for daily rain in one place; over a model cell and
   // a substep the onset is gentler, and 8.3 lets air carry its water as far as it does on
   // Earth (tools/metrics.mjs, Plength). The rain and wind parameters below were fitted to the
   // observed climate at level 4 and checked at levels 5 and 6.
-  rainSteep: 8.3, rainR0: 0.57, rhAscent: 0.075, rhDescent: 0.14,
-  rhStorm: 0.34, stormGradient: 0.87, // K per 100 km of zonal-mean gradient for full storminess
-  orographicEfficiency: 0.38, oroMinRH: 0.71, // air drier than this doesn't rain going uphill
-  oroScale: 140e3,           // m: heights smoothed over this for the lift (0: the grid's own)
+  rainSteep: 8.3, rainR0: 0.56, rhAscent: 0.13, rhDescent: 0.2,
+  rhStorm: 0.28, stormGradient: 0.92, // K per 100 km of zonal-mean gradient for full storminess
+  orographicEfficiency: 0.56, oroMinRH: 0.84, // air drier than this doesn't rain going uphill
+  oroScale: 106e3,           // m: heights smoothed over this for the lift (0: the grid's own)
   // the response of the first baroclinic mode to latent heating (Gill 1980): a steady,
   // damped balance ε φ + c² ∇·u = −Q, u the damped-geostrophic wind of φ, where the heating
   // Q asks for low-level convergence of gillCoupling × (P − mean P)/gillW, fading outside
@@ -97,7 +104,7 @@ export const EARTH = {
   // 1 counts the cooling with height twice: the vapour scale height already includes it, and
   // air climbing a slope would rain out everything it carries
   wsatLapse: 0,
-  wtgScale: 150e3,           // m: column saturation from temperature smoothed over this (0: local)
+  wtgScale: 101e3,           // m: column saturation from temperature smoothed over this (0: local)
 };
 
 const LV = 2.5e6, CP_OVER_LV = 1004 / 2.5e6, DAY = 86400;
@@ -163,7 +170,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   };
 
   // state
-  const T = new Float64Array(N), W = new Float64Array(N), soil = new Float64Array(N);
+  const T = new Float64Array(N), W = new Float64Array(N), soil = new Float64Array(N), iceH = new Float64Array(N), iceMonth = new Float64Array(N);
   for (let i = 0; i < N; i++) { T[i] = 28 - 45 * sinLat[i] ** 2; soil[i] = ocean[i] ? 0 : P.bucket / 2; }
   const surfT = i => T[i] - P.lapseRate * elev[i];
   const wsat = i => P.wsat0 * Math.exp(0.0641 * (T[i] - P.wsatLapse * P.lapseRate * elev[i]) - elev[i] / P.vapourScaleHeight);
@@ -277,11 +284,23 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let shift = ((best + 0.5) / NB - 0.5) * Math.PI;
     shift = Math.max(-20 * deg, Math.min(20 * deg, shift)) * 0.7;
     const [a0, a1, a2, a3] = P.cellPressure;
+    // the eddy-driven part, the subtropical high and the subpolar low, grows with the storms
+    // that drive it, and so with each hemisphere's steepest temperature gradient between 30°
+    // and 70°, against Earth's
+    const bandKm = Math.PI * R / NB / 1000, baro = [0, 0];
+    for (let b = 1; b < NB - 1; b++) {
+      const l = ((b + 0.5) / NB - 0.5) * 180;
+      if (Math.abs(l) < 30 || Math.abs(l) > 70) continue;
+      const g = Math.abs(zT[b + 1] - zT[b - 1]) / (2 * bandKm) * 100;
+      baro[l > 0 ? 0 : 1] = Math.max(baro[l > 0 ? 0 : 1], g);
+    }
+    const eddy = baro.map(g => Math.min(2, Math.max(0.3, (g / P.baroRef) ** P.baroExp)));
     for (let i = 0; i < N; i++) {
       const x = Math.abs(ops.lat[i] - shift) / deg;
       // the equatorial low follows the warmest water, so it bends with the warm pools
       const conv = 1 / (1 + Math.exp(-(T[i] - P.convectionTemp) / 1.5));
-      let p = a0 * conv * gauss(x, 0, P.equatorialWidth) + a1 * gauss(x, 32, 12) + a2 * gauss(x, 62, 10) + a3 * gauss(x, 90, 12);
+      const ed = eddy[ops.lat[i] > 0 ? 0 : 1];
+      let p = a0 * conv * gauss(x, 0, P.equatorialWidth) + ed * (a1 * gauss(x, 32, 12) + a2 * gauss(x, 62, 10)) + a3 * gauss(x, 90, 12);
       p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - atBand(zT, i));
       phi[i] = p * 100 / 1.2 + phiG[i];
     }
@@ -389,10 +408,16 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         const e = edgeSlot[q];
         if (!oEdge[e]) continue;
         const a = edgeA[q], b = edgeB[q], c = P.currentHeat * uo[e] * ops.len[e] * R * hs;
-        const F = c * (c > 0 ? T[a] : T[b]);
+        // water under ice is at freezing
+        const Ta = iceH[a] > 0 ? P.freezeTemp : T[a], Tb = iceH[b] > 0 ? P.freezeTemp : T[b];
+        const F = c * (c > 0 ? Ta : Tb);
         heatFlux[a] -= F; heatFlux[b] += F;
       }
-      for (let i = 0; i < N; i++) if (ocean[i]) T[i] += heatFlux[i] / (ops.area[i] * R2);
+      for (let i = 0; i < N; i++) if (ocean[i]) {
+        // under ice, the heat the currents bring melts it from below
+        if (iceH[i] > 0) iceH[i] = Math.max(0, iceH[i] - heatFlux[i] / (ops.area[i] * R2) * heatCap[i] / P.iceLatent);
+        else T[i] += heatFlux[i] / (ops.area[i] * R2);
+      }
     }
   }
 
@@ -401,6 +426,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     temperature: new Float32Array(MONTHS * N), precipitation: new Float32Array(MONTHS * N),
     evaporation: new Float32Array(MONTHS * N), vapour: new Float32Array(MONTHS * N),
     wind_east: new Float32Array(MONTHS * N), wind_north: new Float32Array(MONTHS * N),
+    sea_ice: new Float32Array(MONTHS * N),
   };
   const counts = new Float64Array(MONTHS);
 
@@ -442,9 +468,17 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     }
     for (let i = 0; i < N; i++) {
       const Ts = surfT(i);
-      const ice = 1 / (1 + Math.exp((Ts - P.iceTemp) / 2));
-      const alpha = (P.albedo + P.albedoP2 * p2[i]) * (1 - ice) + P.albedoIce * ice;
       const S = dailyInsolation(ops.lat[i], lambda, P.orbit);
+      if (P.seaIce && ocean[i] && iceH[i] > 0) {
+        // the ice's surface: a thin heat capacity, conduction from the water at freezing
+        const kc = P.iceConductivity / Math.max(P.iceMinThickness, iceH[i]);
+        const alpha = P.iceAlbedo * Math.min(1, iceH[i] / P.iceMinThickness) + (P.albedo + P.albedoP2 * p2[i]) * (1 - Math.min(1, iceH[i] / P.iceMinThickness));
+        diag[i] = P.iceHeat / dt + P.olrB + kc;
+        rhs[i] = P.iceHeat / dt * T[i] + S * (1 - alpha) - P.olrA + kc * P.freezeTemp;
+        continue;
+      }
+      const ice = P.seaIce && ocean[i] ? 0 : 1 / (1 + Math.exp((Ts - P.iceTemp) / 2));
+      const alpha = (P.albedo + P.albedoP2 * p2[i]) * (1 - ice) + P.albedoIce * ice;
       // upwelled water mixes in, implicitly: −ρc w (T − T_up)
       // upwelled water mixes in, implicitly: −ρc w (T − T_up), T_up = T − (T − T_d) e^(−D/d)
       let up = 4.18e6 * P.upwellEfficiency * upwell[i], Td = P.upwellTemp;
@@ -452,7 +486,32 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       diag[i] = heatCap[i] / dt + P.olrB + up;
       rhs[i] = heatCap[i] / dt * T[i] + S * (1 - alpha) - P.olrA + up * Td;
     }
+    const Told = P.seaIce ? Float64Array.from(T) : null;
     ops.solveImplicit(diag, kDiff, rhs, T, 1e-6);
+    if (P.seaIce) for (let i = 0; i < N; i++) {
+      if (!ocean[i]) continue;
+      const Cw = heatCap[i];
+      if (iceH[i] > 0) {
+        const kc = P.iceConductivity / Math.max(P.iceMinThickness, iceH[i]);
+        // a surface above 0 °C melts the ice from the top with the heat it can't take up
+        if (T[i] > 0) { iceH[i] -= T[i] * (P.iceHeat / dt + P.olrB + kc) * dt / P.iceLatent; T[i] = 0; }
+        // what the water loses up through the ice freezes onto its bottom; the ocean's heat from
+        // below, and the warmer deep water that upwelling brings, melt it there
+        let up = 4.18e6 * P.upwellEfficiency * upwell[i], Td = P.upwellTemp;
+        if (P.oceanDynamics) { up *= Math.exp(-Math.max(10, P.thermoDepth + hT[i]) / P.thermoScale); Td = P.deepTemp; }
+        const basal = P.iceBasalFlux + up * Math.max(0, Td - P.freezeTemp);
+        iceH[i] += (kc * (P.freezeTemp - T[i]) - basal) * dt / P.iceLatent;
+        if (iceH[i] <= 0) {
+          // all melted: what is left over warms the water
+          T[i] = P.freezeTemp - iceH[i] * P.iceLatent / Cw; iceH[i] = 0;
+        }
+        iceMonth[i] = iceH[i];
+      } else if (T[i] < P.freezeTemp) {
+        // open water colder than freezing freezes
+        iceH[i] = (P.freezeTemp - T[i]) * Cw / P.iceLatent; T[i] = P.freezeTemp;
+      }
+      iceMonth[i] = iceH[i];
+    }
     // for experiments: observed sea temperatures, 12 months, interpolated
     if (P.sstObs) {
       const mf = c * 12 - 0.5, m0 = (Math.floor(mf) + 12) % 12, m1 = (m0 + 1) % 12, w = mf - Math.floor(mf);
@@ -498,7 +557,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         - P.rhStorm * atBand(storm, i);
       thrA[i] = -P.rainSteep * r0 + Math.log(h / DAY);
       let ef = P.evapCoeff * (speed[i] + P.gust) * qsat(Ts) * h;
-      if (!ocean[i] && Ts < 0) ef *= 0.2;
+      if ((!ocean[i] || iceH[i] > 0) && Ts < 0) ef *= 0.2;
       evA[i] = ef;
       oroA[i] = Math.min(1, P.orographicEfficiency * Math.max(0, upslope[i]) / P.vapourScaleHeight * h);
     }
@@ -557,6 +616,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         out.precipitation[o + i] += rain[i] / dt * DAY;
         out.evaporation[o + i] += evap[i] / dt * DAY;
         out.vapour[o + i] += wMean[i];
+        out.sea_ice[o + i] += iceH[i];
         out.wind_east[o + i] += wind[3 * i] * ops.east[3 * i] + wind[3 * i + 1] * ops.east[3 * i + 1] + wind[3 * i + 2] * ops.east[3 * i + 2];
         out.wind_north[o + i] += wind[3 * i] * ops.north[3 * i] + wind[3 * i + 1] * ops.north[3 * i + 1] + wind[3 * i + 2] * ops.north[3 * i + 2];
       }
@@ -567,7 +627,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   let diagOut = null;
   if (P.diagnostics) {
     const ou = ouv;
-    diagOut = { thermocline: Float64Array.from(hT), current_east: new Float64Array(N), current_north: new Float64Array(N), upwell: Float64Array.from(upwell) };
+    diagOut = { ice: Float64Array.from(iceH), thermocline: Float64Array.from(hT), current_east: new Float64Array(N), current_north: new Float64Array(N), upwell: Float64Array.from(upwell) };
     for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) { diagOut.current_east[i] += ou[3 * i + c] * ops.east[3 * i + c]; diagOut.current_north[i] += ou[3 * i + c] * ops.north[3 * i + c]; }
   }
   return { ...out, ocean, diag: diagOut };

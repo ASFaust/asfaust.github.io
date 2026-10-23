@@ -64,7 +64,7 @@ console.log('land P by band (model/obs): ' + pl[0].map((v, b) => `${-85 + 10 * b
 
 if (outPath) {
   const layers = {};
-  for (const [k, v] of Object.entries(res)) if (k !== 'ocean') layers[k] = { level, dtype: 'float16', frames: 12, values: v, unit: { temperature: '°C', precipitation: 'mm/day', evaporation: 'mm/day', vapour: 'mm', wind_east: 'm/s', wind_north: 'm/s' }[k] };
+  for (const [k, v] of Object.entries(res)) if (v instanceof Float32Array) layers[k] = { level, dtype: 'float16', frames: 12, values: v, unit: { temperature: '°C', precipitation: 'mm/day', evaporation: 'mm/day', vapour: 'mm', wind_east: 'm/s', wind_north: 'm/s', sea_ice: 'm' }[k] };
   writeFileSync(outPath, await encodeGlobe({ params: { name: 'Earth, model' }, layers }));
 }
 

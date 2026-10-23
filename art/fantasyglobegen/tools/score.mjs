@@ -9,8 +9,8 @@ import { buildOps } from '../js/climate/ops.js';
 import { decodeGlobe } from '../js/globefile.js';
 import { gridAt, prepare, score, summary, toLevel, EVAL_LEVEL } from './metrics.mjs';
 
-// MODEL=2 runs js/climate/model2.js instead
-const { runClimate } = await import(process.env.MODEL === '2' ? '../js/climate/model2.js' : '../js/climate/model.js');
+// MODEL=2 runs js/climate/model2.js instead, MODEL=x js/climate/model_x.js
+const M = process.env.MODEL, { runClimate } = await import(!M ? '../js/climate/model.js' : M === '2' ? '../js/climate/model2.js' : `../js/climate/model_${M}.js`);
 const level = +(process.argv[2] || 5), years = +(process.argv[3] || 5);
 const params = JSON.parse(process.argv[4] || '{}'), outPath = process.argv[5] || '';
 const here = new URL('..', import.meta.url).pathname;
