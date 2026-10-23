@@ -128,3 +128,12 @@ export function precondition(levels, r, z) {
   vcycle(levels, 0);
   z.set(F.x);
 }
+
+// A preconditioner of its own, for (diag − ∇·k∇): set() once, apply() as often as needed
+export function preconditioner(ops, grid) {
+  const levels = buildHierarchy(grid);
+  return {
+    set: (diag, k) => setOperator(levels, ops, diag, k),
+    apply: (r, z) => precondition(levels, r, z),
+  };
+}

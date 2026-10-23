@@ -20,11 +20,17 @@ const prep = prepare(obs, h, hl);
 for (; hl > level; hl--) h = restrict(h, gridAt(hl), gridAt(hl - 1));
 const ops = buildOps(gridAt(level));
 
+// ORACLE_SST=1: the ocean takes the observed temperatures (an experiment)
+if (process.env.ORACLE_SST) {
+  const o = toLevel(obs.temperature.values, obs.temperature.level, level), a = new Float64Array(12 * ops.N);
+  o.forEach((m, k) => a.set(m, k * ops.N));
+  params.sstObs = a;
+}
 const t0 = performance.now();
 const res = runClimate({ ops, height: h, years, params });
 const sec = (performance.now() - t0) / 1000;
 const r = score(res, level, prep);
-r.level = level; r.years = years; r.seconds = +sec.toFixed(1); r.params = params;
+r.level = level; r.years = years; r.seconds = +sec.toFixed(1); r.params = { ...params, sstObs: undefined };
 console.log(`level ${level}, ${years} years in ${sec.toFixed(1)} s\n` + summary(r));
 if (outPath) writeFileSync(outPath, JSON.stringify(r));
 

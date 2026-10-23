@@ -25,8 +25,8 @@
 // or non-finite values, annual precipitation nowhere above 15 mm/day at this scale (the wettest
 // 2.5° boxes on Earth get about 12).
 //
-// The overall score is the mean of the skills, with precipitation counted most, since it
-// drives what the globe looks like.
+// The overall score is the mean of the skills, with precipitation counted twice, since it
+// drives what the globe looks like, less smooth penalties for breaking the physical bounds.
 import { buildGrid, restrict, prolong } from '../js/grid.js';
 import { buildOps } from '../js/climate/ops.js';
 import { oceanMask } from '../js/climate/model.js';
@@ -189,7 +189,11 @@ export function score(res, runLevel, prep) {
   const Pskills = [r.P_corr, r.P_logcorr, r.P_land_logcorr, r.P_skill, r.Pseason, r.Pzonal, r.Pheight, r.Pdist].map(v => Math.max(0, v));
   const others = [r.T_land_skill, r.Tseason, (r.u_corr + r.v_corr) / 2, r.koppen_group, r.koppen_class].map(v => Math.max(0, v));
   r.score_P = Pskills.reduce((a, b) => a + b) / Pskills.length;
-  r.score = (2 * r.score_P + others.reduce((a, b) => a + b) / others.length) / 3 - (r.checks_ok ? 0 : 0.1) - Math.abs(r.P_global / r.P_global_obs - 1) / 2;
+  // smooth penalties: global precipitation off by 10% costs 0.05, 20 mm/day at the wettest
+  // point 0.033, a 1% leak of water 0.02, and any broken value 0.2
+  r.score = (2 * r.score_P + others.reduce((a, b) => a + b) / others.length) / 3
+    - Math.abs(r.P_global / r.P_global_obs - 1) / 2 - Math.max(0, r.P_max / 15 - 1) / 10
+    - 2 * r.water_imbalance - (bad ? 0.2 : 0);
   return r;
 }
 

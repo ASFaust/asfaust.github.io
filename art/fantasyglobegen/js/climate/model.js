@@ -70,6 +70,16 @@ export const EARTH = {
   rainSteep: 15.6, rainR0: 0.603, rhAscent: 0.1, rhDescent: 0.05,
   rhStorm: 0.45, stormGradient: 0.8, // K per 100 km of zonal-mean gradient for full storminess
   orographicEfficiency: 0.5, oroMinRH: 0.35, // air drier than this doesn't rain going uphill
+  oroScale: 0,               // m: heights smoothed over this for the lift (0: the grid's own)
+  // the response of the first baroclinic mode to latent heating (Gill 1980): a steady,
+  // damped balance ε φ + c² ∇·u = −Q, u the damped-geostrophic wind of φ, where the heating
+  // Q asks for low-level convergence of gillCoupling × (P − mean P)/gillW, fading outside
+  // the tropics
+  gillCoupling: 0, gillC: 50, gillDamp: 1 / (3 * 86400), gillW: 40, gillLat: 25,
+  // 1 counts the cooling with height twice: the vapour scale height already includes it, and
+  // air climbing a slope would rain out everything it carries
+  wsatLapse: 0,
+  wtgScale: 0,               // m: column saturation from temperature smoothed over this (0: local)
 };
 
 const LV = 2.5e6, CP_OVER_LV = 1004 / 2.5e6, DAY = 86400;
@@ -123,7 +133,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   const T = new Float64Array(N), W = new Float64Array(N), soil = new Float64Array(N);
   for (let i = 0; i < N; i++) { T[i] = 28 - 45 * sinLat[i] ** 2; soil[i] = ocean[i] ? 0 : P.bucket / 2; }
   const surfT = i => T[i] - P.lapseRate * elev[i];
-  const wsat = i => P.wsat0 * Math.exp(0.0641 * surfT(i) - elev[i] / P.vapourScaleHeight);
+  const wsat = i => P.wsat0 * Math.exp(0.0641 * (T[i] - P.wsatLapse * P.lapseRate * elev[i]) - elev[i] / P.vapourScaleHeight);
   for (let i = 0; i < N; i++) W[i] = 0.7 * wsat(i);
   let rainPrev = new Float64Array(N);
 
@@ -143,9 +153,54 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   const zT = new Float64Array(NB), storm = new Float64Array(NB);
   const gauss = (x, c, w) => Math.exp(-(((x - c) / w) ** 2));
   const deg = Math.PI / 180;
-  const hGrad = ops.gradient(elev);
+  const smooth = (f, L) => {
+    const x = Float64Array.from(f);
+    if (L > 0) ops.solveImplicit(new Float64Array(N).fill(1), new Float64Array(N).fill((L / R) ** 2), Float64Array.from(f), x, 1e-6);
+    return x;
+  };
+  const hGrad = ops.gradient(smooth(elev, P.oroScale));
+
+  // ---- Gill response
+  const gillOn = P.gillCoupling > 0, phiG = new Float64Array(N), gB = new Float64Array(N), uG = new Float64Array(E6);
+  const rainRate = new Float64Array(N), gillW = new Float64Array(N);
+  let gillPC = null;
+  if (gillOn) {
+    gillPC = ops.preconditioner();
+    const d = new Float64Array(N).fill(P.gillDamp), k = new Float64Array(N);
+    const fT = 2 * P.rotation * Math.sin(P.gillLat * deg);
+    for (let i = 0; i < N; i++) {
+      const f = 2 * P.rotation * sinLat[i], f2 = Math.max(f * f, fMin * fMin), r = ocean[i] ? P.frictionOcean : P.frictionLand;
+      k[i] = P.gillC ** 2 * r / (r * r + f2) / R2;
+      gillW[i] = 1 / (1 + (f / fT) ** 4);
+    }
+    gillPC.set(d, k);
+  }
+  const gillApply = (v, out) => {
+    for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
+      const e = 6 * i + k, j = ops.nbr[e];
+      const gn = (v[j] - v[i]) / (ops.dist[e] * R);
+      const gt = ((v[ops.side2[e]] - v[ops.side1[e]]) / 3) / (ops.len[e] * R);
+      const r = rEdge[e], f = fEdge[e], f2 = Math.max(f * f, fMin * fMin);
+      uG[e] = -(r * gn + f * gt) / (r * r + f2);
+    }
+    const c2 = P.gillC ** 2;
+    for (let i = 0; i < N; i++) {
+      let s = 0;
+      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; s += ops.len[e] * uG[e]; }
+      out[i] = ops.area[i] * P.gillDamp * v[i] + c2 * s / R;
+    }
+  };
+  function gill() {
+    let m = 0, w = 0;
+    for (let i = 0; i < N; i++) { m += rainRate[i] * ops.area[i]; w += ops.area[i]; }
+    m /= w;
+    const c2 = P.gillC ** 2;
+    for (let i = 0; i < N; i++) gB[i] = -ops.area[i] * c2 * gillW[i] * P.gillCoupling * (rainRate[i] - m) / P.gillW;
+    ops.solveGeneral(gillApply, gB, phiG, gillPC, 1e-4, 50);
+  }
 
   function winds() {
+    if (gillOn) gill();
     // the thermal equator: the warmest latitude band, held within ±20°
     zonalMean(T, zT);
     let best = 0;
@@ -159,7 +214,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const conv = 1 / (1 + Math.exp(-(T[i] - P.convectionTemp) / 1.5));
       let p = a0 * conv * gauss(x, 0, P.equatorialWidth) + a1 * gauss(x, 32, 12) + a2 * gauss(x, 62, 10) + a3 * gauss(x, 90, 12);
       p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - zT[band[i]]);
-      phi[i] = p * 100 / 1.2;
+      phi[i] = p * 100 / 1.2 + phiG[i];
     }
     // normal wind on every edge: u_n = −(r g_n + f g_t)/(r² + f²)
     for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
@@ -179,7 +234,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       mixK.fill((P.windMixing / R) ** 2);
       for (let c = 0; c < 3; c++) {
         for (let i = 0; i < N; i++) { mixB[i] = wind[3 * i + c]; mixX[i] = mixB[i]; }
-        ops.solveImplicit(ones, mixK, mixB, mixX, 1e-4);
+        ops.solveImplicit(ones, mixK, mixB, mixX, 1e-4, 100, c > 0);
         for (let i = 0; i < N; i++) wind[3 * i + c] = mixX[i];
       }
       for (let i = 0; i < N; i++) {
@@ -227,8 +282,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   const counts = new Float64Array(MONTHS);
 
   const diag = new Float64Array(N), kDiff = new Float64Array(N).fill(P.heatDiffusion), rhs = new Float64Array(N);
-  const rain = new Float64Array(N), evap = new Float64Array(N);
-  const wDiag = new Float64Array(N), wK = new Float64Array(N), wRhs = new Float64Array(N);
+  const rain = new Float64Array(N), evap = new Float64Array(N), wMean = new Float64Array(N);
   const flux = new Float64Array(N), invAR2 = new Float64Array(N);
   const colMass = elev.map(z => Math.exp(-z / P.vapourScaleHeight)), invMass = colMass.map(m => 1 / m);
   for (let i = 0; i < N; i++) invAR2[i] = 1 / (ops.area[i] * R2);
@@ -239,6 +293,13 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   const nEdge = edgeList.length, edgeSlot = Int32Array.from(edgeList);
   const edgeA = new Int32Array(nEdge), edgeB = new Int32Array(nEdge), edgeC = new Float64Array(nEdge);
   for (let q = 0; q < nEdge; q++) { edgeA[q] = Math.floor(edgeSlot[q] / 6); edgeB[q] = ops.nbr[edgeSlot[q]]; }
+  // diffusion coefficient per edge, K (l/d) m̄, and its sum per cell, for the stable step
+  const edgeD = new Float64Array(nEdge), diffSum = new Float64Array(N);
+  for (let q = 0; q < nEdge; q++) {
+    const a = edgeA[q], b = edgeB[q];
+    edgeD[q] = P.moistureDiffusion * ops.lap[edgeSlot[q]] * 0.5 * (colMass[a] + colMass[b]);
+    diffSum[a] += edgeD[q]; diffSum[b] += edgeD[q];
+  }
 
   const totalSteps = years * stepsPerYear;
   for (let step = 0; step < totalSteps; step++) {
@@ -264,6 +325,11 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       rhs[i] = heatCap[i] / dt * T[i] + S * (1 - alpha) - P.olrA + up * P.upwellTemp;
     }
     ops.solveImplicit(diag, kDiff, rhs, T, 1e-6);
+    // for experiments: observed sea temperatures, 12 months, interpolated
+    if (P.sstObs) {
+      const mf = c * 12 - 0.5, m0 = (Math.floor(mf) + 12) % 12, m1 = (m0 + 1) % 12, w = mf - Math.floor(mf);
+      for (let i = 0; i < N; i++) if (ocean[i]) T[i] = (1 - w) * P.sstObs[m0 * N + i] + w * P.sstObs[m1 * N + i];
+    }
 
     // ---- wind from the new temperatures
     winds();
@@ -294,9 +360,10 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const g = Math.abs(zT[Math.min(NB - 1, b + 1)] - zT[Math.max(0, b - 1)]) / (2 * bandKm) * 100;
       storm[b] = Math.tanh(g / P.stormGradient);
     }
+    const Tls = P.wtgScale > 0 ? smooth(T, P.wtgScale) : T;
     for (let i = 0; i < N; i++) {
       const Ts = surfT(i);
-      wsA[i] = wsat(i);
+      wsA[i] = P.wsat0 * Math.exp(0.0641 * (Tls[i] - P.wsatLapse * P.lapseRate * elev[i]) - elev[i] / P.vapourScaleHeight);
       // thrA: the rain rate at r = 0 in mm per substep, as a log
       const r0 = P.rainR0 - P.rhAscent * Math.tanh(Math.max(0, -div[i]) * 4 * DAY) + P.rhDescent * Math.tanh(Math.max(0, div[i]) * 4 * DAY)
         - P.rhStorm * storm[band[i]];
@@ -306,8 +373,26 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       evA[i] = ef;
       oroA[i] = Math.min(1, P.orographicEfficiency * Math.max(0, upslope[i]) / P.vapourScaleHeight * h);
     }
-    rain.fill(0); evap.fill(0);
+    rain.fill(0); evap.fill(0); wMean.fill(0);
+    // eddy diffusion of vapour, explicit in flux form so that it conserves water exactly, in as
+    // many stable steps as the substep needs. Eddies mix humidity, not column vapour: a column
+    // over high ground holds less air, so x = W/m is mixed, m = e^(−z/H) the column's share
+    // of sea-level air: m ∂x/∂t = ∇·(K m̄ ∇x)
+    let worst = 0;
+    for (let i = 0; i < N; i++) worst = Math.max(worst, diffSum[i] * h / R2 / (ops.area[i] * colMass[i]));
+    const nDiff = Math.ceil(worst / 0.8), hd = h / R2 / nDiff;
+    const diffuse = () => {
+      for (let n = 0; n < nDiff; n++) {
+        flux.fill(0);
+        for (let q = 0; q < nEdge; q++) {
+          const a = edgeA[q], b = edgeB[q], F = hd * edgeD[q] * (W[b] * invMass[b] - W[a] * invMass[a]);
+          flux[a] += F; flux[b] -= F;
+        }
+        for (let i = 0; i < N; i++) W[i] = Math.max(0, W[i] + flux[i] / ops.area[i]);
+      }
+    };
     for (let s = 0; s < sub; s++) {
+      diffuse();
       // upwind transport, kg per substep through each edge
       flux.fill(0);
       for (let q = 0; q < nEdge; q++) {
@@ -327,17 +412,12 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         Pr = Math.min(w, Pr + oroA[i] * w * Math.max(0, w / wsA[i] - P.oroMinRH) / (1 - P.oroMinRH));
         w -= Pr;
         W[i] = w;
-        rain[i] += Pr; evap[i] += E;
+        rain[i] += Pr; evap[i] += E; wMean[i] += w / sub;
         if (!ocean[i]) soil[i] = Math.min(P.bucket, Math.max(0, soil[i] + Pr - E));
       }
     }
-    // eddy diffusion of vapour, implicit over the whole step. Eddies mix humidity, not column
-    // vapour: a column over high ground holds less air, so x = W/m is mixed, m = e^(−z/H)
-    // the column's share of sea-level air, and m x' − ∇·(K m ∇x') = W
-    for (let i = 0; i < N; i++) { wDiag[i] = colMass[i]; wK[i] = P.moistureDiffusion * dt / R2 * colMass[i]; wRhs[i] = W[i]; mixX[i] = W[i] / colMass[i]; }
-    ops.solveImplicit(wDiag, wK, wRhs, mixX, 1e-5);
-    for (let i = 0; i < N; i++) W[i] = mixX[i] * colMass[i];
     rainPrev = rain;
+    for (let i = 0; i < N; i++) rainRate[i] = 0.5 * rainRate[i] + 0.5 * rain[i] / dt;
 
     // ---- record the last year
     if (step >= totalSteps - stepsPerYear) {
@@ -347,7 +427,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         out.temperature[o + i] += surfT(i);
         out.precipitation[o + i] += rain[i] / dt * DAY;
         out.evaporation[o + i] += evap[i] / dt * DAY;
-        out.vapour[o + i] += W[i];
+        out.vapour[o + i] += wMean[i];
         out.wind_east[o + i] += wind[3 * i] * ops.east[3 * i] + wind[3 * i + 1] * ops.east[3 * i + 1] + wind[3 * i + 2] * ops.east[3 * i + 2];
         out.wind_north[o + i] += wind[3 * i] * ops.north[3 * i] + wind[3 * i + 1] * ops.north[3 * i + 1] + wind[3 * i + 2] * ops.north[3 * i + 2];
       }

@@ -11,7 +11,7 @@
 //   ∇·u   = (1/A) Σ l (u_i + u_j)/2 · n
 //   ∇f    = (1/A) Σ l (f_j − f_i)/2 n        (Green–Gauss, then projected onto the tangent plane)
 
-import { buildHierarchy, setOperator, precondition } from './multigrid.js';
+import { buildHierarchy, setOperator, precondition as mgPrecondition, preconditioner } from './multigrid.js';
 
 function circumcentre(p, a, b, c) {
   const ax = p[3 * a], ay = p[3 * a + 1], az = p[3 * a + 2];
@@ -122,13 +122,36 @@ export function buildOps(grid) {
   // Solves (diag_i − ∇·k∇) x = b for x by conjugate gradients with a multigrid
   // preconditioner (multigrid.js), with per-cell k ≥ 0 (the edge value is the mean of its two
   // cells'; the system is symmetric once multiplied by the cell areas). x holds the first
-  // guess. Returns the number of iterations.
-  let levels = null;
-  const r = new Float64Array(N), d = new Float64Array(N), q = new Float64Array(N), z = new Float64Array(N);
-  ops.solveImplicit = (diag, k, b, x, tol = 1e-8, maxIter = 100) => {
+  // guess. Returns the number of iterations. keep = true reuses the operator of the last
+  // call, for a run of solves with the same diag and k.
+  // Well-conditioned systems (off-diagonal weight at most a few times the diagonal) converge
+  // as fast with a plain Jacobi preconditioner, which is much cheaper than a V-cycle.
+  let levels = null, jacobi = false;
+  const r = new Float64Array(N), d = new Float64Array(N), q = new Float64Array(N), z = new Float64Array(N), jac = new Float64Array(N);
+  ops.solveImplicit = (diag, k, b, x, tol = 1e-8, maxIter = 100, keep = false) => {
     if (!levels) levels = buildHierarchy(grid);
-    setOperator(levels, ops, diag, k);
+    if (!keep) {
+      let ratio = 0;
+      for (let i = 0; i < N; i++) {
+        let s = 0;
+        for (let n = 0, e = 6 * i; n < nbrCount[i]; n++, e++) s += lap[e] * 0.5 * (k[i] + k[nbr[e]]);
+        ratio = Math.max(ratio, s / (area[i] * diag[i]));
+      }
+      jacobi = ratio < 12;
+      if (jacobi) {
+        const F = levels[0];
+        for (let i = 0; i < N; i++) {
+          let s = area[i] * diag[i];
+          for (let n = 0, e = 6 * i; n < nbrCount[i]; n++, e++) { const w = lap[e] * 0.5 * (k[i] + k[nbr[e]]); s += w; F.Ao[e] = -w; }
+          F.Ad[i] = s; jac[i] = 1 / s;
+        }
+      } else setOperator(levels, ops, diag, k);
+    }
     const Ad = levels[0].Ad, Ao = levels[0].Ao;
+    const precondition = (levels, r, z) => {
+      if (jacobi) for (let i = 0; i < N; i++) z[i] = jac[i] * r[i];
+      else mgPrecondition(levels, r, z);
+    };
     const apply = (v, o) => {
       for (let i = 0; i < N; i++) {
         let s = Ad[i] * v[i];
@@ -159,6 +182,36 @@ export function buildOps(grid) {
       const beta = rz2 / rz;
       rz = rz2;
       for (let i = 0; i < N; i++) d[i] = z[i] + beta * d[i];
+    }
+    return it;
+  };
+
+  // Solves A x = b for a general (non-symmetric) operator by BiCGSTAB, preconditioned by
+  // a multigrid preconditioner pc for a symmetric operator close to A (preconditioner()).
+  // apply(v, out) computes A v, area-weighted like solveImplicit's systems; b is too.
+  ops.preconditioner = () => preconditioner(ops, grid);
+  ops.solveGeneral = (apply, b, x, pc, tol = 1e-6, maxIter = 100) => {
+    const r = new Float64Array(N), r0 = new Float64Array(N), p = new Float64Array(N), v = new Float64Array(N);
+    const s = new Float64Array(N), t = new Float64Array(N), ph = new Float64Array(N), sh = new Float64Array(N);
+    const dot = (a, c) => { let q = 0; for (let i = 0; i < N; i++) q += a[i] * c[i]; return q; };
+    apply(x, v);
+    for (let i = 0; i < N; i++) { r[i] = b[i] - v[i]; r0[i] = r[i]; }
+    const bb = Math.max(dot(b, b), 1e-300);
+    let rho = 1, alpha = 1, omega = 1, it = 0;
+    p.fill(0); v.fill(0);
+    for (; it < maxIter && dot(r, r) > tol * tol * bb; it++) {
+      const rho1 = dot(r0, r), beta = (rho1 / rho) * (alpha / omega);
+      rho = rho1;
+      for (let i = 0; i < N; i++) p[i] = r[i] + beta * (p[i] - omega * v[i]);
+      pc.apply(p, ph);
+      apply(ph, v);
+      alpha = rho / dot(r0, v);
+      for (let i = 0; i < N; i++) s[i] = r[i] - alpha * v[i];
+      if (dot(s, s) <= tol * tol * bb) { for (let i = 0; i < N; i++) x[i] += alpha * ph[i]; it++; break; }
+      pc.apply(s, sh);
+      apply(sh, t);
+      omega = dot(t, s) / dot(t, t);
+      for (let i = 0; i < N; i++) { x[i] += alpha * ph[i] + omega * sh[i]; r[i] = s[i] - omega * t[i]; }
     }
     return it;
   };
