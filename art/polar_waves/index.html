@@ -677,7 +677,10 @@ c(r)  = 3·(r − 0.5)² + 0.5</pre>
         .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
       window.addEventListener('resize', function() { if (!playing) draw(displaySize()); });
 
-      if (readHash()) syncInputs();
+      // A reload keeps the hash; only honour it on a fresh visit (shared link), otherwise show a new shape
+      var nav = performance.getEntriesByType('navigation')[0];
+      var reloaded = nav && nav.type === 'reload';
+      if (!reloaded && readHash()) syncInputs();
       else randomize();
 
       var last = performance.now();
