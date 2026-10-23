@@ -28,6 +28,7 @@
       <div class="stage" id="stage">
         <canvas id="canvas" aria-label="The globe's grid. Drag to turn the globe or pan the map, scroll or pinch to zoom."></canvas>
         <div class="status" id="status"></div>
+        <div class="progress" id="progress" style="opacity: 0"><div></div></div>
       </div>
       <div class="controls">
         <button id="globeBtn" title="Show a globe">Globe</button>
@@ -40,7 +41,7 @@
     </section>
 
     <div class="sidebar">
-    <p class="hint">Work in progress. This first step is only the grid every later layer will live on: terrain, then a seasonal climate. Drag to turn the globe or pan the map, scroll or pinch to zoom.</p>
+    <p class="hint">Work in progress: the grid, files, and a seasonal climate model tested on the real Earth. Terrain comes next. Press Earth, then Run climate. Drag to turn the globe or pan the map, scroll or pinch to zoom.</p>
 
     <div class="panels">
       <details open>
@@ -66,8 +67,30 @@
               <button id="fileLoadBtn" title="Open a .globe file">Open…</button>
               <button id="fileSaveBtn" title="Save what is shown as a .globe file">Save .globe</button>
             </div>
-            <div class="row"><button id="earthBtn" title="Open the real Earth's relief, for testing">Earth</button></div>
+            <div class="row">
+              <button id="earthBtn" title="Open the real Earth's relief, for testing">Earth</button>
+              <button id="observedBtn" title="Add the observed climate of the real Earth (1991–2020), to compare with the model">Observed climate</button>
+            </div>
             <input type="file" id="fileIn" accept=".globe,application/zip" hidden>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Climate</summary>
+        <div class="params">
+          <div class="param wide">
+            <label for="p-climLevel"><span>Resolution</span></label>
+            <small>the model runs four years through the seasons and keeps monthly means of the last</small>
+            <select id="p-climLevel">
+              <option value="4">level 4 · 2,562 cells · seconds, rough</option>
+              <option value="5" selected>level 5 · 10,242 cells · about a minute</option>
+              <option value="6">level 6 · 40,962 cells · several minutes</option>
+            </select>
+          </div>
+          <div class="param wide">
+            <div class="row"><button id="climateBtn" title="Run the climate model on the height layer">Run climate</button></div>
+            <p class="note" id="climateNote">needs a height layer: press Earth first</p>
           </div>
         </div>
       </details>
@@ -78,6 +101,10 @@
           <div class="param wide">
             <select id="p-field" aria-label="Field"></select>
             <p class="note" id="fieldNote"></p>
+          </div>
+          <div class="param wide" id="monthParam" hidden>
+            <label for="p-month"><span>Month</span><span id="v-month"></span></label>
+            <input type="range" id="p-month" min="0" max="12" step="1" value="0">
           </div>
         </div>
       </details>
@@ -91,14 +118,20 @@
       <button type="button" id="infoClose" aria-label="Close">✕</button>
     </div>
     <div class="notes">
-      <p class="lede">A generator for whole fantasy planets: terrain shaped by erosion, and a climate with seasons, monsoons, deserts and rainforests that follow from the physics. It is being built in steps, and this page shows the first one, the grid.</p>
+      <p class="lede">A generator for whole fantasy planets: terrain shaped by erosion, and a climate with seasons, monsoons, deserts and rainforests that follow from the physics. It is being built in steps. So far there is the grid, the file format, and the climate model, which is being tested on the real Earth before it gets planets of its own.</p>
       <h3>The grid</h3>
       <p>A map stored as a rectangle of latitude and longitude wastes most of its pixels near the poles and has a seam where the edges meet, which is a poor place to run a simulation. Instead every value lives on the vertices of a subdivided icosahedron. Each level splits every triangle into four, with the new points pushed out onto the sphere, so level <code>n</code> has <code>10·4ⁿ + 2</code> points. Seen from above, the region closest to each point is a hexagon, apart from twelve pentagons at the icosahedron’s own corners. Level 6 has 40,962 cells about 110 km apart, a usual resolution for a climate model; level 8 has 655,362, about 28 km apart.</p>
       <p>The twenty faces pair up into ten diamonds, and each diamond is stored as a plain square array, with the two poles kept apart. Each level contains the one above it, so finer detail can be added to a region later without changing what is already there. The <em>Cell area</em> field shows how even the cells are: the largest is about one and a half times the smallest.</p>
       <h3>Files</h3>
       <p>A globe is saved as a <code>.globe</code> file, which is an ordinary zip archive: a <code>manifest.json</code> with the parameters, and for each layer one small binary file per diamond, in the same layout as the grid. Heights are stored as 16-bit integers, other fields as 16- or 32-bit floats. A layer stored at one level can be shown at any other, refined or averaged one level at a time.</p>
+      <h3>The climate</h3>
+      <p>A full weather model would be far too slow for a web page, so this one keeps only what sets the climate, and steps through four years, about a week at a time.</p>
+      <p><strong>Temperature</strong> comes from an energy balance: each cell takes in sunlight for its latitude and day of the year, from the tilt and the elliptical orbit, and radiates heat to space, warmer cells more. Heat spreads between neighbours, standing in for winds and storms, and spreads faster where the air is moist, since water vapour carries heat too. Oceans hold heat in their top 50 metres and change slowly; land heats and cools within weeks. Where the wind pushes surface water away, along the equator and some coasts, cold water comes up from below. The air gets colder with height.</p>
+      <p><strong>Wind</strong> follows the pressure. Pressure is low at the warmest latitudes, high near 30°, low again near 60°, and the pattern moves north and south with the seasons. Land warmer than its latitude adds a low, colder land a high, and the same for water. The wind blows from high to low, turned aside by the planet’s rotation and slowed by friction, more over land, and is then smoothed as eddies mix it, which carries the trade winds right into the equator.</p>
+      <p><strong>Rain</strong> comes from the water vapour in each column of air, which the wind carries. Where winds meet, air has nowhere to go but up, so vapour piles up and rains out; where they part, dry air sinks. That is what keeps the equator wet in this model, the problem with flat wind fields being that they have no up. Rain grows steeply with how close the column is to saturation, as measured over tropical oceans, sooner where air rises or storms pass and later where it sinks. Air blown up a mountainside rains on the windward slope. Oceans evaporate, faster under warm, dry, windy air; land evaporates from a soil bucket that rain fills.</p>
+      <p><strong>Tested on Earth.</strong> Run on the real relief, the model is compared with the observed climate of 1991–2020: GPCP for rain, the NCEP/NCAR reanalysis for temperature and wind. Press Observed climate to add those as layers and flip between them. At level 5 the annual temperature map matches with a correlation of 0.97, and zonal rain is about right from the equator to the subtropics. Weak points: midlatitude oceans are too dry, as storms are only a correction to the rain threshold here; there are no ocean currents apart from upwelling; and the seasons over the middle of large continents are too mild, since heat spreading evenly in all directions keeps them too close to the oceans.</p>
       <h3>Next</h3>
-      <p>A climate model that runs through the seasons, tested first on the real Earth: air rising where the winds converge and raining out on the way up, which is what makes the equator wet and the subtropics dry. Then terrain, using Rune Skovbo Johansen’s erosion filter adapted to the sphere.</p>
+      <p>Terrain, using Rune Skovbo Johansen’s erosion filter adapted to the sphere, then the climate on generated planets, with their own tilt, year and sea level.</p>
     </div>
   </dialog>
 

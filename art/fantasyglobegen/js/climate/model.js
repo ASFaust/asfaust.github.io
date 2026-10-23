@@ -38,6 +38,7 @@ export const EARTH = {
   olrA: 203.3, olrB: 2.09,   // W/m², W/m²/K (T in °C)
   albedo: 0.30, albedoP2: 0.09, albedoIce: 0.62, iceTemp: -10,
   heatDiffusion: 0.4,        // W/m²/K on the unit sphere
+  landDiffusion: 1,          // its share over land, where less heat comes in from the sides
   oceanDepth: 50,            // m of mixed layer
   // upwelling: wind pushes surface water sideways (Ekman transport); where it diverges, along
   // the equator and along coasts with the wind running down them, cold water comes up
@@ -250,7 +251,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     // q = RH·q_sat(T): an explicit Laplacian of q would be unstable over land.
     for (let i = 0; i < N; i++) {
       const rh = Math.min(1, W[i] / Math.max(0.1, wsat(i)));
-      kDiff[i] = P.heatDiffusion * (1 + rh * 0.0641 * qsat(surfT(i)) / CP_OVER_LV);
+      kDiff[i] = P.heatDiffusion * (ocean[i] ? 1 : P.landDiffusion) * (1 + rh * 0.0641 * qsat(surfT(i)) / CP_OVER_LV);
     }
     for (let i = 0; i < N; i++) {
       const Ts = surfT(i);

@@ -16,7 +16,7 @@ try { view = new GlobeView(canvas); } catch (e) {
 
 const grids = new Map();
 const gridAt = level => { if (!grids.has(level)) grids.set(level, buildGrid(level)); return grids.get(level); };
-const state = { level: 5, field: 'diamonds', borders: true };
+const state = { level: 5, field: 'diamonds', borders: true, month: 0 };
 let current = null;
 
 // what the Field menu offers: the test fields, then the layers of a loaded file
@@ -44,38 +44,71 @@ function atLevel(values, from, to) {
   return values;
 }
 
+// fixed colour ranges for climate fields, so months and model and observations compare
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const STYLES = {
+  temperature: { cmap: 2, range: [-40, 40] },
+  precipitation: { cmap: 0, range: [0, 10] },
+  evaporation: { cmap: 0, range: [0, 8] },
+  vapour: { cmap: 0, range: [0, 60] },
+  wind_east: { cmap: 2, range: [-12, 12] },
+  wind_north: { cmap: 2, range: [-8, 8] },
+};
+
 function layerField(name, layer) {
-  const N = cellCount(layer.level);
+  const N = cellCount(layer.level), base = name.replace(/^observed_/, '');
   return {
-    label: name + (layer.unit ? ` (${layer.unit})` : ''),
-    note: `from ${loaded.name}, stored at level ${layer.level}` + (layer.frames > 1 ? `, first of ${layer.frames} frames` : ''),
+    label: name.replace(/_/g, ' ') + (layer.unit ? ` (${layer.unit})` : ''),
     layer,
+    get note() {
+      const when = layer.frames === 12 ? (state.month ? `, ${MONTHS[state.month - 1]}` : ', annual mean') : layer.frames > 1 ? `, first of ${layer.frames} frames` : '';
+      return `${layer.source || 'from ' + loaded.name}, stored at level ${layer.level}${when}`;
+    },
     make(g) {
-      const values = atLevel(layer.values.subarray(0, N), layer.level, g.level);
+      let v;
+      if (layer.frames === 12 && !state.month) {
+        v = new Float32Array(N);
+        for (let m = 0; m < 12; m++) for (let i = 0; i < N; i++) v[i] += layer.values[m * N + i] / 12;
+      } else {
+        const f = layer.frames === 12 ? state.month - 1 : 0;
+        v = layer.values.subarray(f * N, (f + 1) * N);
+      }
+      const values = atLevel(v, layer.level, g.level);
       let lo = Infinity, hi = -Infinity;
-      for (const v of values) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-      const relief = name === 'height' && lo < 0 && hi > 0;
-      return {
-        values,
-        style: relief ? { cmap: 3, flat: false, range: [lo, hi] } : { cmap: 0, flat: false, range: [lo, hi === lo ? lo + 1 : hi] },
-        legend: `${fmtNum(lo)} to ${fmtNum(hi)}${layer.unit ? ' ' + layer.unit : ''}`,
-      };
+      for (const x of values) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+      const relief = base === 'height' && lo < 0 && hi > 0;
+      const style = STYLES[base] ? { ...STYLES[base], flat: false }
+        : relief ? { cmap: 3, flat: false, range: [lo, hi] } : { cmap: 0, flat: false, range: [lo, hi === lo ? lo + 1 : hi] };
+      return { values, style, legend: `${fmtNum(lo)} to ${fmtNum(hi)}${layer.unit ? ' ' + layer.unit : ''}` };
     },
   };
 }
 
-function setLoaded(name, globe) {
+// a file replaces what is loaded; climate results and observations are added to it
+function setLayers(layers, select) {
   for (const k of [...fields.keys()]) if (k.startsWith('layer:')) fields.delete(k);
-  Object.assign(loaded, { name, params: globe.params, layers: globe.layers });
-  for (const [n, layer] of Object.entries(globe.layers)) fields.set('layer:' + n, layerField(n, layer));
+  loaded.layers = layers;
+  for (const [n, layer] of Object.entries(layers)) fields.set('layer:' + n, layerField(n, layer));
+  if (select) state.field = 'layer:' + select;
+  if (!fields.has(state.field)) state.field = 'diamonds';
+  fillFieldMenu();
+  updateClimateNote();
+}
+
+function setLoaded(name, globe) {
+  Object.assign(loaded, { name, params: globe.params });
   const first = Object.keys(globe.layers)[0];
+  setLayers(globe.layers, first);
   if (first) {
-    state.field = 'layer:' + first;
-    fillFieldMenu();
     // show it at the level it was stored at
     levelIn.value = Math.min(+levelIn.max, globe.layers[first].level);
     setLevel(+levelIn.value);
   }
+}
+
+function addLayers(layers, select) {
+  setLayers({ ...loaded.layers, ...layers }, select);
+  applyField();
 }
 
 const fmt = n => n.toLocaleString('en-US');
@@ -91,7 +124,10 @@ function showStats() {
 }
 
 function applyField() {
-  const { values, style, legend } = fields.get(state.field).make(current);
+  const f = fields.get(state.field);
+  $('monthParam').hidden = !(f.layer && f.layer.frames === 12);
+  $('v-month').textContent = state.month ? MONTHS[state.month - 1] : 'year';
+  const { values, style, legend } = f.make(current);
   current.legend = legend;
   current.values = values;
   view.setField(values, { ...style, borders: state.borders });
@@ -153,6 +189,72 @@ $('earthBtn').addEventListener('click', async () => {
   const r = await fetch('data/earth.globe');
   loadFile(new File([await r.blob()], 'earth.globe'));
 });
+$('observedBtn').addEventListener('click', async () => {
+  try {
+    flash('Reading the observed climate…');
+    const globe = await decodeGlobe(new Uint8Array(await (await fetch('data/earth-observed.globe')).arrayBuffer()));
+    status.style.display = 'none';
+    const layers = {};
+    for (const [n, l] of Object.entries(globe.layers)) layers['observed_' + n] = { ...l, source: 'observed on Earth, 1991–2020' };
+    if (!loaded.name) loaded.name = 'earth-observed.globe';
+    const cur = state.field.replace(/^layer:(observed_)?/, '');
+    addLayers(layers, 'observed_' + (cur in globe.layers ? cur : 'temperature'));
+  } catch (e) {
+    flash(e.message);
+  }
+});
+
+// the climate model runs in a worker; its monthly means become layers
+const climateBtn = $('climateBtn'), progress = $('progress');
+let worker = null;
+function updateClimateNote() {
+  const h = loaded.layers.height;
+  climateBtn.disabled = !h && !worker;
+  if (!worker) $('climateNote').textContent = h ? `runs on the height layer of ${loaded.name}` : 'needs a height layer: press Earth first';
+}
+climateBtn.addEventListener('click', () => {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+    climateBtn.textContent = 'Run climate';
+    progress.style.opacity = 0;
+    updateClimateNote();
+    return;
+  }
+  const h = loaded.layers.height, level = +$('p-climLevel').value, years = 4, t0 = performance.now();
+  worker = new Worker(new URL('./climate/worker.js', import.meta.url), { type: 'module' });
+  climateBtn.textContent = 'Stop';
+  $('climateNote').textContent = 'running…';
+  progress.style.opacity = 1;
+  progress.firstElementChild.style.width = '0';
+  worker.onmessage = ({ data }) => {
+    if (data.progress !== undefined) {
+      progress.firstElementChild.style.width = `${data.progress * 100}%`;
+      const done = data.progress, sec = (performance.now() - t0) / 1000;
+      $('climateNote').textContent = `running: year ${Math.min(years, Math.floor(done * years) + 1)} of ${years}` + (done > 0.05 ? `, about ${Math.ceil(sec / done - sec)} s left` : '');
+      return;
+    }
+    worker.terminate();
+    worker = null;
+    climateBtn.textContent = 'Run climate';
+    progress.style.opacity = 0;
+    if (data.error) { $('climateNote').textContent = 'failed: ' + data.error; return; }
+    const sec = ((performance.now() - t0) / 1000).toFixed(0);
+    for (const l of Object.values(data.result.layers)) l.source = `modelled at level ${data.result.level} in ${sec} s`;
+    const keep = state.field.replace(/^layer:(observed_)?/, '');
+    addLayers(data.result.layers, keep in data.result.layers ? keep : 'precipitation');
+    updateClimateNote();
+    $('climateNote').textContent += ` · last run took ${sec} s`;
+  };
+  worker.onerror = e => {
+    climateBtn.click();
+    $('climateNote').textContent = 'failed: ' + (e.message || 'the worker could not start');
+  };
+  worker.postMessage({ height: h.values, heightLevel: h.level, level, years, params: {} });
+});
+
+const monthIn = $('p-month');
+monthIn.addEventListener('input', () => { state.month = +monthIn.value; applyField(); });
 const fileIn = $('fileIn');
 $('fileLoadBtn').addEventListener('click', () => fileIn.click());
 fileIn.addEventListener('change', () => { if (fileIn.files[0]) loadFile(fileIn.files[0]); fileIn.value = ''; });
@@ -248,6 +350,7 @@ document.addEventListener('themechange', redraw);
 
 levelIn.value = state.level;
 fillFieldMenu();
+updateClimateNote();
 bordersIn.checked = state.borders;
 setMode('globe');
 setLevel(state.level);
