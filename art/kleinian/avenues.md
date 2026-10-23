@@ -12,6 +12,8 @@ Grandma's recipe is productive because it chains five ingredients:
 
 Each avenue below keeps some of these and breaks others. The interesting question is always: *which ingredient survives, and what replaces the broken one?*
 
+**The goal (Andreas, 2026-10-23): new fractals from iterated maps.** Novel geometry alone is not enough, and the picture has to be a genuine fractal. Avenue 5 was built and dropped for this reason, avenue 7 is built, and avenues 6 and 9 are written up below as the next candidates.
+
 | Avenue | Params | Discreteness test | Conformal | Rendering difficulty | Novelty |
 |---|---|---|---|---|---|
 | Reflection groups / Apollonian | discrete (Coxeter data) + continuous | Coxeter / Vinberg | yes | low | low |
@@ -118,7 +120,15 @@ Their boundaries are fractal, a Kleinian analogue of the Mandelbrot set.
 - Rendering conventions themselves (projections, slicing, colouring by Cygan metric) are underdeveloped.
 - Empirically map the discreteness locus in the (p,q,r, angular invariant) space.
 
+**As a fractal avenue (candidate, written up 2026-10-23).**
+- *Why it is fractal.* The limit set of a discrete PU(2,1) group lives in S³. Away from the ℝ-Fuchsian and ℂ-Fuchsian cases (a circle or a chain), it is a fractal of dimension > 1: a wild knot, a Cantor set, or a solid-looking web. Nothing here forces a smooth curve, unlike avenue 5.
+- *Concrete family.* Complex reflection triangle groups ⟨R₁, R₂, R₃⟩ of type (p, q, r) with one real angular invariant θ, after Pratoussevitch's explicit Gram matrices. The ideal (∞, ∞, ∞) triangle groups have Goldman–Parker's parameter s ∈ [0, √(125/3)]: discrete exactly for s ≤ √(125/3) (Schwartz), with the last group's quotient a hyperbolic 3-manifold, the Whitehead link complement. That gives a one-slider family with a known endpoint, the analogue of a cusp.
+- *Rendering.* DFS over reduced words with ε-cutoff in the Cygan metric, plotting attracting fixed points of loxodromic words in the Heisenberg group ℂ × ℝ. Show it as a 3D point cloud or as an orbiting view with depth shading, plus a vertical-projection 2D view. The renderer needs a small 3D viewer (three.js is already vendored in art/polyhedra).
+- *Effort.* High. The 3×3 complex matrix algebra is easy. Projection, depth cues and a good ε-metric are the real work, and there are few reference pictures to check against (Schwartz's book *Spherical CR Geometry and Dehn Surgery* has some).
+
 ## 7. Dynamics on the character variety
+
+*Built 2026-10-23: [Markov Julia Sets](../markov/), escape times of a word in the three Vieta moves, on a conic of S_k or on a line in ℂ³.*
 
 **Idea.** The trace equation from Grandma's recipe,
 
@@ -162,6 +172,12 @@ This is the fractal structure of the space of all Grandma groups, seen dynamical
 **Why interesting.** Projective IFS are relatively unexplored. They also connect to Barnsley–Vince attractors and to limit sets of Anosov representations of free semigroups.
 
 **How to render.** Use the chaos game or deterministic DFS.
+
+**As a fractal avenue (candidate, written up 2026-10-23).**
+- *Why it is fractal.* The attractor of an IFS of contractions is a fractal by construction. A projective IFS replaces the affine maps of a Barnsley fern by maps of ℝP², which can contract one region while expanding elsewhere. Barnsley and Vince showed that such a system has an attractor exactly when its maps share an "avoided" hyperplane setup (a set they contract into itself), and the attractors include shapes no affine IFS reaches: curves with projective self-similarity, sets that wrap through the line at infinity.
+- *Concrete family.* 2–4 maps in PGL(3,ℝ), each a projective "squeeze" toward an attracting point with a saddle and a repelling line. Parametrise each map by its three fixed points and two eigenvalue ratios. That is easier to steer than raw matrices and makes contraction checkable. A random search with a dimension estimate as fitness (box counting on the chaos-game histogram) can find the interesting ones, which is the quality-diversity idea from the cross-cutting section.
+- *Rendering.* A chaos game into a density histogram, tone-mapped and coloured by the last map applied, as in the Buddhabrot's pipeline, run in Web Workers. Draw it in an adaptive chart: divide by a line that the attractor avoids, as in the avoided-hyperplane theorem, so nothing runs off to infinity.
+- *Effort.* Low to medium. It is the cheapest new-fractal avenue here.
 
 ## 10. Non-archimedean Kleinian groups
 
