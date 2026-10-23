@@ -149,6 +149,10 @@ async function loadFile(file) {
     flash(e.message);
   }
 }
+$('earthBtn').addEventListener('click', async () => {
+  const r = await fetch('data/earth.globe');
+  loadFile(new File([await r.blob()], 'earth.globe'));
+});
 const fileIn = $('fileIn');
 $('fileLoadBtn').addEventListener('click', () => fileIn.click());
 fileIn.addEventListener('change', () => { if (fileIn.files[0]) loadFile(fileIn.files[0]); fileIn.value = ''; });
