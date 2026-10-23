@@ -1,7 +1,7 @@
 // UI wiring: inputs ↔ settings, the generate/stop cycle with its progress display, buttons and keys.
 import { st, DEFAULTS, GRADIENTS, SLIDERS, SLIDER_IDS, NUMBER_IDS, setState, readHash, writeHash, fullBounds, clamp } from './state.js';
 import { compute, killPool, nCores } from './compute.js';
-import { render as draw, drawHistogram, pooled, crop } from './display.js';
+import { render as draw, drawHistogram, pooled, crop, ADAPT } from './display.js';
 import { createView } from './view.js';
 import { createGradientEditor } from './gradient.js';
 import { initPresets } from './presets.js';
@@ -50,11 +50,13 @@ function syncInputs() {
   document.querySelectorAll('.grad-only').forEach(function(el) { el.classList.toggle('hidden', bylength); });
   ['short', 'mid', 'long'].forEach(function(k) { $('p-c' + k).value = '#' + st['colour_' + k]; });
   showLengthNote();
+  $('p-despeckle').checked = st.despeckle;
   $('p-blur').checked = st.soft_points;
   clipBar.set(clipValues());
   showClip();
   $('rootParam').classList.toggle('hidden', st.scale_mode !== 'nth root');
   $('blurParam').classList.toggle('hidden', !st.soft_points);
+  $('smoothParam').classList.toggle('hidden', !st.soft_points);
   view.apply();
 }
 
@@ -202,8 +204,10 @@ function renderDetail() {
   var n = result.res, S = stage.clientWidth, z = view.view.z, dpr = window.devicePixelRatio || 1;
   var k = Math.max(1, Math.floor(n / (z * S * dpr)));
   if (k >= blockFor(result)) return;   // the preview is already as sharp
-  // the visible square, plus a margin for the blur, whose edges would otherwise show
-  var vis = n / z, margin = Math.ceil(3 * st.blur_px * n / 1000) + k;
+  // the visible square, plus a margin for the blur, whose edges would otherwise show; the adaptive blur reaches up to
+  // 2^ADAPT.levels times as far
+  var reach = st.blur_px * (st.smooth_hits && result.metro ? Math.pow(2, ADAPT.levels) : 1);
+  var vis = n / z, margin = Math.ceil(3 * reach * n / 1000) + k;
   var size = Math.min(n, Math.ceil(vis) + 2 * margin);
   var i0 = clamp(Math.floor(-view.view.y / (S * z) * n) - margin, 0, n - size);
   var j0 = clamp(Math.floor(-view.view.x / (S * z) * n) - margin, 0, n - size);
@@ -265,6 +269,8 @@ Object.keys(SLIDER_IDS).forEach(function(k) {
     writeHash();
   });
 });
+// the adaptive blur takes a moment, so it redraws when the slider is let go
+$('p-smooth').addEventListener('change', scheduleRender);
 Object.keys(NUMBER_IDS).forEach(function(k) {
   $('p-' + NUMBER_IDS[k]).addEventListener('change', function() {
     var data = Object.assign({}, st);
@@ -283,6 +289,7 @@ $('p-cmode').addEventListener('change', function() { st.colour_mode = this.value
 ['short', 'mid', 'long'].forEach(function(k) {
   $('p-c' + k).addEventListener('input', function() { st['colour_' + k] = this.value.slice(1).toLowerCase(); scheduleRender(); writeHash(); });
 });
+$('p-despeckle').addEventListener('change', function() { st.despeckle = this.checked; scheduleRender(); writeHash(); });
 $('p-blur').addEventListener('change', function() { st.soft_points = this.checked; syncInputs(); scheduleRender(); writeHash(); });
 // One bar for both clips and the midtone, as in the levels tool of image editors. The clip handles push each other
 // instead of crossing, so that min ≤ max; the midtone stays at its fraction of the range between them.

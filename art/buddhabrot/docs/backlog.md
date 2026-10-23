@@ -8,11 +8,7 @@ This is only the task list; [README.md](README.md) explains the code. When you f
 
 Label each experiment **type A** (artsy) or **type B** (classical), or both.
 
-- **Make zooms look good** (B). Zooms use Metropolis automatically, with measured settings and adaptive seeding (done 2026-10-21); the checkerboard is gone (2026-10-22). Open: zooms are noisy at 2000 px. Metropolis is about 10× as efficient as direct sampling and not at a limit; the noise is Monte Carlo per pixel. Ideas, none tried:
-  - **Mirroring:** the Buddhabrot is symmetric across the real axis, so each orbit's mirror image is as likely as the orbit. Splatting both doubles the samples for free wherever the view overlaps its mirror (a 2× speed-up for views on the real axis, like the minibrots). Needs the grid's density symmetric: its vertices are half a cell off the axis, so it is off by a cell.
-  - **Adaptive smoothing:** blur more where counts are low and less where they are high, so faint regions lose their grain without blurring dense detail.
-  - **Bright single specks in empty regions:** orbits with few hits in the view get their whole weight on those few pixels.
-  → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
+- **Make zooms look good** (B). Mirroring, the salt filter and the adaptive blur are in (2026-10-23). Open: is the default `smooth_hits` (4000) right across views and sample counts (owner's eye)? The bright single specks in empty regions are handled by the salt filter only where they are isolated; a structural fix would weight orbits with few hits differently, which the splatting does not allow without bias. → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
 
 - **Raise `GRID.blur`?** Faint arcs remain in minibrot zooms after the smooth density; blur 8 looked smoother in a first test. Finish the comparison (sampling.md, "Bands, and a smooth density"). Method: render a view skipping n and n + 1 points and image the difference.
 
@@ -28,6 +24,8 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-23, zoom denoising.** Mirroring for views on the real axis (unbiased, exactly symmetric, about 1.5× as efficient); a salt filter for bright single-pixel specks (owner's idea, "Remove specks in zooms", on); an adaptive blur that smooths faint areas ("Smooth faint areas in zooms", 4000 points). All three only touch Metropolis zooms. Regression: only the `metropolis` case changed; `hashes-4.json` added, `hashes-32.json` needs recording again on the owner's machine.
 
 - **2026-10-22, UI and colour mixing (owner's list).**
   - Samples: a number field with no upper limit and buttons 1 … 10M, instead of the log slider.

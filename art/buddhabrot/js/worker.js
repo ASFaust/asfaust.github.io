@@ -2,19 +2,22 @@
 // messages; compute.js sends the jobs. Messages, each answered with progress messages and then one
 // { cmd: 'done', … } (or { cmd: 'error', message }):
 //   { cmd: 'refine', pairs, steps, maxIter, seed }                               → { pts }: one boundary point per inside/outside pair
-//   { cmd: 'histInit', res, b, maxIter, bail, weighted, grid, bands, skip }      → starts an empty histogram; orbits are recorded
+//   { cmd: 'histInit', res, b, maxIter, bail, weighted, grid, bands, skip, mirror }
+//                                                                                → starts an empty histogram; orbits are recorded
 //                                                                                  until |z| > bail; grid for metro;
 //                                                                                  bands [short, mid]: one histogram per orbit-length band;
-//                                                                                  skip: leave out each orbit's first skip points
+//                                                                                  skip: leave out each orbit's first skip points;
+//                                                                                  mirror: seed and metro also record each point's mirror image
 //   { cmd: 'trace', pts, escapingOnly, nearby, sigma, seed }                     → adds the orbits of pts
 //   { cmd: 'seed', pts }                                                         → { pts, f }: those whose orbits reach the view, and their hits
-//   { cmd: 'metro', pts, steps, burn, large, rmin, rmax, seed }                  → runs one Metropolis chain per point
+//   { cmd: 'metro', pts, steps, burn, large, rmin, rmax, seed }                  → { fsteps }: runs one Metropolis chain per point;
+//                                                                                  fsteps sums f over the recorded steps
 //   { cmd: 'grid', r0, r1, n, x0, y0, h, maxIter }                              → { inside }: 1 for grid vertices that stay bounded
 //   { cmd: 'histGet' }                                                           → { hist }, handing the histogram over (bands one after another)
 import { rng } from './rng.js';
 import { pick, weight } from './grid.js';
 
-var hist = null, res = 0, bx0 = 0, by0 = 0, sx = 0, sy = 0, histIter = 0, bail2 = 4, grid = null, bands = null, skip = 0;
+var hist = null, res = 0, bx0 = 0, by0 = 0, sx = 0, sy = 0, histIter = 0, bail2 = 4, grid = null, bands = null, skip = 0, mirror = false;
 var orbitLen = 0;   // set by trace() and hits(): the iteration at which the orbit escaped, or histIter if it did not
 
 // Offset into hist of the band for an orbit of length len. With bands [short, mid], the orbits up to short iterations
@@ -55,6 +58,9 @@ function trace(cr, ci, buf) {
 function add(buf, n) { var o = bandOffset(orbitLen); for (var k = 0; k < n; k++) hist[o + buf[k]]++; }
 
 // Histogram indices of an escaping orbit's points inside the view, written to buf; returns their count. Orbits that never escape count 0.
+// With mirror, the mirror image of every point (z̄) is recorded too, so buf needs room for 2 · histIter. The Buddhabrot is
+// symmetric across the real axis, and so is the grid sampler's density, so the orbit of c̄ is exactly as likely as that of c:
+// recording both doubles the hits of a view that straddles the axis for free (docs/sampling.md).
 function hits(cr, ci, buf) {
   var q = (cr - 0.25) * (cr - 0.25) + ci * ci;
   if (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) return 0;
@@ -67,7 +73,10 @@ function hits(cr, ci, buf) {
     if (zr * zr + zi * zi > bail2) { orbitLen = k + 1; return n; }
     if (k < skip) continue;
     var fx = (zr - bx0) * sx, fy = (zi - by0) * sy;
-    if (fx >= 0 && fx < res && fy >= 0 && fy < res) buf[n++] = (fx | 0) * res + (fy | 0);
+    if (fx >= 0 && fx < res) {
+      if (fy >= 0 && fy < res) buf[n++] = (fx | 0) * res + (fy | 0);
+      if (mirror) { var gy = (-zi - by0) * sy; if (gy >= 0 && gy < res) buf[n++] = (fx | 0) * res + (gy | 0); }
+    }
   }
   orbitLen = histIter;
   return 0;
@@ -118,6 +127,7 @@ self.onmessage = function(e) {
       grid = d.grid;
       bands = d.bands;
       skip = d.skip || 0;
+      mirror = !!d.mirror;
       var size = res * res * (bands ? 3 : 1);
       hist = d.weighted ? new Float64Array(size) : new Uint32Array(size);
       postMessage({ cmd: 'done' });
@@ -145,7 +155,7 @@ self.onmessage = function(e) {
       postMessage({ cmd: 'done' });
     } else if (d.cmd === 'seed') {
       // keep the starting points whose orbits reach the view, with their number of hits f
-      var sp = d.pts, sn = sp.length / 2, sbuf = new Int32Array(histIter), keep = [], keepF = [], sdone = 0;
+      var sp = d.pts, sn = sp.length / 2, sbuf = new Int32Array(2 * histIter), keep = [], keepF = [], sdone = 0;
       for (var i = 0; i < sn; i++) {
         var sf = hits(sp[2 * i], sp[2 * i + 1], sbuf);
         if (sf > 0) { keep.push(sp[2 * i], sp[2 * i + 1]); keepF.push(sf); }
@@ -158,8 +168,8 @@ self.onmessage = function(e) {
       // Metropolis chains over c with target p(c)·f(c): p the sampler's density, f the orbit points in the view.
       // A small step has a log-uniform radius and uniform angle, so it is symmetric, and is accepted with probability
       // min(1, p'f' / pf). A large step is drawn from p itself (grid.js), so it is accepted with min(1, f' / f).
-      var mp = d.pts, chains = mp.length / 2, mr = rng(d.seed), mdone = 0, g = grid, gp = [0, 0];
-      var cur = new Int32Array(histIter), prop = new Int32Array(histIter), swap;
+      var mp = d.pts, chains = mp.length / 2, mr = rng(d.seed), mdone = 0, g = grid, gp = [0, 0], fsteps = 0;
+      var cur = new Int32Array(2 * histIter), prop = new Int32Array(2 * histIter), swap;
       var size = Math.max(res / sx, res / sy), logMin = Math.log(d.rmin * size), logSpan = Math.log(d.rmax / d.rmin);
       for (var c = 0; c < chains; c++) {
         var cr = mp[2 * c], ci = mp[2 * c + 1], fc = hits(cr, ci, cur), wc = weight(g, cr, ci), oc = bandOffset(orbitLen), op = 0;
@@ -187,11 +197,12 @@ self.onmessage = function(e) {
             if (a < 1) { wt = (1 - a) / fc; for (k = 0; k < fc; k++) hist[oc + cur[k]] += wt; }
           }
           if (mr() < a) { swap = cur; cur = prop; prop = swap; cr = nr; ci = ni; fc = fp; wc = wp; oc = op; }
+          if (s >= 0) fsteps += fc;
           if (++mdone === 4096) { progress(mdone); mdone = 0; }
         }
       }
       progress(mdone);
-      postMessage({ cmd: 'done' });
+      postMessage({ cmd: 'done', fsteps: fsteps });
     } else if (d.cmd === 'histGet') {
       var h = hist;
       hist = null;

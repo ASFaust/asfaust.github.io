@@ -162,6 +162,10 @@
         <summary>Display</summary>
         <div class="params">
           <div class="param check">
+            <label><input type="checkbox" id="p-despeckle"> <span>Remove specks in zooms</span></label>
+            <small>a pixel more than twice as bright as all its neighbours is lowered to the brightest of them</small>
+          </div>
+          <div class="param check">
             <label><input type="checkbox" id="p-blur"> <span>Gaussian blur</span></label>
             <small>smooth the counts before anything else</small>
           </div>
@@ -169,6 +173,11 @@
             <label for="p-blurs"><span>Blur radius</span><span id="v-blurs"></span></label>
             <small>standard deviation, in pixels of a 1000-pixel image, so it looks the same at any resolution</small>
             <input type="range" id="p-blurs" min="0" max="1000" step="1">
+          </div>
+          <div class="param" id="smoothParam">
+            <label for="p-smooth"><span>Smooth faint areas in zooms</span><span id="v-smooth"></span></label>
+            <small>blurs each place more until it holds about this many orbit points, so faint regions lose their grain and bright detail stays sharp. More samples need less of it.</small>
+            <input type="range" id="p-smooth" min="0" max="1000" step="1">
           </div>
           <div class="param">
             <label for="p-scale"><span>Scaling</span></label>
@@ -272,7 +281,7 @@ zₙ₊₁ = zₙ² + c</pre>
       <h3>Colour by orbit length</h3>
       <p>The classic way to colour a Buddhabrot, sometimes called the “Nebulabrot”, sorts the orbits by how long they take to escape. Here there are three channels: the orbits that escape within a few dozen steps, those that escape within a few hundred, and all of them. Each channel is a Buddhabrot of its own, gets its own colour, and the three colours add up. Short orbits stay near the outside and draw a soft halo, long orbits trace the fine structure close to the set, and where all of them pile up the picture turns white.</p>
       <h3>Zoomed views</h3>
-      <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the same picture the whole-set render shows in that window, only with far less noise. This needs to know how densely the starting points are spread, which is why Metropolis works with the “near the boundary” sampler but not with the bisection one. The walks start from starting points whose orbits reach the view, picked by their number of hits, and the zoom borrows the brightness of the last whole-set render, so it keeps its look.</p>
+      <p>Zooming in breaks this. The orbits that cross a small window mostly start far away from it, and only a tiny fraction of all orbits cross it at all. The Metropolis method samples where it matters: it runs many random walks over the starting points <code>c</code>, each one trying a small jump (or, rarely, a jump anywhere) and keeping it with a probability that depends on how many of the new orbit's points land in the view. Walks therefore linger on the orbits that draw the window. Each orbit is weighted by one over its number of hits in the view, which undoes that preference, so the result is the same picture the whole-set render shows in that window, only with far less noise. A view that straddles the real axis also counts the mirror image of every orbit, since the picture is symmetric there. An orbit that grazes the view with one or two points puts all its weight on them, so a walk that lingers on one leaves a bright speck; “Remove specks in zooms” flattens those, and “Smooth faint areas in zooms” blurs each place until it holds enough orbit points, so the faint parts lose their grain while the bright detail stays sharp. This needs to know how densely the starting points are spread, which is why Metropolis works with the “near the boundary” sampler but not with the bisection one. The walks start from starting points whose orbits reach the view, picked by their number of hits, and the zoom borrows the brightness of the last whole-set render, so it keeps its look.</p>
     </div>
   </dialog>
 

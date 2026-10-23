@@ -48,6 +48,10 @@ export var DEFAULTS = {
   max_clip: 1,
   // the levels midpoint: where between the clips mid-grey falls, as a fraction of the clipped range (0.5: no change)
   midtone: 0.837,
+  // the salt filter for zooms: a pixel far brighter than all its neighbours takes their brightest value (display.js)
+  despeckle: true,
+  // the adaptive blur for zooms: blur each place until its kernel holds about this many orbit points; 0 is off (display.js)
+  smooth_hits: 4000,
   soft_points: true,
   blur_px: 0.32,
   // Colouring by orbit length (the "Nebulabrot"): orbits escaping within band_short iterations, within band_mid, and the
@@ -122,6 +126,12 @@ export var SLIDERS = {
       return (+m.toFixed(1)) + ' × 10' + String(e).replace('-', '⁻').replace(/\d/g, function(d) { return '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]; });
     }
   },
+  // adaptive blur for zooms: 0 (off) at the left, then 100 to 10⁶ orbit points per kernel, log scale
+  smooth_hits: {
+    from: function(t) { return t === 0 ? 0 : +logFrom(t, 100, 1e6).toPrecision(2); },
+    to: function(v) { return v <= 0 ? 0 : logTo(Math.max(100, Math.min(1e6, v)), 100, 1e6); },
+    fmt: function(v) { return v ? String(v) : 'off'; }
+  },
   // std. dev. in pixels, log scale from 5 px on the left down to 0.1 px on the right
   blur_px: {
     from: function(t) { return +logFrom(1 - t, 0.1, 5).toFixed(2); },
@@ -130,7 +140,7 @@ export var SLIDERS = {
   }
 };
 // setting → element id suffix: p-… is the input, v-… the value shown next to a slider
-export var SLIDER_IDS = { nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs' };
+export var SLIDER_IDS = { nearby_points: 'nearby', nearby_spread: 'nspread', blur_px: 'blurs', smooth_hits: 'smooth' };
 export var NUMBER_IDS = { samples: 'samples', band_short: 'bshort', band_mid: 'bmid', max_iter: 'iter', skip_points: 'skip', resolution: 'res', refine_steps: 'refine', seed: 'seed', xmin: 'xmin', xmax: 'xmax', ymin: 'ymin', ymax: 'ymax' };
 var INT_KEYS = { samples: 1, max_iter: 1, skip_points: 1, resolution: 1, refine_steps: 1, seed: 1, band_short: 1, band_mid: 1 };
 
@@ -170,6 +180,7 @@ export function sanitize(data) {
   out.max_clip = clamp(out.max_clip, 0, 1);
   out.midtone = clamp(out.midtone, 0.02, 0.98);
   out.blur_px = clamp(out.blur_px, 0.1, 5);
+  out.smooth_hits = out.smooth_hits <= 0 ? 0 : clamp(out.smooth_hits, 100, 1e6);
   if (['bisection', 'grid'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
   // Zoomed views are rendered with Metropolis (compute.js), which needs a known density. Bisection has none, so the
   // bisection sampler always draws the whole set.

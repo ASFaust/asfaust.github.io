@@ -53,7 +53,9 @@ function chunks(total, nWorkers, perWorker, minSize) {
 // unblurred, isolated marked cells near small minibrots drew as floating squares. It also gives thin, isolated
 // structures (the antenna, stray cells) less weight than dense stretches of the boundary.
 // GRID is exported so that experiments can change it; the cache notices.
-export var GRID = { G: 1024, x0: -2, y0: -1.25, size: 2.5, blur: 2 };
+// The vertices' imaginary parts are symmetric about the real axis, half a cell off it (G odd, y0 = −size / 2), so that the
+// density is too, as mirroring in Metropolis needs (worker.js). h is 2.5 / 1024, as when G was 1024 over 2.5.
+export var GRID = { G: 1025, x0: -2, y0: -1025 / 1024 * 1.25, size: 1025 / 1024 * 2.5, blur: 2 };
 var gridCache = null;   // { key, G, x0, y0, h, w, cells, cum } (grid.js)
 
 function gaussBlur(src, G, sigma) {
@@ -79,9 +81,9 @@ function gaussBlur(src, G, sigma) {
 export async function borderGrid(maxIter, ui) {
   var key = [maxIter, GRID.G, GRID.blur, GRID.y0].join();
   if (gridCache && gridCache.key === key) return gridCache;
-  // The vertices sit half a cell off the real axis. On it, the antenna's points belong to the set, so a vertex row on
-  // the axis marked the whole antenna, which has no area, as boundary; its band then drew a bright line down the image.
-  var G = GRID.G, n = G + 1, h = GRID.size / G, y0 = GRID.y0 + h / 2, inside = new Uint8Array(n * n), i, j;
+  // The vertices sit half a cell off the real axis (GRID). On it, the antenna's points belong to the set, so a vertex row
+  // on the axis marked the whole antenna, which has no area, as boundary; its band then drew a bright line down the image.
+  var G = GRID.G, n = G + 1, h = GRID.size / G, y0 = GRID.y0, inside = new Uint8Array(n * n), i, j;
   ui.stage('Grid', 0, 10, n);
   await runJobs(chunks(n, nCores, 8, 1).map(function(c) {
     return { start: c[0], msg: { cmd: 'grid', r0: c[0], r1: c[1], n: n, x0: GRID.x0, y0: y0, h: h, maxIter: maxIter } };
@@ -156,7 +158,8 @@ var BATCH_SEEDS = 1048576;
 //   ui.progress(n)                 n more units done
 //   ui.live()                      false once the run was stopped or replaced; compute then returns null
 // Returns { data: Float32Array, res, b: bounds, total: orbits traced, norm: data × norm = hits per sample per unit area,
-// bands: 1, or 3 with colouring by orbit length (data then holds the short, mid and long band one after another) }.
+// bands: 1, or 3 with colouring by orbit length (data then holds the short, mid and long band one after another),
+// metro: whether Metropolis drew it, hits: orbit points per unit of data }.
 export async function compute(p, ui) {
   var b = { xmin: p.xmin, xmax: p.xmax, ymin: p.ymin, ymax: p.ymax };
   // Orbits that cross a zoomed view mostly start outside it, so starting points always come from the whole set.
@@ -184,12 +187,15 @@ export async function compute(p, ui) {
   // mapped, wherever orbits return close to c (every p-th point near a minibrot of period p); that is why the density
   // must be smooth (grid.js), which skipping cannot replace.
   var skip = p.skip_points;
-  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands, skip: skip } });
+  // Mirroring: a Metropolis view that straddles the real axis also records each orbit point's mirror image, which
+  // doubles its hits for free (worker.js). Views off the axis would gain nothing. Tests may turn it off with p.mirror = false.
+  var mirror = metro && !bisection && b.ymin < 0 && b.ymax > 0 && p.mirror !== false;
+  for (var w = 0; w < nTrace; w++) inits.push({ msg: { cmd: 'histInit', res: res, b: b, maxIter: p.max_iter, bail: bail, weighted: metro, grid: metro ? grid : null, bands: bands, skip: skip, mirror: mirror } });
   await runJobs(inits, nTrace);
 
   // Samples count orbits in both methods: a zoom runs samples / chain length chains.
   var ms = metro ? metroSettings(p) : null, units = metro ? Math.max(1, Math.round(p.samples / ms.chain)) : p.samples;
-  var nBatch = Math.ceil(units / BATCH.size), fsum = 0, seeded = 0;
+  var nBatch = Math.ceil(units / BATCH.size), fsum = 0, seeded = 0, fsteps = 0;
   for (var bi = 0; bi < nBatch; bi++) {
     var n = Math.min(BATCH.size, units - bi * BATCH.size), base = bi * BATCH_SEEDS;
     // this batch's stages share its slice of the bar between 10 and 95 %
@@ -198,7 +204,7 @@ export async function compute(p, ui) {
     };
     var r = await batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui);
     if (r === null) return null;
-    fsum += r.fsum; seeded += r.seeded;
+    fsum += r.fsum; seeded += r.seeded; fsteps += r.fsteps;
   }
 
   // norm turns the histogram into hits per starting sample per unit area of the plane, which does not depend on the
@@ -211,7 +217,8 @@ export async function compute(p, ui) {
     total = units * (ms.burn + ms.chain);
     // Each chain step spreads weight 1 over the view, so the histogram estimates E_π[hits / f] per step, with π ∝ p·f.
     // Hits per p-sample are E_p[hits] = E_π[hits / f] · E_p[f], and E_p[f] is the mean f over all seeding samples.
-    norm = (fsum / seeded) / (units * ms.chain * pixelArea);
+    // With mirroring, f counts the mirror images too, twice the hits of the orbit alone on average.
+    norm = (fsum / seeded) / (units * ms.chain * pixelArea) / (mirror ? 2 : 1);
   }
 
   // combine, in worker order: Metropolis's fractional weights have sums that depend on their order
@@ -221,12 +228,16 @@ export async function compute(p, ui) {
   await runJobs(gets, nTrace, function(job, d) { hists[job.w] = d.hist; });
   hists.forEach(function(h) { for (var k = 0; k < h.length; k++) sum[k] += h[k]; });
   if (!ui.live()) return null;
-  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb };
+  // hits: orbit points per unit of data. The direct method counts them. A Metropolis step spreads weight 1 over its
+  // f points, so a unit of its data stands for about the mean f of the chains' steps (display.js, adaptive blur).
+  var hits = metro ? fsteps / (units * ms.chain) : 1;
+  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb, metro: metro, hits: hits };
 }
 
 // One batch of n samples (for Metropolis, n chains, with the settings ms; ms is null for the direct method) into the
 // workers' histograms. Random streams are indexed from base.
-// Returns { fsum, seeded }: for Metropolis, the sum of f over the batch's seeding points and their number (0 otherwise),
+// Returns { fsum, seeded, fsteps }: for Metropolis, the sum of f over the batch's seeding points, their number, and the sum
+// of f over the chains' steps (0 otherwise),
 // or null once the run was stopped.
 async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) {
   var metro = !!ms;
@@ -278,7 +289,7 @@ async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) 
       var slice = outside.slice(2 * c[0], 2 * c[1]);
       return { msg: { cmd: 'trace', pts: slice, escapingOnly: known, nearby: known ? 0 : p.nearby_points, sigma: p.nearby_spread, seed: mixSeed(p.seed, 2, base + i) }, transfer: [slice.buffer] };
     }), nTrace, null, ui.progress);
-    return ui.live() ? { fsum: 0, seeded: 0 } : null;
+    return ui.live() ? { fsum: 0, seeded: 0, fsteps: 0 } : null;
   }
   // 2a. keep the starting points whose orbits cross the view
   var found = [], foundF = [], nFound = 0, seeded = 0;
@@ -323,9 +334,10 @@ async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) 
     starts[2 * j] = seeds[2 * q0]; starts[2 * j + 1] = seeds[2 * q0 + 1];
   }
   stage('Metropolis', lo + 5, 95, n * (ms.burn + ms.chain));
+  var fsteps = 0;
   await runJobs(chunks(n, nTrace, 16, 1).map(function(c, i) {
     var slice = starts.slice(2 * c[0], 2 * c[1]);
     return { msg: { cmd: 'metro', pts: slice, steps: ms.chain, burn: ms.burn, large: ms.large, rmin: ms.rmin, rmax: ms.rmax, seed: mixSeed(p.seed, 4, base + i) }, transfer: [slice.buffer] };
-  }), nTrace, null, ui.progress, true);   // pinned: fractional weights, whose sums depend on their order
-  return ui.live() ? { fsum: fsum, seeded: seeded } : null;
+  }), nTrace, function(job, d) { fsteps += d.fsteps; }, ui.progress, true);   // pinned: fractional weights, whose sums depend on their order
+  return ui.live() ? { fsum: fsum, seeded: seeded, fsteps: fsteps } : null;
 }

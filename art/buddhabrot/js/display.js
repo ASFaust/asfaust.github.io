@@ -86,21 +86,80 @@ function blurAxis(data, n, sigma, vertical) {
     else data.set(tmp, l * n);
   }
 }
-// cached per result and radius, so dragging other sliders does not blur again
-function blurred(result, sigma) {
+// Salt filter: a pixel more than SALT.factor times as bright as the brightest of its eight neighbours becomes that
+// neighbour's value. Metropolis splats each orbit's weight evenly over its points in the view, so an orbit with one or
+// two points there puts all of it on them, and a chain that lingers on such an orbit leaves a bright single-pixel speck
+// (owner, 2026-10-23). Real detail is never that much brighter than every neighbour once the image is blurred a little
+// or sampled enough. Edges count only the neighbours inside the image. SALT is exported for experiments.
+export var SALT = { factor: 2 };
+function desalt(src, n) {
+  var out = new Float32Array(src), f = SALT.factor, i, j, a, b;
+  for (i = 0; i < n; i++) for (j = 0; j < n; j++) {
+    var v = src[i * n + j], m = 0;
+    if (v <= 0) continue;
+    for (a = i > 0 ? i - 1 : 0; a <= i + 1 && a < n; a++) for (b = j > 0 ? j - 1 : 0; b <= j + 1 && b < n; b++) {
+      if ((a !== i || b !== j) && src[a * n + b] > m) m = src[a * n + b];
+    }
+    if (v > f * m) out[i * n + j] = m;
+  }
+  return out;
+}
+
+function blur2(data, n, sigma) { blurAxis(data, n, sigma, true); blurAxis(data, n, sigma, false); return data; }
+
+// Adaptive blur: each pixel takes the smallest blur whose kernel holds about `want` orbit points, so faint regions lose
+// their grain and dense ones keep the plain blur. The blurs double in radius from sigma (at least half a pixel), up to
+// 2^ADAPT.levels times it, and a pixel between two of them is blended by where want falls in log terms. A Gaussian of
+// radius σ averages about 4πσ² pixels' worth of points, so its count is value × hits × 4πσ², where hits converts data
+// to orbit points (compute.js). Counted in points, the choice does not depend on the pixel size: the preview, a crop
+// and the full image blur a place alike. Metropolis points are not independent (a chain revisits similar orbits), so
+// want is a knob more than a count. ADAPT is exported for experiments.
+export var ADAPT = { levels: 5 };
+function adaptiveBlur(base, n, sigma, want, hits) {
+  var N = n * n, out = new Float32Array(N), t = new Float32Array(N), done = new Uint8Array(N);
+  var s = Math.max(0.5, sigma), prev = blur2(Float32Array.from(base), n, s), cPrev = 4 * Math.PI * s * s * hits, i, k;
+  for (i = 0; i < N; i++) if (prev[i] * cPrev >= want) { out[i] = prev[i]; done[i] = 1; }
+  for (k = 1; k <= ADAPT.levels; k++) {
+    s *= 2;
+    var cur = blur2(Float32Array.from(base), n, s), cCur = 4 * Math.PI * s * s * hits, last = k === ADAPT.levels;
+    for (i = 0; i < N; i++) {
+      if (done[i]) continue;
+      var a = prev[i] * cPrev, b = cur[i] * cCur;
+      if (b < want && !last) continue;
+      // the blend: 0 at the smaller blur, 1 at the larger, by the log of the counts
+      var f = b >= want && a > 0 ? Math.log(want / a) / Math.log(b / a) : 1;
+      f = f < 0 ? 0 : f > 1 ? 1 : f;
+      out[i] = prev[i] + (cur[i] - prev[i]) * f;
+      done[i] = 1;
+    }
+    prev = cur; cPrev = cCur;
+  }
+  return out;
+}
+
+// cached per result, filter and radius, so dragging other sliders does not filter or blur again
+function filtered(result, salt, sigma, want) {
   var c = blurCache.get(result);
-  if (c && c.sigma === sigma) return c.data;
-  var data = new Float32Array(result.data);
-  blurAxis(data, result.res, sigma, true);
-  blurAxis(data, result.res, sigma, false);
-  blurCache.set(result, { sigma: sigma, data: data });
+  if (c && c.salt === salt && c.sigma === sigma && c.want === want) return c.data;
+  var data = salt ? desalt(result.data, result.res) : new Float32Array(result.data);
+  data = want > 0 ? adaptiveBlur(data, result.res, sigma, want, result.hits || 1) : blur2(data, result.res, sigma);
+  blurCache.set(result, { salt: salt, sigma: sigma, want: want, data: data });
   return data;
 }
 
 // The blur radius is given in pixels of a 1000-pixel image, so that it covers the same part of the picture at any resolution.
 // A crop (below) gives its scale as full: its pixels per width of the whole image.
 function blurSigma(result, st) { return st.soft_points ? st.blur_px * (result.full || result.res) / 1000 : 0; }
-function source(result, st) { var s = blurSigma(result, st); return s > 0 ? blurred(result, s) : result.data; }
+// The salt filter runs before the blur, which would otherwise spread a speck over its neighbours, and only on Metropolis
+// renders: the direct method's counts have no such specks, and type A's sharp points are the picture.
+function despeckle(result, st) { return !!(st.despeckle && result.metro); }
+// The adaptive blur needs the plain blur turned on, and like the salt filter it is for zooms: Metropolis points come in
+// runs along a chain, so a zoom shows grain where its counts look plenty, and want is tuned for that (docs/sampling.md).
+function smoothHits(result, st) { return st.soft_points && result.metro ? st.smooth_hits : 0; }
+function source(result, st) {
+  var s = blurSigma(result, st), salt = despeckle(result, st), want = smoothHits(result, st);
+  return s > 0 || salt || want > 0 ? filtered(result, salt, s, want) : result.data;
+}
 
 // ---------- brightness statistics ----------
 // Quantiles of an image's non-zero pixel values, in the units of its data: at LEVELS (fraction of the non-zero pixels
@@ -115,8 +174,8 @@ var LEVELS = (function() {
 })();
 
 function stats(result, st) {
-  var sigma = blurSigma(result, st), c = statsCache.get(result);
-  if (c && c.sigma === sigma) return c.q;
+  var sigma = blurSigma(result, st), salt = despeckle(result, st), want = smoothHits(result, st), c = statsCache.get(result);
+  if (c && c.sigma === sigma && c.salt === salt && c.want === want) return c.q;
   var src = source(result, st), n = 0, i;
   for (i = 0; i < src.length; i++) if (src[i] > 0) n++;
   var sorted = new Float32Array(n), k = 0;
@@ -125,7 +184,7 @@ function stats(result, st) {
   var values = new Float64Array(LEVELS.length);
   if (n) for (i = 0; i < LEVELS.length; i++) values[i] = sorted[Math.round(LEVELS[i] * (n - 1))];
   var q = { values: values, max: n ? sorted[n - 1] : 0, n: n };
-  statsCache.set(result, { sigma: sigma, q: q });
+  statsCache.set(result, { sigma: sigma, salt: salt, want: want, q: q });
   return q;
 }
 // value at a level, interpolated
@@ -180,7 +239,7 @@ export function crop(result, i0, j0, s, k) {
       data[b * M + (m - 1) * m + i] *= f;
     }
   }
-  return { data: data, res: m, full: n * m / s, b: result.b, norm: result.norm / (k * k), bands: result.bands, total: result.total };
+  return { data: data, res: m, full: n * m / s, b: result.b, norm: result.norm / (k * k), bands: result.bands, total: result.total, metro: result.metro, hits: result.hits };
 }
 
 // A result's channels, each shaped like a result ({ data, res, full, norm }) so the blur and statistics caches work on them.
@@ -194,7 +253,7 @@ function channels(result) {
   var N = result.res * result.res, d = result.data, out = [], acc = new Float32Array(N);
   for (var k = 0; k < 3; k++) {
     for (var i = 0; i < N; i++) acc[i] += d[k * N + i];
-    out.push({ data: Float32Array.from(acc), res: result.res, full: result.full, norm: result.norm });
+    out.push({ data: Float32Array.from(acc), res: result.res, full: result.full, norm: result.norm, metro: result.metro, hits: result.hits });
   }
   channelCache.set(result, out);
   return out;
