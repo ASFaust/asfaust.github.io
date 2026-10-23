@@ -82,6 +82,10 @@
     .art-list .thumb img { display: block; width: 100%; height: 100%; border-radius: 3px; }
     .art-list .essay-meta { flex-wrap: wrap; row-gap: 0.2rem; }
     @media (max-width: 420px) { .art-list .thumb { width: 72px; height: 72px; } }
+
+    .archive-link { margin-top: 3rem; font-size: 13px; }
+    .archive-link a { color: var(--color-text-secondary); text-decoration: none; }
+    .archive-link a:hover { color: var(--color-text-primary); }
   </style>
 </head>
 <body>
@@ -141,17 +145,6 @@
           </div>
           <div class="essay-meta">
             <span>Fractals from two Möbius maps, after <em>Indra’s Pearls</em></span>
-          </div>
-        </div>
-      </li>
-      <li>
-        <a class="thumb" href="art/markov/#k=2.04,0.02&amp;z=-1.32,-1.17&amp;w=1323" aria-hidden="true" tabindex="-1"><img src="art/markov/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
-        <div>
-          <div class="essay-title">
-            <a href="art/markov/">Markov Julia Sets</a>
-          </div>
-          <div class="essay-meta">
-            <span>Julia sets of the moves that rearrange pairs of Möbius maps, and the set where all of them escape</span>
           </div>
         </div>
       </li>
@@ -242,6 +235,8 @@
         </div>
       </li>
     </ul>
+
+    <p class="archive-link"><a href="archive/">Archive</a></p>
   </div>
 
   <script>

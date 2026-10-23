@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Archive – Andreas Faust</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../fonts/fonts.css">
+  <style>
+    :root {
+      --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+      --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #555;
+      --color-border-secondary: #ccc;
+      --color-bg: #fff;
+    }
+    [data-theme="dark"] {
+      --color-text-primary: #e2e2e2;
+      --color-text-secondary: #888;
+      --color-border-secondary: #333;
+      --color-bg: #111;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--color-bg); color: var(--color-text-primary); font-family: var(--font-sans); transition: background 0.2s, color 0.2s; }
+
+    .site-header {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.2rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .site-header a { color: var(--color-text-secondary); text-decoration: none; }
+    .site-header a:hover { color: var(--color-text-primary); }
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--color-text-secondary);
+      padding: 0.2rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--color-text-primary); }
+
+    .page { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+    h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.3rem; }
+    .tagline { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 3rem; }
+    .tagline a { color: var(--color-text-secondary); text-decoration: none; }
+    .tagline a:hover { color: var(--color-text-primary); }
+
+    h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); margin-bottom: 1rem; }
+
+    .section-gap { margin-top: 3rem; }
+
+    .essay-list { list-style: none; }
+    .essay-list li { padding: 1rem 0; border-top: 1px solid var(--color-border-secondary); }
+    .essay-list li:last-child { border-bottom: 1px solid var(--color-border-secondary); }
+
+    .essay-title { font-size: 16px; font-family: var(--font-serif); margin-bottom: 0.25rem; }
+    .essay-title a { color: var(--color-text-primary); text-decoration: none; }
+    .essay-title a:hover { text-decoration: underline; }
+    .essay-title .wip { font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); }
+
+    .essay-meta { font-size: 13px; color: var(--color-text-secondary); display: flex; gap: 1rem; align-items: center; }
+    .essay-meta .lang-links a { color: var(--color-text-secondary); text-decoration: none; font-size: 12px; }
+    .essay-meta .lang-links a:hover { color: var(--color-text-primary); }
+    .essay-meta .lang-links .sep { color: var(--color-border-secondary); margin: 0 0.2rem; }
+
+    /* Generative art: a fixed preview image (art/<name>/preview.webp) beside each entry */
+    .art-list li { display: flex; align-items: center; gap: 1rem; }
+    .art-list .thumb { flex: none; width: 96px; height: 96px; }
+    .art-list span.thumb { height: 0; }  /* no preview yet: keep the column, not the height */
+    .art-list .thumb img { display: block; width: 100%; height: 100%; border-radius: 3px; }
+    .art-list .essay-meta { flex-wrap: wrap; row-gap: 0.2rem; }
+    @media (max-width: 420px) { .art-list .thumb { width: 72px; height: 72px; } }
+
+    .archive-link { margin-top: 3rem; font-size: 13px; }
+    .archive-link a { color: var(--color-text-secondary); text-decoration: none; }
+    .archive-link a:hover { color: var(--color-text-primary); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <a href="../index.html">&larr; Home</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </header>
+
+  <div class="page">
+    <h1>Archive</h1>
+    <p class="tagline">Older experiments, kept but no longer featured</p>
+
+    <ul class="essay-list art-list">
+      <li>
+        <a class="thumb" href="../art/markov/#k=2.04,0.02&amp;z=-1.32,-1.17&amp;w=1323" aria-hidden="true" tabindex="-1"><img src="../art/markov/preview.webp" alt="" width="96" height="96" loading="lazy"></a>
+        <div>
+          <div class="essay-title">
+            <a href="../art/markov/">Markov Julia Sets</a>
+          </div>
+          <div class="essay-meta">
+            <span>Julia sets of the moves that rearrange pairs of Möbius maps, and the set where all of them escape</span>
+          </div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <script>
+    var btn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    btn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = isDark ? '☀' : '☾';
+    });
+  </script>
+</body>
+</html>
