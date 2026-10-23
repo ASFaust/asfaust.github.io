@@ -43,7 +43,7 @@ The owner's Blender renders from PolyOp, in `PolyOp/polyop_ref/` (outside the we
 |---|---|---|
 | Specular highlights | On a static print of a non-convex shape you ask yourself "why is that face so lit?" Softened later the same day: the owner is not *sure* what looks good; specular is what makes the current metal and iridescent work at all, metal looks bad anyway and can go, and iridescent is wrong as implemented (see R8) | R2 |
 | Colour everywhere | Colourful faces are the mathy look only | R1 |
-| Iridescent has colour controls and uniform faces | It should have no colour controls and vary within a face (reworked 2026-10-23) | R8 |
+| Iridescent has colour controls and uniform faces | It should vary within a face and with the view (reworked 2026-10-23: a mixer of bands, angle, holo and rings) | R8 |
 | AO is terrible | GTAO gives smudges and grain at creases; later the same day: remove it, RT does creases | R3 |
 | No depth of field | Wanted for the sculpture and line looks | R4 |
 | Glass and frame are confusing | The back faces are as strong as the front ones; they need attenuating, or depth fog | R5 |
@@ -129,17 +129,26 @@ The current edges have a width in world units, so they get thin where a face is 
 **Done (2026-10-23).** `js/tiles.js`: `tileMesh(m, solid)` gives the faces of the tiles (the shrunk face on top, the same moved inwards along the face's normal underneath, reversed, and a quadrilateral per side, wound so each tile is a closed solid), with `src`, the face each belongs to; `tilePositions` places them from the polyhedron's positions. Controls in Appearance: *Detach faces* (`gap`, URL `gap`): each face scaled towards its centroid by 1 − gap, 0 is off; *Tile thickness* (`thick`, URL `thk`, default 0.3): the slab's depth in mean edge lengths, 0 for flat tiles (drawn from both sides, in the view and in RT). The viewer draws `shown`/`shownPos` (the faces, or the tiles) instead of the polyhedron, so painted and drawn edges, colours (a tile takes its face's colour), RT, the Blender scene and OBJ/STL all get the tiles; the orientation, views and stage still use the polyhedron. OBJ/STL of tiles are in the view's units (the shape fits the unit sphere), not the worker's. Checked on `tkD` (convex), `scnC` Regular → Flat (folded) and `tD` Stellate (stellated), in the view, RT and Blender. Not done: pyramidal tiles (PolyOp's `pyramidal`); a move outwards along the normal (PolyOp's `move`); star faces still use the centroid fan, which looks right for the uniform star polyhedra seen so far. *Ref:* `untitled.png`.
 
 ### R8. Iridescent, reworked
-**Built (2026-10-23), redone the same day after the owner's feedback, owner to judge.** The colour of a thin film (oil on water) whose thickness sweeps across the shape, as a *diffuse* colour lit like matte, with no colour controls (Colour faces by, Palette, hue and chroma are hidden while it is chosen, except in the glass style). Code: `js/film.js`.
+**Built (2026-10-23), reworked twice the same day with the owner; owner to judge.** A diffuse colour taken from a colour wheel (OKLCh at lightness 0.72, with the page's Hue and Chroma), at a phase mixed from four terms the owner can weigh with sliders (Appearance, shown for iridescent):
 
-*First version* (kept for the record): three's `iridescence` on a near-black base, roughness 0.2, the thickness per fan corner through `iridescenceThicknessMap`. The owner liked the idea but: it was very dark wherever no highlight was reflected, especially in RT; he does not like specular anyway; he wanted control over the band frequency; and the thickness was interpolated between corners, so the fan's triangles showed in the colour.
+| Slider | URL | Term (0 to about 1) | Range, default |
+| --- | --- | --- | --- |
+| Bands | `ib` | waves across the whole shape, `Band width` (`fb`) edge lengths long: the first version's film thickness | 0–2, 1 |
+| Angle | `ia` | 1 − cos of the angle between the face and the view | 0–2, 1 |
+| Holo | `iho` | where the view reflects to in the world, `0.5 + 0.35 y + 0.25 x`: changes as the shape turns under a still light, like a hologram foil | 0–2, 0 |
+| Rings | `irg` | distance from the face's centre over that of its farthest corner: soft rings on every face | 0–3, 0 |
+| Cycles | `icy` | multiplies the sum: times round the wheel | 0–4, 1 |
+| Specular, Roughness | `sp`, `ro` | the shine (three's `specularIntensity` and `roughness`) | 0–1, 0; 0–1, 0.35 |
 
-*Now:* `filmUV(x, y, z, band)` gives two coordinates that are linear in the position (waves `band` long in two directions), so interpolating them per corner is exact; the thickness `filmT(u, v)` (two sines, 0 to 1 of 250–700 nm) and the colour are evaluated per pixel. The colour is two-beam interference at RGB wavelengths 650/532/450 nm, film index 1.33, with the angle from the face normal, then softened: mixed towards its grey by saturation 0.55 and mapped to floor 0.04 + gain 0.5 (pure interference is a neon rainbow). All constants are in `FILM`.
-- Fast view: the shader in `paintEdges` computes `filmColour` per fragment from the `film` attribute and the face normal from screen derivatives (`uFilm`); material is matte (no specular, no clearcoat, no `iridescence`).
-- RT: the path tracer takes no custom shaders, so `FILM_MAP` (256², repeating, sRGB) holds the colour over one period of both coordinates at normal incidence, on a `MeshStandardMaterial` with roughness 1 (`MeshPhysicalMaterial` with `specularIntensity` 0 traced black specks, presumably NaNs).
-- Blender: the coordinates go in a UV map `film`, and math nodes build the same colour, angle included, into Base Color with Specular IOR Level 0.
-- **Film bands** (Appearance, URL `fb`, 0.5–10, default 2.5) is the band length in mean edges.
+phase = hue/360 + cycles × Σ weight × term. Code: `js/film.js` (the terms, the wheel, the GLSL). Every term is evaluated per pixel from quantities that interpolate exactly over a triangle (two coordinates linear in the position, the offset from the face's centre, the face normal and the view), so no triangle shows.
 
-The three agree (fast view, RT and Cycles side by side on `oD` Regular → Flat, gradient backdrop). Open for the owner: saturation and darkness (`FILM.saturation`, `floor`, `gain`), and whether the bands should follow each face rather than run across the shape.
+- Fast view: `iriColour` in the face shader, with the normal from screen derivatives.
+- RT: the tracer takes no custom shaders, so `trace.js` subdivides every drawn triangle n × n (up to 200,000 triangles in all) and bakes the colour at the corners for the camera as it is; a trace restarts on every camera move anyway. With no specular it is a `MeshStandardMaterial` of roughness 1, since `specularIntensity` 0 traced black specks (NaNs).
+- Blender: the same in nodes: the UV map `film`, Geometry Normal and Incoming, Texture Coordinate Reflection (z up), a corner attribute `ring`, the OKLCh conversion in math nodes; Specular IOR Level is half the slider (three's 1 is Blender's 0.5).
+
+The three agree (fast view, RT and Cycles on `jtJ37` with rings, holo and specular).
+
+*History.* First, three's `iridescence` (thin-film interference on the specular) over a near-black base, the thickness per fan corner: the owner liked the idea, but it was very dark away from highlights, especially in RT, he does not like specular much, wanted control of the band frequency, and the fan's triangles showed. Second, a per-pixel thin-film colour lit diffusely: smooth, but it changed too little with the angle and read as a solid colour. Then an exploration of seven approaches side by side (angle to wheel, pearl, soap bubble of one thickness, holographic foil, angle plus bands, bands alone, three's physical film on a glossy base); the owner liked angle, holo and bands equally and asked for all three as sliders, plus rings centred on each face.
 
 ### R9. Ray tracer spike
 **Done (2026-10-23).** The spike, rerunnable, is in `/home/andi/code/github-website/spikes/r9-pathtracer/` (outside the website repo; its README says how), with sample renders in `renders/`.

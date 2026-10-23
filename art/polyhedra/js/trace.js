@@ -9,17 +9,69 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial, PhysicalCamera } from '../vendor/three-gpu-pathtracer.js';
 import { FullScreenQuad } from '../vendor/addons/postprocessing/Pass.js';
-import { FILM_MAP } from './film.js';
+import { filmT, holoTerm, iriColour } from './film.js';
+
+// the most triangles the iridescent faces are subdivided into
+const IRI_TRIANGLES = 2e5;
 
 // the traced materials, for the viewer's materials; glass is a style, so it overrides them
 const MATERIALS = {
   matte: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
   glossy: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
-  // the film's colour as a texture over its two coordinates (film.js), lit like matte
-  // (fully rough: a specular intensity of 0 gave black specks, from NaNs in the tracer)
-  iridescent: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, map: FILM_MAP }),
+  // the colour baked into the vertex colours (iridescent() below), with the sliders' shine; with
+  // none, fully rough (a specular intensity of 0 gave black specks, from NaNs in the tracer)
+  iridescent: o => o.spec > 0 ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: o.rough, metalness: 0, specularIntensity: o.spec })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
   glass: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.03, metalness: 0, transmission: 1, ior: 1.5, thickness: 0.05, side: THREE.DoubleSide }),
 };
+
+// The iridescent faces for the tracer, which takes no custom shaders: every triangle the viewer
+// draws subdivided n × n, with the colour of film.js computed at each new corner for the camera as
+// it is now (a trace starts again whenever the camera moves). The terms change smoothly within a
+// face, so a fine enough grid of corners shows no seams.
+function iridescent(v) {
+  const src = v.faces.geometry.attributes, P = src.position.array, Nm = src.normal.array, U = src.film.array, Rg = src.ring.array;
+  const tris = P.length / 9, n = Math.max(1, Math.min(16, Math.floor(Math.sqrt(IRI_TRIANGLES / tris))));
+  const per = (n + 1) * (n + 2) / 2;
+  const pos = new Float32Array(3 * per * tris), nor = new Float32Array(3 * per * tris), col = new Float32Array(4 * per * tris).fill(1);
+  const index = new Uint32Array(3 * n * n * tris);
+  const M = v.faces.matrixWorld, NM = new THREE.Matrix3().getNormalMatrix(M), eye = v.camera.getWorldPosition(new THREE.Vector3());
+  const w = new THREE.Vector3(), N = new THREE.Vector3(), V = new THREE.Vector3();
+  let q = 0, ix = 0;
+  for (let t = 0; t < tris; t++) {
+    const a = 3 * t, base = q;
+    // the face's normal in the world, and the corners' attributes, blended by barycentric weights
+    N.set(Nm[3 * a], Nm[3 * a + 1], Nm[3 * a + 2]).applyMatrix3(NM).normalize();
+    for (let i = 0; i <= n; i++) for (let j = 0; j <= n - i; j++, q++) {
+      const b = [1 - (i + j) / n, i / n, j / n];
+      const at = (A, k, c) => b[0] * A[k * a + c] + b[1] * A[k * (a + 1) + c] + b[2] * A[k * (a + 2) + c];
+      const x = at(P, 3, 0), y = at(P, 3, 1), z = at(P, 3, 2);
+      pos.set([x, y, z], 3 * q);
+      nor.set([Nm[3 * a], Nm[3 * a + 1], Nm[3 * a + 2]], 3 * q);
+      w.set(x, y, z).applyMatrix4(M);
+      V.subVectors(eye, w).normalize();
+      let c = N.dot(V);
+      const s = c < 0 ? -1 : 1;
+      c *= s;
+      // the reflected view, -V + 2 (N·V) N, with N facing the eye
+      const rx = -V.x + 2 * c * s * N.x, ry = -V.y + 2 * c * s * N.y;
+      const ring = Math.hypot(at(Rg, 4, 0), at(Rg, 4, 1), at(Rg, 4, 2)) / Math.max(Rg[4 * a + 3], 1e-9);
+      col.set(iriColour(v.opts, filmT(at(U, 2, 0), at(U, 2, 1)), 1 - c, holoTerm(rx, ry), ring), 4 * q);
+    }
+    // the small triangles, counter-clockwise as the big one
+    const id = (i, j) => base + i * (n + 1) - i * (i - 1) / 2 + j;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n - i; j++) {
+      index.set([id(i, j), id(i + 1, j), id(i, j + 1)], ix); ix += 3;
+      if (j < n - i - 1) { index.set([id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)], ix); ix += 3; }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  g.setIndex(new THREE.BufferAttribute(index, 1));
+  return g;
+}
 
 export class Tracer {
   constructor(renderer) {
@@ -63,20 +115,23 @@ export class Tracer {
     };
     v.scene.updateMatrixWorld(true);
     if (o.style !== 'frame') {
-      const mat = (MATERIALS[o.style === 'glass' ? 'glass' : o.material] || MATERIALS.matte)();
+      const mat = (MATERIALS[o.style === 'glass' ? 'glass' : o.material] || MATERIALS.matte)(o);
       // flat detached faces are seen from both sides
       if (v.tiles === 1) mat.side = THREE.DoubleSide;
       // Only what the tracer reads (the viewer's geometry also carries the edge distances and face
       // numbers for its shaders), and the colours as RGBA: the tracer gives meshes without colours
       // four components and merges everything into one buffer, so three would be read with the
       // wrong stride, and some faces would come out black.
-      const g = new THREE.BufferGeometry(), src = v.faces.geometry.attributes;
-      for (const k of ['position', 'normal']) g.setAttribute(k, src[k].clone());
-      // the film's coordinates as the texture coordinates of the iridescent look
-      g.setAttribute('uv', src.film.clone());
-      const c3 = src.color.array, c4 = new Float32Array(c3.length / 3 * 4).fill(1);
-      for (let i = 0, j = 0; i < c3.length; i += 3, j += 4) { c4[j] = c3[i]; c4[j + 1] = c3[i + 1]; c4[j + 2] = c3[i + 2]; }
-      g.setAttribute('color', new THREE.BufferAttribute(c4, 4));
+      const src = v.faces.geometry.attributes;
+      let g;
+      if (o.material === 'iridescent' && o.style !== 'glass') g = iridescent(v);
+      else {
+        g = new THREE.BufferGeometry();
+        for (const k of ['position', 'normal']) g.setAttribute(k, src[k].clone());
+        const c3 = src.color.array, c4 = new Float32Array(c3.length / 3 * 4).fill(1);
+        for (let i = 0, j = 0; i < c3.length; i += 3, j += 4) { c4[j] = c3[i]; c4[j + 1] = c3[i + 1]; c4[j + 2] = c3[i + 2]; }
+        g.setAttribute('color', new THREE.BufferAttribute(c4, 4));
+      }
       add(g, mat, v.faces.matrixWorld);
     }
     if (v.stage.visible) {
