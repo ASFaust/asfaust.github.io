@@ -20,7 +20,7 @@
 //   Pdist    1 − the Wasserstein distance between the distributions of annual land
 //            precipitation, in units of its mean: too spiky or too uniform
 //   T        annual temperature RMSE skill, land and all; Tseason the same for July − January
-//   wind     correlation of annual u and v
+//   wind     correlation of annual u and v, and the vector skill 1 − rms|u − u_obs|/rms|u_obs|
 //   koppen   land area classed alike by the Köppen–Geiger rules (Peel et al. 2007), from
 //            monthly T and P: main group (A B C D E) and full class
 // Physical checks: global precipitation equals evaporation (water is conserved), no negative
@@ -188,6 +188,10 @@ export function score(res, runLevel, prep) {
   r.Tseason = skill(sm, so);
   r.u_corr = corr(annual(m.U), annual(o.U));
   r.v_corr = corr(annual(m.V), annual(o.V));
+  // the annual wind as vectors, so its strength counts as well as its direction
+  { const um = annual(m.U), vm = annual(m.V), uo = annual(o.U), vo = annual(o.V);
+    r.wind_skill = 1 - Math.sqrt(mean(um.map((u, i) => (u - uo[i]) ** 2 + (vm[i] - vo[i]) ** 2))) / Math.sqrt(mean(uo.map((u, i) => u * u + vo[i] * vo[i])));
+    r.wind_speed = [mean(um.map((u, i) => Math.hypot(u, vm[i]))), mean(uo.map((u, i) => Math.hypot(u, vo[i])))].map(v => +v.toFixed(2)); }
   // Köppen
   let kw = 0, k1 = 0, k3 = 0;
   const conf = {};
@@ -214,7 +218,7 @@ export function score(res, runLevel, prep) {
   r.checks_ok = bad === 0 && r.water_imbalance < 0.02 && r.P_max < 15;
   // overall
   const Pskills = [r.P_corr, r.P_logcorr, r.P_land_logcorr, r.P_skill, r.Pseason, r.Pzonal, r.Pheight, r.Pdist, r.Plength].map(v => Math.max(0, v));
-  const others = [r.T_land_skill, r.Tseason, (r.u_corr + r.v_corr) / 2, r.koppen_group, r.koppen_class].map(v => Math.max(0, v));
+  const others = [r.T_land_skill, r.Tseason, (r.u_corr + r.v_corr) / 2, r.wind_skill, r.koppen_group, r.koppen_class].map(v => Math.max(0, v));
   r.score_P = Pskills.reduce((a, b) => a + b) / Pskills.length;
   // smooth penalties: global precipitation off by 10% costs 0.05, 20 mm/day at the wettest
   // point 0.033, a 1% leak of water 0.02, and any broken value 0.2
@@ -230,7 +234,7 @@ export function summary(r) {
     `score ${f(r.score)} (precipitation ${f(r.score_P)})${r.checks_ok ? '' : '  CHECKS FAILED'}`,
     `P  corr ${f(r.P_corr)} log ${f(r.P_logcorr)} land-log ${f(r.P_land_logcorr)} land ${f(r.P_land_corr)} skill ${f(r.P_skill)} season ${f(r.Pseason)} zonal ${f(r.Pzonal)} height ${f(r.Pheight)} dist ${f(r.Pdist)} length ${f(r.Plength)} ${f(r.P_length)} km`,
     `   by height (model, obs) ${f(r.P_by_height)} · dry land ${f(r.dry_land)} · max ${f(r.P_max, 1)}`,
-    `T  land skill ${f(r.T_land_skill)} (rmse ${f(r.T_land_rmse, 1)}) all ${f(r.T_skill)} season ${f(r.Tseason)} · wind u ${f(r.u_corr)} v ${f(r.v_corr)}`,
+    `T  land skill ${f(r.T_land_skill)} (rmse ${f(r.T_land_rmse, 1)}) all ${f(r.T_skill)} season ${f(r.Tseason)} · wind u ${f(r.u_corr)} v ${f(r.v_corr)} skill ${f(r.wind_skill)} speed ${f(r.wind_speed)}`,
     `Köppen group ${f(r.koppen_group)} class ${f(r.koppen_class)} · worst ${f(r.koppen_confusion)}`,
     `global T ${f(r.T_global, 1)}/${f(r.T_global_obs, 1)} · P ${f(r.P_global, 2)}/${f(r.P_global_obs, 2)} · E ${f(r.E_global, 2)} · water imbalance ${f(r.water_imbalance, 4)}`,
   ].join('\n');

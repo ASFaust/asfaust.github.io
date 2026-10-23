@@ -213,6 +213,7 @@ export function buildOps(grid) {
       omega = dot(t, s) / dot(t, t);
       for (let i = 0; i < N; i++) { x[i] += alpha * ph[i] + omega * sh[i]; r[i] = s[i] - omega * t[i]; }
     }
+    if (process.env.RESID) console.log('bicgstab', it, (Math.sqrt(dot(r, r) / bb)).toExponential(1));
     return it;
   };
 

@@ -42,8 +42,22 @@ export const EARTH = {
   oceanDepth: 50,            // m of mixed layer
   // upwelling: wind pushes surface water sideways (Ekman transport); where it diverges, along
   // the equator and along coasts with the wind running down them, cold water comes up
-  upwellTemp: 16,            // °C of the water that comes up
+  upwellTemp: 16,            // °C of the water that comes up (without ocean dynamics)
   upwellEfficiency: 0.5,     // fraction of the full heat exchange
+  // the ocean's warm upper layer over the thermocline, driven by the wind (a reduced-gravity
+  // ocean, as in Cane & Zebiak 1985): ∂u/∂t + f k×u = −g'∇h + τ/(ρH) − r u + A∇²u,
+  // ∂h/∂t = −H ∇·u − h/τ_h. The wind piles warm water up on the downwind side and draws the
+  // thermocline up on the other; upwelled water is as cold as the thermocline is shallow,
+  // T − (T − deepTemp) e^(−D/thermoScale) at depth D = H + h; the currents carry the heat
+  oceanDynamics: false,
+  thermoDepth: 150,          // m, H
+  reducedGravity: 0.03,      // m/s², g'
+  oceanDamping: 1 / (10 * 86400), // 1/s, r
+  thermoDamping: 1 / (365 * 86400), // 1/s, 1/τ_h
+  oceanMinCoriolis: 0.5,     // degrees
+  oceanViscosity: 2e4,       // m²/s
+  deepTemp: 10, thermoScale: 50,
+  currentHeat: 1,            // share of the upper layer's current that moves the surface heat
   ekmanLat: 4,               // degrees: the Ekman transport fades to nothing at the equator
   landHeat: 1.5e7,           // J/m²/K
   lapseRate: 6.5e-3,         // K/m
@@ -126,6 +140,14 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
   // latitude bands for zonal means
   const NB = 90, band = new Int32Array(N), bandW = new Float64Array(NB);
   for (let i = 0; i < N; i++) { band[i] = Math.min(NB - 1, Math.floor((ops.lat[i] / Math.PI + 0.5) * NB)); bandW[band[i]] += ops.area[i]; }
+  // a band profile at a cell, interpolated linearly between band centres: the grid's rows don't
+  // follow latitude circles, and a step from band to band would print the grid on the climate
+  const bandLo = new Int32Array(N), bandFr = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = Math.min(NB - 1, Math.max(0, (ops.lat[i] / Math.PI + 0.5) * NB - 0.5));
+    bandLo[i] = Math.min(NB - 2, Math.floor(x)); bandFr[i] = x - bandLo[i];
+  }
+  const atBand = (prof, i) => prof[bandLo[i]] * (1 - bandFr[i]) + prof[bandLo[i] + 1] * bandFr[i];
   const zonalMean = (f, out = new Float64Array(NB)) => {
     out.fill(0);
     for (let i = 0; i < N; i++) out[band[i]] += f[i] * ops.area[i];
@@ -260,7 +282,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       // the equatorial low follows the warmest water, so it bends with the warm pools
       const conv = 1 / (1 + Math.exp(-(T[i] - P.convectionTemp) / 1.5));
       let p = a0 * conv * gauss(x, 0, P.equatorialWidth) + a1 * gauss(x, 32, 12) + a2 * gauss(x, 62, 10) + a3 * gauss(x, 90, 12);
-      p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - zT[band[i]]);
+      p -= (ocean[i] ? P.thermalLowOcean : P.thermalLow) * (T[i] - atBand(zT, i));
       phi[i] = p * 100 / 1.2 + phiG[i];
     }
     balance(1, un, wind);
@@ -287,6 +309,90 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
         s += ops.len[e] * 0.5 * ((ekman[3 * i] + ekman[3 * j]) * ops.nrm[3 * e] + (ekman[3 * i + 1] + ekman[3 * j + 1]) * ops.nrm[3 * e + 1] + (ekman[3 * i + 2] + ekman[3 * j + 2]) * ops.nrm[3 * e + 2]);
       }
       upwell[i] = Math.max(0, s / (ops.area[i] * R));
+    }
+  }
+
+  // ---- the ocean's upper layer, stepped in time: velocity u at the cells, thermocline
+  // anomaly h. Gravity waves forward-backward, Coriolis and damping implicit (an exact
+  // rotation, stable for any step), and viscosity, which makes the western boundary currents
+  const hT = new Float64Array(N), uo = new Float64Array(E6), ouv = new Float64Array(3 * N), oG = new Float64Array(3 * N);
+  const oEdge = new Uint8Array(E6), oLap = new Float64Array(3 * N), oDiv = new Float64Array(N);
+  for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; oEdge[e] = ocean[i] && ocean[ops.nbr[e]] ? 1 : 0; }
+  const oc = Math.sqrt(P.reducedGravity * P.thermoDepth);
+  let minDx = Infinity;
+  for (let e = 0; e < E6; e++) if (ops.dist[e] > 0) minDx = Math.min(minDx, ops.dist[e] * R);
+  const oSub = Math.max(1, Math.ceil(dt / Math.min(0.4 * minDx / oc, 0.2 * minDx * minDx / Math.max(1, P.oceanViscosity))));
+  function oceanStep() {
+    const h = dt / oSub, r = P.oceanDamping, fMinO = 2 * P.rotation * Math.sin(P.oceanMinCoriolis * deg);
+    const cs = 1.2 * 1.3e-3 / (1025 * P.thermoDepth);
+    for (let s = 0; s < oSub; s++) {
+      // −g'∇h + τ/(ρH) + A∇²u
+      const g = ops.gradient(hT, oG);
+      for (let i = 0; i < N; i++) {
+        if (!ocean[i]) continue;
+        let lx = 0, ly = 0, lz = 0;
+        for (let k = 0; k < ops.nbrCount[i]; k++) {
+          const e = 6 * i + k, j = ops.nbr[e], w = ops.lap[e];
+          // no slip at the coast: land holds u = 0
+          lx += w * (ouv[3 * j] - ouv[3 * i]); ly += w * (ouv[3 * j + 1] - ouv[3 * i + 1]); lz += w * (ouv[3 * j + 2] - ouv[3 * i + 2]);
+        }
+        // bulk stress with the same gustiness as evaporation: weather adds to the mean wind
+        const A = P.oceanViscosity / (ops.area[i] * R2), sp = cs * (speed[i] + P.gust);
+        let ux = ouv[3 * i] + h * (-P.reducedGravity * g[3 * i] / R + sp * wind[3 * i] + A * lx);
+        let uy = ouv[3 * i + 1] + h * (-P.reducedGravity * g[3 * i + 1] / R + sp * wind[3 * i + 1] + A * ly);
+        let uz = ouv[3 * i + 2] + h * (-P.reducedGravity * g[3 * i + 2] / R + sp * wind[3 * i + 2] + A * lz);
+        // (1 + r h) u + h f k×u = u*
+        const px = ops.pos[3 * i], py = ops.pos[3 * i + 1], pz = ops.pos[3 * i + 2];
+        let f = 2 * P.rotation * sinLat[i];
+        if (Math.abs(f) < fMinO) f = f < 0 ? -fMinO : fMinO;
+        const a = 1 + r * h, b = h * f, kx = py * uz - pz * uy, ky = pz * ux - px * uz, kz = px * uy - py * ux, d = a * a + b * b;
+        ux = (a * ux - b * kx) / d; uy = (a * uy - b * ky) / d; uz = (a * uz - b * kz) / d;
+        const q = ux * px + uy * py + uz * pz;
+        oLap[3 * i] = ux - q * px; oLap[3 * i + 1] = uy - q * py; oLap[3 * i + 2] = uz - q * pz;
+      }
+      for (let i = 0; i < 3 * N; i++) ouv[i] = oLap[i];
+      // H ∇·u through the edges between ocean cells, then the thermocline
+      for (let i = 0; i < N; i++) {
+        if (!ocean[i]) continue;
+        let sdiv = 0;
+        for (let k = 0; k < ops.nbrCount[i]; k++) {
+          const e = 6 * i + k;
+          if (!oEdge[e]) continue;
+          const j = ops.nbr[e];
+          sdiv += ops.len[e] * 0.5 * ((ouv[3 * i] + ouv[3 * j]) * ops.nrm[3 * e] + (ouv[3 * i + 1] + ouv[3 * j + 1]) * ops.nrm[3 * e + 1] + (ouv[3 * i + 2] + ouv[3 * j + 2]) * ops.nrm[3 * e + 2]);
+        }
+        oDiv[i] = sdiv / (ops.area[i] * R);
+      }
+      for (let i = 0; i < N; i++) if (ocean[i]) hT[i] = (hT[i] - h * P.thermoDepth * oDiv[i]) / (1 + h * P.thermoDamping);
+    }
+    for (let i = 0; i < N; i++) for (let k = 0; k < ops.nbrCount[i]; k++) {
+      const e = 6 * i + k;
+      if (!oEdge[e]) { uo[e] = 0; continue; }
+      const j = ops.nbr[e];
+      uo[e] = 0.5 * ((ouv[3 * i] + ouv[3 * j]) * ops.nrm[3 * e] + (ouv[3 * i + 1] + ouv[3 * j + 1]) * ops.nrm[3 * e + 1] + (ouv[3 * i + 2] + ouv[3 * j + 2]) * ops.nrm[3 * e + 2]);
+    }
+  }
+  // the surface heat carried by the currents over a step, upwind and conservative
+  const heatFlux = new Float64Array(N);
+  function advectHeat() {
+    let maxOut = 0;
+    for (let i = 0; i < N; i++) {
+      if (!ocean[i]) continue;
+      let o = 0;
+      for (let k = 0; k < ops.nbrCount[i]; k++) { const e = 6 * i + k; if (uo[e] > 0) o += uo[e] * ops.len[e]; }
+      maxOut = Math.max(maxOut, P.currentHeat * o / (ops.area[i] * R));
+    }
+    const n = Math.max(1, Math.ceil(dt * maxOut / 0.5)), hs = dt / n;
+    for (let s = 0; s < n; s++) {
+      heatFlux.fill(0);
+      for (let q = 0; q < nEdge; q++) {
+        const e = edgeSlot[q];
+        if (!oEdge[e]) continue;
+        const a = edgeA[q], b = edgeB[q], c = P.currentHeat * uo[e] * ops.len[e] * R * hs;
+        const F = c * (c > 0 ? T[a] : T[b]);
+        heatFlux[a] -= F; heatFlux[b] += F;
+      }
+      for (let i = 0; i < N; i++) if (ocean[i]) T[i] += heatFlux[i] / (ops.area[i] * R2);
     }
   }
 
@@ -324,6 +430,9 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     const c = (step % stepsPerYear + 0.5) / stepsPerYear;
     const lambda = solarLongitude(((c - P.equinoxDay / P.yearDays) % 1 + 1) % 1, P.orbit);
 
+    // ---- the currents carry the ocean's heat
+    if (P.oceanDynamics && step > 0) advectHeat();
+
     // ---- temperature: (C/dt + B − ∇·k∇) T' = C/dt T + S(1 − α) − A, implicit. Diffusing moist
     // static energy T + Lq/cp is approximated by diffusing T with k = D (1 + (L/cp) dq/dT),
     // q = RH·q_sat(T): an explicit Laplacian of q would be unstable over land.
@@ -337,9 +446,11 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const alpha = (P.albedo + P.albedoP2 * p2[i]) * (1 - ice) + P.albedoIce * ice;
       const S = dailyInsolation(ops.lat[i], lambda, P.orbit);
       // upwelled water mixes in, implicitly: −ρc w (T − T_up)
-      const up = 4.18e6 * P.upwellEfficiency * upwell[i];
+      // upwelled water mixes in, implicitly: −ρc w (T − T_up), T_up = T − (T − T_d) e^(−D/d)
+      let up = 4.18e6 * P.upwellEfficiency * upwell[i], Td = P.upwellTemp;
+      if (P.oceanDynamics) { up *= Math.exp(-Math.max(10, P.thermoDepth + hT[i]) / P.thermoScale); Td = P.deepTemp; }
       diag[i] = heatCap[i] / dt + P.olrB + up;
-      rhs[i] = heatCap[i] / dt * T[i] + S * (1 - alpha) - P.olrA + up * P.upwellTemp;
+      rhs[i] = heatCap[i] / dt * T[i] + S * (1 - alpha) - P.olrA + up * Td;
     }
     ops.solveImplicit(diag, kDiff, rhs, T, 1e-6);
     // for experiments: observed sea temperatures, 12 months, interpolated
@@ -350,6 +461,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
 
     // ---- wind from the new temperatures
     winds();
+    if (P.oceanDynamics) oceanStep();
 
     // ---- moisture: explicit advection, sources and rain in substeps, diffusion implicit once
     let maxOut = 0;
@@ -383,7 +495,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       wsA[i] = P.wsat0 * Math.exp(0.0641 * (Tls[i] - P.wsatLapse * P.lapseRate * elev[i]) - elev[i] / P.vapourScaleHeight);
       // thrA: the rain rate at r = 0 in mm per substep, as a log
       const r0 = P.rainR0 - P.rhAscent * Math.tanh(Math.max(0, -div[i]) * 4 * DAY) + P.rhDescent * Math.tanh(Math.max(0, div[i]) * 4 * DAY)
-        - P.rhStorm * storm[band[i]];
+        - P.rhStorm * atBand(storm, i);
       thrA[i] = -P.rainSteep * r0 + Math.log(h / DAY);
       let ef = P.evapCoeff * (speed[i] + P.gust) * qsat(Ts) * h;
       if (!ocean[i] && Ts < 0) ef *= 0.2;
@@ -452,5 +564,11 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     if (onProgress) onProgress((step + 1) / totalSteps);
   }
   for (const f of Object.values(out)) for (let m = 0; m < MONTHS; m++) for (let i = 0; i < N; i++) f[m * N + i] /= counts[m] || 1;
-  return { ...out, ocean };
+  let diagOut = null;
+  if (P.diagnostics) {
+    const ou = ouv;
+    diagOut = { thermocline: Float64Array.from(hT), current_east: new Float64Array(N), current_north: new Float64Array(N), upwell: Float64Array.from(upwell) };
+    for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) { diagOut.current_east[i] += ou[3 * i + c] * ops.east[3 * i + c]; diagOut.current_north[i] += ou[3 * i + c] * ops.north[3 * i + c]; }
+  }
+  return { ...out, ocean, diag: diagOut };
 }
