@@ -191,7 +191,7 @@
             <small>detached faces as solid slabs, this many edge lengths deep; 0 leaves them flat</small>
             <input type="range" id="p-thick" min="0" max="1" step="0.05">
           </div>
-          <div class="param">
+          <div class="param" id="colouring-param">
             <label for="p-colouring"><span>Colour faces by</span></label>
             <select id="p-colouring">
               <option value="origin">Origin</option>
@@ -200,7 +200,7 @@
               <option value="single">One colour</option>
             </select>
           </div>
-          <div class="param wide">
+          <div class="param wide" id="palette-param">
             <label for="p-palette"><span>Palette</span></label>
             <small>colour k of the palette goes to the k-th kind of face; click a swatch to change it</small>
             <select id="p-palette">

@@ -597,7 +597,10 @@ function randomText() {
 function showLook() {
   $('p-material').value = st.material;
   $('p-palette').value = st.palette;
-  for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', st.palette !== 'generated');
+  // iridescent takes its colours from the film alone (R8), so it has no colour controls
+  const film = st.material === 'iridescent' && st.style !== 'glass';
+  for (const id of ['colouring-param', 'palette-param']) $(id).classList.toggle('hidden', film);
+  for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', film || st.palette !== 'generated');
   $('p-style').value = st.style;
   $('p-colouring').value = st.colouring;
   $('p-hue').value = st.hue; $('v-hue').textContent = st.hue + '°';

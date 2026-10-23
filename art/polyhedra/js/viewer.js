@@ -14,11 +14,31 @@ export const MATERIALS = ['matte', 'glossy', 'iridescent'];
 // no Fresnel rim), so a face's brightness depends only on its orientation and can be read; the
 // environment still lights it diffusely. Glass takes the material's (owner, 2026-10-23: matte
 // glass without highlights looks right).
+// The iridescent look's film: thicknesses in nanometres, and the base under it (linear RGB).
+export const FILM_RANGE = [250, 700], FILM_BASE = [0.02, 0.02, 0.025];
+// The film's thickness at a point, from 0 to 1 of FILM_RANGE: waves across the shape a few mean
+// edges long, in two directions, so the bands sweep through each face and differ from face to face.
+// Each corner carries it (as its u coordinate) and it is interpolated across the face's fan.
+export function film(x, y, z, edge) {
+  const s = 1 / (2.5 * edge);
+  return 0.5 + 0.35 * Math.sin(s * (0.8 * x + 0.5 * y + 0.33 * z) * 6.283) + 0.15 * Math.sin(s * (-0.3 * x + 0.9 * y - 0.3 * z) * 4.1 + 1.3);
+}
+// a ramp the thickness map reads: green from 0 to 1 along u
+export const FILM_RAMP = (() => {
+  const d = new Uint8Array(4 * 256);
+  for (let i = 0; i < 256; i++) d.set([i, i, i, 255], 4 * i);
+  const t = new THREE.DataTexture(d, 256, 1);
+  t.magFilter = t.minFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+})();
+
 const LOOKS = {
   matte: { roughness: 1, metalness: 0, specularIntensity: 0, clearcoat: 0, iridescence: 0, env: 0.6 },
   glossy: { roughness: 0.35, metalness: 0, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.08, iridescence: 0, env: 0.8 },
-  // mostly metallic, so that the thin film colours the whole reflection, not just the rims
-  iridescent: { roughness: 0.2, metalness: 0.85, specularIntensity: 1, clearcoat: 0, iridescence: 1, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 900], env: 1.4 },
+  // a thin film on a dark base (R8): the colour is all interference, with no colour controls;
+  // the film's thickness varies across each face (film()), so a face shows bands of colour
+  iridescent: { roughness: 0.2, metalness: 0, specularIntensity: 1, clearcoat: 0, iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessRange: FILM_RANGE, env: 1.8 },
 };
 export const INKS = ['auto', 'dark', 'light', 'colour'];
 // painted: bands on the faces, as wide as a fraction of the edge length; screen: the same bands,
@@ -179,6 +199,8 @@ export class Viewer {
     for (const name of ['position', 'normal', 'color', 'edist']) {
       g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9 * tris), 3));
     }
+    // the iridescent film's thickness at each corner
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6 * tris), 2));
     // the face of every corner, for the face buffer of the drawn lines
     const fid = new Float32Array(3 * tris);
     for (let f = 0, k = 0; f < m.nf; f++) {
@@ -218,9 +240,9 @@ export class Viewer {
     const m = this.shown;
 
     const attr = this.faces.geometry.attributes;
-    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array;
+    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array, ua = attr.uv.array, edge = this.meanEdge;
     let o = 0;
-    const put = (x, y, z, nx, ny, nz) => { pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz; o += 3; };
+    const put = (x, y, z, nx, ny, nz) => { pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz; ua[2 * o / 3] = film(x, y, z, edge); o += 3; };
     // the line through sides of the current face, as [point, inward normal within the face]
     const lines = [];
     const dist = (x, y, z, L) => (L ? (x - L[0]) * L[3] + (y - L[1]) * L[4] + (z - L[2]) * L[5] : FAR);
@@ -267,7 +289,7 @@ export class Viewer {
         put(p[w], p[w + 1], p[w + 2], nx, ny, nz); putDist(p[w], p[w + 1], p[w + 2], prev, L, next);
       }
     }
-    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true;
+    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.uv.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
     this.lines.setPositions(p);
     this.orient();
@@ -288,6 +310,8 @@ export class Viewer {
       if (look[k] !== undefined) { this.faceMat[k] = look[k]; if (k !== 'roughness') this.backMat[k] = look[k]; }
     }
     this.scene.environmentIntensity = look.env;
+    const film = look.iridescence ? FILM_RAMP : null;
+    if (this.faceMat.iridescenceThicknessMap !== film) { this.faceMat.iridescenceThicknessMap = film; this.backMat.iridescenceThicknessMap = film; this.backMat.needsUpdate = true; }
     this.faceMat.transparent = glass;
     this.faceMat.opacity = glass ? 0.35 : 1;
     this.faceMat.depthWrite = !glass;
@@ -308,7 +332,7 @@ export class Viewer {
     // the colour ink is the palette's first colour, darker
     if (ink === 'colour') this.uniforms.uInk.value.setRGB(...o.palette[0].map(x => 0.35 * x));
     else this.uniforms.uInk.value.set(ink === 'light' ? 0xeeeeea : 0x1c1c20);
-    if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette)) this.recolour();
+    if (this.mesh && (prev.colouring !== o.colouring || prev.palette !== o.palette || prev.material !== o.material || prev.style !== o.style)) this.recolour();
     // detached faces: new faces when tiles come or go, or gain or lose their thickness
     if (this.mesh && this.tiling() !== this.tiles) { this.shape(); this.setPositions(this.raw); }
     else if (this.mesh && this.tiles && (prev.gap !== o.gap || prev.thick !== o.thick)) this.setPositions(this.raw);
@@ -339,7 +363,7 @@ export class Viewer {
       const key = o.colouring === 'origin' ? m.ftags[f]
         : o.colouring === 'sides' ? sides.indexOf(m.fo[f + 1] - m.fo[f])
         : o.colouring === 'orbit' && this.faceOrbit ? this.faceOrbit[f] : 0;
-      return pal[key % pal.length];
+      return o.material === 'iridescent' && o.style !== 'glass' ? FILM_BASE : pal[key % pal.length];
     };
     let k = 0;
     // a tile takes its face's colour

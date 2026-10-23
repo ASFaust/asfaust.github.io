@@ -9,6 +9,7 @@
 // their winding.
 
 import * as THREE from '../vendor/three.module.min.js';
+import { film, FILM_RANGE } from './viewer.js';
 
 const r6 = x => Math.round(x * 1e6) / 1e6;
 const toBlender = v => [r6(v.x), r6(-v.z), r6(v.y)];
@@ -50,6 +51,9 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
   const data = {
     title,
     verts, faces, colours,
+    // the iridescent film's thickness at each corner, 0 to 1 of filmRange (nanometres)
+    film: o.material === 'iridescent' ? Array.from({ length: p.length / 3 }, (_, i) => r6(film(p[3 * i], p[3 * i + 1], p[3 * i + 2], v.meanEdge))) : null,
+    filmRange: FILM_RANGE,
     // matte, glossy, iridescent; glass and frame are styles that override it
     material: o.style === 'solid' ? o.material : o.style,
     stage, stageColour: rgb(new THREE.Color(o.stage)),
@@ -147,11 +151,19 @@ def shape_material(kind):
         set_input(bsdf, ['Coat Weight', 'Clearcoat'], 1.0)
         set_input(bsdf, ['Coat Roughness', 'Clearcoat Roughness'], 0.08)
     elif kind == 'iridescent':
-        # thin film needs Blender 4.2; before that it is plain metal
+        # a thin film on a dark base, its thickness from the 'film' attribute; thin film needs
+        # Blender 4.2, before that it is a plain dark gloss
         set_input(bsdf, ['Roughness'], 0.2)
-        set_input(bsdf, ['Metallic'], 0.85)
-        set_input(bsdf, ['Thin Film Thickness'], 500.0)
-        set_input(bsdf, ['Thin Film IOR'], 1.8)
+        set_input(bsdf, ['Thin Film IOR'], 1.3)
+        if 'Thin Film Thickness' in bsdf.inputs:
+            film = nodes.new('ShaderNodeAttribute')
+            film.attribute_name = 'film'
+            film.location = (-500, -200)
+            span = nodes.new('ShaderNodeMapRange')
+            span.location = (-300, -200)
+            span.inputs['To Min'].default_value, span.inputs['To Max'].default_value = DATA['filmRange']
+            links.new(film.outputs['Fac'], span.inputs['Value'])
+            links.new(span.outputs['Result'], bsdf.inputs['Thin Film Thickness'])
     elif kind == 'glass':
         set_input(bsdf, ['Roughness'], 0.03)
         set_input(bsdf, ['Transmission Weight', 'Transmission'], 1.0)
@@ -168,6 +180,9 @@ for i, c in enumerate(DATA['colours']):
     colours.data[i].color = (*c, 1.0)
 if DATA['material'] == 'frame':
     shape.visible_shadow = False
+if DATA['film']:
+    film = shape.data.attributes.new('film', 'FLOAT', 'POINT')
+    film.data.foreach_set('value', DATA['film'])
 
 # ---------- the stage ----------
 
