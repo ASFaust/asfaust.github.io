@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Convex Projective Tori</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../../fonts/fonts.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="../../index.html">&larr; Home</a>
+    <h1>Convex Projective Tori</h1>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">☀</button>
+  </nav>
+
+  <main class="app">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="The convex domain. Drag to pan, scroll or pinch to zoom, double-click to fit."></canvas>
+        <div class="status" id="status"></div>
+      </div>
+      <div class="controls">
+        <button id="fitBtn" title="Frame the whole domain">Fit</button>
+        <button id="randBtn" title="Random coordinates">Random</button>
+        <button id="resetBtn" title="All coordinates 1: the hyperbolic torus">Reset</button>
+        <button id="saveBtn" title="Save the image">Save PNG</button>
+        <button id="infoBtn" title="What is this, and how does it work?">Info</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <div class="sidebar">
+    <p class="hint">Drag the image to pan, scroll or pinch to zoom, double-click to fit. The URL holds the current settings, so you can share it.</p>
+
+    <div class="panels">
+      <details open>
+        <summary>Examples</summary>
+        <div class="params">
+          <div class="param wide">
+            <select id="p-preset" aria-label="Example"></select>
+            <p class="note" id="presetNote"></p>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Coordinates</summary>
+        <div class="params">
+          <div class="param wide">
+            <small>The eight Fock–Goncharov coordinates of the punctured torus, on a log scale: a triple ratio for each of its two triangles and two ratios for each of its three edges, one at each end. Any positive values give a discrete group preserving a convex domain. With all of them 1 the domain is a disk, the Klein model of the hyperbolic plane.</small>
+          </div>
+          <div class="param check wide">
+            <label><input type="checkbox" id="p-cusp"> <span>Keep the puncture a cusp</span></label>
+            <small>holds the loop around the puncture unipotent, so the torus has finite area: the triple ratios multiply to 1, and so do the six edge ratios</small>
+          </div>
+          <div id="coords" class="params wide coords"></div>
+          <div class="param wide">
+            <label for="p-scale"><span>Scale all</span><span id="v-scale"></span></label>
+            <small>multiplies every logarithm: 0 is the disk, larger values push the domain towards a triangle</small>
+            <input type="range" id="p-scale" min="0" max="4" step="0.01">
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Drawing</summary>
+        <div class="params">
+          <div class="param check">
+            <label><input type="checkbox" id="p-curve"> <span>Boundary curve</span></label>
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-edges"> <span>Triangulation</span></label>
+          </div>
+          <div class="param">
+            <label for="p-fill"><span>Fill triangles by</span></label>
+            <select id="p-fill">
+              <option value="type">triangle T1 or T2</option>
+              <option value="quarter">quarter of the boundary</option>
+              <option value="depth">depth in the Farey tree</option>
+              <option value="none">nothing</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-tile"><span>Smallest triangle, px</span><span id="v-tile"></span></label>
+            <input type="range" id="p-tile" min="1" max="40" step="0.5">
+          </div>
+          <div class="param check">
+            <label><input type="checkbox" id="p-hilbert"> <span>Hilbert balls</span></label>
+            <small>shades the distance from the centre in the Hilbert metric of Ω</small>
+          </div>
+          <div class="param">
+            <label for="p-hstep"><span>Ball spacing</span><span id="v-hstep"></span></label>
+            <input type="range" id="p-hstep" min="0.05" max="1" step="0.01">
+          </div>
+          <div class="param">
+            <label for="p-eps"><span>Detail ε, px</span><span id="v-eps"></span></label>
+            <input type="range" id="p-eps" min="0.1" max="4" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-lw"><span>Line width</span><span id="v-lw"></span></label>
+            <input type="range" id="p-lw" min="0.25" max="4" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-bg"><span>Background</span></label>
+            <select id="p-bg">
+              <option value="auto">auto</option>
+              <option value="light">light</option>
+              <option value="dark">dark</option>
+            </select>
+          </div>
+          <div class="param">
+            <label for="p-size"><span>Saved image size</span></label>
+            <select id="p-size">
+              <option value="1024">1024 × 1024</option>
+              <option value="2048">2048 × 2048</option>
+              <option value="4096">4096 × 4096</option>
+            </select>
+          </div>
+        </div>
+      </details>
+    </div>
+    </div>
+  </main>
+
+  <dialog class="info" id="infoDialog" aria-labelledby="infoTitle">
+    <div class="info-head">
+      <h2 id="infoTitle">Convex Projective Tori</h2>
+      <button type="button" id="infoClose" aria-label="Close">✕</button>
+    </div>
+    <div class="notes">
+      <p class="lede">The Kleinian limit sets of <em>Indra’s Pearls</em> come from deforming a group of Möbius maps. Here the same punctured torus is deformed in a larger geometry, the projective plane, and its limit set becomes the boundary of a convex domain: a curve that is smooth to first order and nowhere smoother.</p>
+      <h3>From the disk to convex domains</h3>
+      <p>In the Klein model, the hyperbolic plane is a disk, its straight lines are chords and its isometries are the projective maps of the plane that keep the disk in place: matrices in <code>SO(2,1)</code>, a small part of <code>PGL(3,ℝ)</code>. A hyperbolic punctured torus is the disk modulo a group generated by two such maps, <code>a</code> and <code>b</code>. Start with the most symmetric one, the commutator subgroup of the modular group, and move <code>a</code> and <code>b</code> within all of <code>PGL(3,ℝ)</code>. For a whole family of such moves the group still preserves a convex domain Ω and acts on it with the same quotient, now a convex projective torus. Ω is no longer an ellipse: its boundary has a tangent line at every point, but, by results of Benoist for closed surfaces and of Crampon and Marquis for surfaces with cusps, it is far rougher than a conic, which it can only be when the group lies in <code>SO(2,1)</code>. Distances in Ω are measured by its Hilbert metric, for which the group acts by isometries and the chords are the geodesics, as in the disk.</p>
+      <h3>Fock–Goncharov coordinates</h3>
+      <p>Grandma’s recipe in <em>Indra’s Pearls</em> makes two Möbius maps from two traces. The projective analogue is due to Fock and Goncharov. Cut the torus along three edges into two ideal triangles, T1 and T2. In the universal cover these become the Farey tessellation, whose corners are the fractions, and each corner carries a flag: a point of the boundary of Ω together with the tangent line there. Three flags have a projective invariant, the triple ratio, and the two flags at the ends of an edge, with the two across from it, have two cross-ratios, one at each end, of the four lines through that end. Up to the group there is one triple ratio for each triangle and two edge ratios for each edge, eight numbers in all. Fock and Goncharov showed that any eight positive numbers arise, each from exactly one group with its flags, and that this group is discrete and faithful and preserves a convex domain. So unlike the traces of a Kleinian group, every choice works, and the sliders range over all of them.</p>
+      <p>With all eight equal to 1 the flags lie on a conic and Ω is the disk. With the triple ratios 1 and the two ratios of each edge equal, the group stays in <code>SO(2,1)</code>: these are the other hyperbolic tori, the Farey triangles sheared along their edges, and Ω stays an ellipse. Everything else is a genuinely projective torus. The loop <code>ABab</code> around the puncture has eigenvalue ratios <code>z₁z₂⋯z₆</code> and <code>z₁z₂⋯z₆ / (t₁t₂)³</code>, where the <code>z</code> are the edge ratios and the <code>t</code> the triple ratios, so it is unipotent, a cusp as in the hyperbolic torus, exactly when both products are 1. Otherwise the puncture opens into a hole. The fans of triangles at each corner then pile up along a straight piece of the boundary between the two fixed points of a conjugate of the loop, and the limit set of the group, a Cantor set, is what remains of the curve between these gaps.</p>
+      <h3>Drawing the curve</h3>
+      <p>The flag at a fraction follows from its Farey parents: the flags at the two ends of an edge and at the far corner of the triangle beyond it fix the flag at the mediant, given that edge’s two ratios and the next triangle’s triple ratio. Going down the Farey tree in order walks once around the boundary of Ω. Below an edge, the arc of the boundary lies in the triangle formed by the chord and the two tangent lines at its ends, so once each end is closer than ε/4 to the tangent at the other, the chord stands for the arc and the search backs up. The same triangle tells which branches leave the view, so a zoomed picture costs little more than the whole. Each node of the search is a triangle of the tessellation, and with straight sides these tile Ω.</p>
+      <p>Near a cusp the flags of a branch nearly coincide, and building each from the last would soon lose all precision. So the search carries group elements instead. Every Farey edge, seen from one side, is the image of one of six edges near the start, and the matrix that moves it there is updated one letter at a time, much like a word in the Kleinian search. Only the flag at the mediant is moved by that matrix, since the ends of a deep edge may sit near its repelling fixed point, where it would crush them; the ends are handed down from the parents. Around a hole, the triangles of a fan pile up along a straight gap and the chord across it never gets shorter, so a chord that keeps returning unchanged is taken as straight.</p>
+      <h3>The picture</h3>
+      <p>Projective maps keep lines and conics but not angles or lengths, so a picture of Ω depends on the chart. This one divides by a line that misses Ω, the sum of four tangent lines, and then moves Ω by an affine map so that its centroid is at the centre and its second moments are equal, as round as it can be. The Hilbert balls shade the natural metric of Ω, in which the projective maps of the group are isometries and the straight lines are geodesics: the distance from the centre to a point x, where the line through them leaves Ω at a behind the centre and b beyond x, is <code>½ log(|ax| |bc| / (|ac| |bx|))</code>. For the disk this is the hyperbolic metric, with round balls. As Ω tends to a triangle they become hexagons.</p>
+      <h3>Sources</h3>
+      <p>Vladimir Fock and Alexander Goncharov, “Moduli spaces of convex projective structures on surfaces”, <em>Advances in Mathematics</em> 208 (2007). William Goldman, “Convex real projective structures on compact surfaces”, <em>Journal of Differential Geometry</em> 31 (1990). Yves Benoist, “Convexes divisibles I”, in <em>Algebraic Groups and Arithmetic</em> (2004). Mickaël Crampon and Ludovic Marquis, “Finitude géométrique en géométrie de Hilbert”, <em>Annales de l’Institut Fourier</em> 64 (2014). Ludovic Marquis, “Around groups in Hilbert geometry”, in the <em>Handbook of Hilbert Geometry</em> (2014). This page belongs with the <a href="../kleinian/">Kleinian limit sets</a>, as the first of the avenues beyond Möbius maps listed there.</p>
+    </div>
+  </dialog>
+
+  <script>
+    var themeBtn = document.getElementById('themeToggle');
+    function applyTheme() {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = saved === 'dark' || (!saved && prefersDark);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      themeBtn.textContent = dark ? '☾' : '☀';
+    }
+    applyTheme();
+    window.addEventListener('pageshow', applyTheme);
+    themeBtn.addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      var next = isDark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+      themeBtn.textContent = isDark ? '☀' : '☾';
+      document.dispatchEvent(new Event('themechange'));
+    });
+    var info = document.getElementById('infoDialog');
+    document.getElementById('infoBtn').addEventListener('click', function() { info.showModal(); });
+    document.getElementById('infoClose').addEventListener('click', function() { info.close(); });
+    // a click on the backdrop closes the dialog
+    info.addEventListener('click', function(e) { if (e.target === info) info.close(); });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

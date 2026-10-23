@@ -84,6 +84,8 @@ Their boundaries are fractal, a Kleinian analogue of the Mandelbrot set.
 
 ## 5. Convex projective structures: PSL(3,ℝ) ★
 
+*Built: [Convex Projective Tori](../convex_projective/), the punctured torus from its eight Fock–Goncharov coordinates, with the Farey tiling of Ω and its Hilbert balls.*
+
 **Idea.** These are representations of surface groups into PSL(3,ℝ) acting on ℝP², in the Hitchin component and more generally Anosov representations. Each one preserves a strictly convex domain Ω, and its limit set is ∂Ω, a C¹ (not C²) curve. Benoist calls these domains "divisible convex sets".
 
 **Why interesting.** It is the projective analogue of quasi-Fuchsian space: finite-dimensional, explicitly parametrized, and the subject of active research. The images also look unlike Möbius fractals. You get convex curves with fractal *regularity* rather than fractal shape, tilings of Ω by projective polygons, and Hilbert-metric geometry.
