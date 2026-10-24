@@ -412,7 +412,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
 
   const diag = new Float64Array(N), kDiff = new Float64Array(N).fill(P.heatDiffusion), rhs = new Float64Array(N);
   const rain = new Float64Array(N), evap = new Float64Array(N), wMean = new Float64Array(N);
-  const flux = new Float64Array(N), invAR2 = new Float64Array(N);
+  const flux = new Float64Array(N), invAR2 = new Float64Array(N), rkA = new Float64Array(N), rkB = new Float64Array(N);
   const colMass = elev.map(z => Math.exp(-z / P.vapourScaleHeight)), invMass = colMass.map(m => 1 / m);
   for (let i = 0; i < N; i++) invAR2[i] = 1 / (ops.area[i] * R2);
   const wsA = new Float64Array(N), thrA = new Float64Array(N), evA = new Float64Array(N), oroA = new Float64Array(N);
@@ -545,23 +545,37 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       oroA[i] = Math.min(1, P.orographicEfficiency * Math.max(0, upslope[i]) / P.vapourScaleHeight * h);
     }
     rain.fill(0); evap.fill(0); wMean.fill(0);
-    // eddy diffusion of vapour, explicit in flux form so that it conserves water exactly, in as
-    // many stable steps as each substep needs: it has to act alongside transport and rain, or
-    // converging moisture rains out before it can mix. Eddies mix humidity, not column vapour:
-    // a column over high ground holds less air, so x = W/m is mixed, m = e^(−z/H) the column's
-    // share of sea-level air: m ∂x/∂t = ∇·(K m̄ ∇x)
+    // eddy diffusion of vapour, in flux form so that it conserves water exactly, in every
+    // substep: it has to act alongside transport and rain, or converging moisture rains out
+    // before it can mix. Eddies mix humidity, not column vapour: a column over high ground
+    // holds less air, so x = W/m is mixed, m = e^(−z/H) the column's share of sea-level air:
+    // m ∂x/∂t = ∇·(K m̄ ∇x). A substep is longer than a forward step can take, so it is
+    // covered by a Runge–Kutta–Legendre super-step (Meyer et al. 2014): s stages, each a
+    // conservative flux update, stable for (s² + s)/2 times the forward limit
+    const hD = h;
     let worst = 0;
-    for (let i = 0; i < N; i++) worst = Math.max(worst, diffSum[i] * h / R2 / (ops.area[i] * colMass[i]));
-    const nDiff = Math.ceil(worst / 0.8), hd = h / R2 / nDiff;
-    const diffuse = () => {
-      for (let n = 0; n < nDiff; n++) {
-        flux.fill(0);
-        for (let q = 0; q < nEdge; q++) {
-          const a = edgeA[q], b = edgeB[q], F = hd * edgeD[q] * (W[b] * invMass[b] - W[a] * invMass[a]);
-          flux[a] += F; flux[b] -= F;
-        }
-        for (let i = 0; i < N; i++) W[i] = Math.max(0, W[i] + flux[i] / ops.area[i]);
+    for (let i = 0; i < N; i++) worst = Math.max(worst, diffSum[i] * hD / R2 / (ops.area[i] * colMass[i]));
+    let stages = 1;
+    while ((stages * stages + stages) / 2 * 0.9 < worst) stages++;
+    const lapW = (Y, out) => {
+      out.fill(0);
+      for (let q = 0; q < nEdge; q++) {
+        const a = edgeA[q], b = edgeB[q], F = edgeD[q] * (Y[b] * invMass[b] - Y[a] * invMass[a]);
+        out[a] += F; out[b] -= F;
       }
+      for (let i = 0; i < N; i++) out[i] /= ops.area[i];
+    };
+    const diffuse = () => {
+      const w1 = 2 / (stages * stages + stages), tau = hD / R2;
+      // Y₀ = W, Y₁ = Y₀ + w₁ τ L Y₀, Y_j = μ_j Y_{j−1} + ν_j Y_{j−2} + μ_j w₁ τ L Y_{j−1}
+      rkA.set(W); lapW(rkA, flux);
+      for (let i = 0; i < N; i++) rkB[i] = rkA[i] + w1 * tau * flux[i];
+      for (let j = 2; j <= stages; j++) {
+        const mu = (2 * j - 1) / j, nu = -(j - 1) / j;
+        lapW(rkB, flux);
+        for (let i = 0; i < N; i++) { const y = mu * rkB[i] + nu * rkA[i] + mu * w1 * tau * flux[i]; rkA[i] = rkB[i]; rkB[i] = y; }
+      }
+      for (let i = 0; i < N; i++) W[i] = Math.max(0, rkB[i]);
     };
     for (let s = 0; s < sub; s++) {
       diffuse();
