@@ -975,7 +975,7 @@ $('p-example').addEventListener('change', () => {
   for (const [group, list] of EXAMPLES) {
     const g = document.createElement('optgroup');
     g.label = group;
-    for (const [name, link] of list) g.append(new Option(`${name} (${link.match(/^n=([^&]*)/)[1]})`, link));
+    for (const [name, link] of list) g.append(new Option(name, link));
     menu.append(g);
   }
 }
