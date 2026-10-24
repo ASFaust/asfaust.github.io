@@ -100,7 +100,7 @@ const check = (ok, what) => { console.log((ok ? 'ok   ' : 'FAIL ') + what); if (
   const month = (f, m) => f.subarray(m * N, (m + 1) * N);
   const west = box(P, 20, 30, -40, -28), east = box(P, 20, 30, 28, 40);
   check(west < east, `continent, 20–30° N: the west coast is drier than the east, ${west.toFixed(2)} against ${east.toFixed(2)} mm/day`);
-  const wc = box(P, 40, 50, -40, -28), inner = box(P, 40, 50, 15, 30);
+  const wc = box(P, 40, 50, -40, -28), inner = box(P, 40, 50, -10, 10);
   check(inner < wc, `continent, 40–50° N: the interior is drier than the west coast, ${inner.toFixed(2)} against ${wc.toFixed(2)} mm/day`);
   const jul = box(month(res.precipitation, 6), 10, 20, -20, 20), jan = box(month(res.precipitation, 0), 10, 20, -20, 20);
   check(jul > 1.5 * jan, `continent, 10–20° N: a summer monsoon, July ${jul.toFixed(2)} against January ${jan.toFixed(2)} mm/day`);
