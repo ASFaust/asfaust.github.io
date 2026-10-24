@@ -146,7 +146,7 @@ export class Viewer {
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
-      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5,
+      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;

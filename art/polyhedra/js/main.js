@@ -19,7 +19,7 @@ const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false,
-  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5,
+  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom',
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -58,6 +58,8 @@ function sanitize(s) {
     spec: NUM(s.spec, 0, 1, DEFAULTS.spec),
     rough: NUM(s.rough, 0, 1, DEFAULTS.rough),
     ior: NUM(s.ior, 1, 2.5, DEFAULTS.ior),
+    sss: NUM(s.sss, 0, 1, DEFAULTS.sss),
+    look: ONE(s.look, Object.keys(LOOKS), DEFAULTS.look),
     thick: NUM(s.thick, 0, 1, DEFAULTS.thick),
     focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
     spin: typeof s.spin === 'boolean' ? s.spin : DEFAULTS.spin,
@@ -75,7 +77,7 @@ function sanitize(s) {
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', filmBand: 'fb', spin: 'spin',
-  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior',
+  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -610,7 +612,32 @@ function randomText() {
 const IRI_SLIDERS = [['p-filmband', 'filmBand', 1], ['p-ibands', 'iriBands', 2], ['p-iangle', 'iriAngle', 2], ['p-iholo', 'iriHolo', 2],
   ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2]];
 
+// The looks (R1): a choice that sets the appearance controls to a starting point and shows only the
+// ones it uses. The state stays the controls' own, so a link replays exactly whatever was tuned
+// after choosing; custom shows every control. set may be a function of the state.
+const SCULPTED = s => ({ style: 'solid', colouring: 'single', palette: 'custom', custom: [(s.palette === 'custom' && s.colouring === 'single' && s.custom[0]) || '#eeeeea'], ground: s.ground === 'none' ? 'backdrop' : s.ground });
+const LOOKS = {
+  custom: { set: () => ({}), controls: null },
+  paper: { set: () => ({ style: 'frame', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#f7f5f0'], ink: 'dark', lines: 'drawn', edge: 0.3, hidden: 0.25, gap: 0, sss: 0, bg: 'light', ground: 'none' }),
+    controls: ['style', 'tone', 'edge', 'lines', 'depthwidth', 'hidden'] },
+  mathy: { set: () => ({ style: 'solid', material: 'matte', colouring: 'sides', palette: 'generated', ink: 'dark', lines: 'drawn', edge: 0.4, gap: 0, sss: 0 }),
+    controls: ['style', 'colouring', 'palette', 'hue', 'chroma', 'edge', 'lines', 'depthwidth', 'hidden', 'ink'] },
+  sculpture: { set: s => ({ ...SCULPTED(s), material: 'matte', edge: 0, gap: 0, sss: 0.5 }),
+    controls: ['tone', 'sss', 'material', 'edge', 'lines', 'ink'] },
+  tiles: { set: s => ({ ...SCULPTED(s), material: 'matte', edge: 0, gap: 0.15, thick: 0.4, sss: 0.5 }),
+    controls: ['tone', 'sss', 'gap', 'thick', 'colouring', 'palette', 'hue', 'chroma', 'edge', 'lines', 'ink'] },
+  glass: { set: s => ({ style: 'glass', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#ffffff'], edge: 0.2, hidden: 0.3, gap: 0, sss: 0, ground: s.ground === 'none' ? 'backdrop' : s.ground }),
+    controls: ['tone', 'ior', 'edge', 'lines', 'hidden', 'ink'] },
+  iridescent: { set: () => ({ style: 'solid', material: 'iridescent', edge: 0.15, gap: 0, sss: 0 }),
+    controls: ['iri', 'shine', 'hue', 'chroma', 'gap', 'thick', 'edge', 'lines', 'ink'] },
+};
+
 function showLook() {
+  $('p-look').value = st.look;
+  const uses = LOOKS[st.look].controls;
+  for (const el of document.querySelectorAll('[data-k]')) el.classList.toggle('offlook', !!uses && !uses.includes(el.dataset.k));
+  $('p-tone').value = st.palette === 'custom' && st.colouring === 'single' && st.custom[0] ? st.custom[0] : '#eeeeea';
+  $('p-sss').value = st.sss; $('v-sss').textContent = st.sss ? st.sss.toFixed(2) : 'off';
   $('p-material').value = st.material;
   $('p-palette').value = st.palette;
   // iridescent takes its colours from its own wheel (R8): no palette, but hue and chroma, and its
@@ -659,7 +686,7 @@ function showLook() {
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, filmBand: st.filmBand, spin: st.spin,
-    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior,
+    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -749,6 +776,20 @@ function bindLook() {
   look('p-fov', 'fov', el => +el.value);
   look('p-blur', 'blur', el => +(MAX_BLUR * el.value * el.value).toFixed(4));
   look('p-ior', 'ior', el => +el.value);
+  look('p-sss', 'sss', el => +el.value);
+  // a look sets its starting point; the controls then go on from there
+  $('p-look').addEventListener('input', () => {
+    st.look = $('p-look').value;
+    Object.assign(st, LOOKS[st.look].set(st));
+    showLook();
+    writeHash();
+  });
+  // the tone is a one-colour palette
+  $('p-tone').addEventListener('input', () => {
+    Object.assign(st, { colouring: 'single', palette: 'custom', custom: [$('p-tone').value] });
+    showLook();
+    writeHash();
+  });
   look('p-gap', 'gap', el => +el.value);
   for (const [id, key] of IRI_SLIDERS) look(id, key, el => +el.value);
   look('p-thick', 'thick', el => +el.value);

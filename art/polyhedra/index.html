@@ -165,7 +165,30 @@
       <details open>
         <summary>Appearance</summary>
         <div class="params">
-          <div class="param">
+          <div class="param wide">
+            <label for="p-look"><span>Look</span></label>
+            <small>a starting point: each look sets the controls below and shows only the ones it uses; Custom shows them all</small>
+            <select id="p-look">
+              <option value="custom">Custom</option>
+              <option value="paper">Paper drawing</option>
+              <option value="mathy">Mathy</option>
+              <option value="sculpture">Sculpture</option>
+              <option value="tiles">Detached tiles</option>
+              <option value="glass">Glass</option>
+              <option value="iridescent">Iridescent</option>
+            </select>
+          </div>
+          <div class="param" data-k="tone">
+            <label for="p-tone"><span>Tone</span></label>
+            <small>the one colour of the faces</small>
+            <input type="color" id="p-tone">
+          </div>
+          <div class="param" data-k="sss">
+            <label for="p-sss"><span>Subsurface</span><span id="v-sss"></span></label>
+            <small>light that enters the surface and spreads, softening it like wax or marble; with RT and in the Blender scene</small>
+            <input type="range" id="p-sss" min="0" max="1" step="0.05">
+          </div>
+          <div class="param" data-k="style">
             <label for="p-style"><span>Style</span></label>
             <select id="p-style">
               <option value="solid">Solid</option>
@@ -173,12 +196,12 @@
               <option value="frame">Frame (edges only)</option>
             </select>
           </div>
-          <div class="param" id="ior-param">
+          <div class="param" id="ior-param" data-k="ior">
             <label for="p-ior"><span>Refraction</span><span id="v-ior"></span></label>
             <small>glass: the index of refraction, 1 bends nothing, water 1.33, glass 1.5, diamond 2.4; with RT and in the Blender scene</small>
             <input type="range" id="p-ior" min="1" max="2.5" step="0.01">
           </div>
-          <div class="param">
+          <div class="param" data-k="material">
             <label for="p-material"><span>Material</span></label>
             <select id="p-material">
               <option value="matte">Matte</option>
@@ -186,52 +209,52 @@
               <option value="iridescent">Iridescent</option>
             </select>
           </div>
-          <div class="param iri">
+          <div class="param iri" data-k="iri">
             <label for="p-ibands"><span>Bands</span><span id="v-ibands"></span></label>
             <small>iridescent: waves of colour sweeping across the whole shape</small>
             <input type="range" id="p-ibands" min="0" max="2" step="0.05">
           </div>
-          <div class="param iri">
+          <div class="param iri" data-k="iri">
             <label for="p-filmband"><span>Band width</span><span id="v-filmband"></span></label>
             <small>how wide those waves are, in edge lengths</small>
             <input type="range" id="p-filmband" min="0.5" max="10" step="0.1">
           </div>
-          <div class="param iri">
+          <div class="param iri" data-k="iri">
             <label for="p-iangle"><span>Angle</span><span id="v-iangle"></span></label>
             <small>colour that changes as a face turns away from you</small>
             <input type="range" id="p-iangle" min="0" max="2" step="0.05">
           </div>
-          <div class="param iri">
+          <div class="param iri" data-k="iri">
             <label for="p-iholo"><span>Holo</span><span id="v-iholo"></span></label>
             <small>colour from where the view reflects to, like a hologram foil</small>
             <input type="range" id="p-iholo" min="0" max="2" step="0.05">
           </div>
-          <div class="param iri">
+          <div class="param iri" data-k="iri">
             <label for="p-icycles"><span>Cycles</span><span id="v-icycles"></span></label>
             <small>times round the colour wheel for all of the above together</small>
             <input type="range" id="p-icycles" min="0" max="4" step="0.05">
           </div>
-          <div class="param shine">
+          <div class="param shine" data-k="shine">
             <label for="p-spec"><span>Specular</span><span id="v-spec"></span></label>
             <small>shine: highlights and reflections</small>
             <input type="range" id="p-spec" min="0" max="1" step="0.05">
           </div>
-          <div class="param shine">
+          <div class="param shine" data-k="shine">
             <label for="p-rough"><span>Roughness</span><span id="v-rough"></span></label>
             <small>how blurred the shine is</small>
             <input type="range" id="p-rough" min="0" max="1" step="0.05">
           </div>
-          <div class="param">
+          <div class="param" data-k="gap">
             <label for="p-gap"><span>Detach faces</span><span id="v-gap"></span></label>
             <small>shrinks every face towards its centre, so each becomes a tile of its own</small>
             <input type="range" id="p-gap" min="0" max="0.6" step="0.02">
           </div>
-          <div class="param">
+          <div class="param" data-k="thick">
             <label for="p-thick"><span>Tile thickness</span><span id="v-thick"></span></label>
             <small>detached faces as solid slabs, this many edge lengths deep; 0 leaves them flat</small>
             <input type="range" id="p-thick" min="0" max="1" step="0.05">
           </div>
-          <div class="param" id="colouring-param">
+          <div class="param" id="colouring-param" data-k="colouring">
             <label for="p-colouring"><span>Colour faces by</span></label>
             <select id="p-colouring">
               <option value="origin">Origin</option>
@@ -240,7 +263,7 @@
               <option value="single">One colour</option>
             </select>
           </div>
-          <div class="param wide" id="palette-param">
+          <div class="param wide" id="palette-param" data-k="palette">
             <label for="p-palette"><span>Palette</span></label>
             <small>colour k of the palette goes to the k-th kind of face; click a swatch to change it</small>
             <select id="p-palette">
@@ -256,20 +279,20 @@
             </select>
             <div class="swatches"><span id="swatches"></span><button type="button" id="swatch-add" title="Add a colour">+</button><button type="button" id="swatch-remove" title="Remove the last colour">−</button></div>
           </div>
-          <div class="param" id="hue-param">
+          <div class="param" id="hue-param" data-k="hue">
             <label for="p-hue"><span>Hue</span><span id="v-hue"></span></label>
             <input type="range" id="p-hue" min="0" max="359" step="1">
           </div>
-          <div class="param" id="chroma-param">
+          <div class="param" id="chroma-param" data-k="chroma">
             <label for="p-chroma"><span>Chroma</span><span id="v-chroma"></span></label>
             <input type="range" id="p-chroma" min="0" max="0.25" step="0.01">
           </div>
-          <div class="param">
+          <div class="param" data-k="edge">
             <label for="p-edge"><span>Edges</span><span id="v-edge"></span></label>
             <small>width of the lines: relative to the edge length when painted, to the picture otherwise</small>
             <input type="range" id="p-edge" min="0" max="1" step="0.05">
           </div>
-          <div class="param">
+          <div class="param" data-k="lines">
             <label for="p-lines"><span>Edge type</span></label>
             <small>&nbsp;</small>
             <select id="p-lines">
@@ -278,17 +301,17 @@
               <option value="drawn">Drawn on the screen</option>
             </select>
           </div>
-          <div class="param" id="depthwidth-param">
+          <div class="param" id="depthwidth-param" data-k="depthwidth">
             <label for="p-depthwidth"><span>Thinner with depth</span><span id="v-depthwidth"></span></label>
             <small>how much farther lines thin out</small>
             <input type="range" id="p-depthwidth" min="0" max="1" step="0.05">
           </div>
-          <div class="param" id="hidden-param">
+          <div class="param" id="hidden-param" data-k="hidden">
             <label for="p-hidden"><span>Hidden lines</span><span id="v-hidden"></span></label>
             <small>0 leaves out the lines behind, 1 draws them like the others; glass and frame only</small>
             <input type="range" id="p-hidden" min="0" max="1" step="0.05">
           </div>
-          <div class="param">
+          <div class="param" data-k="ink">
             <label for="p-ink"><span>Edge colour</span></label>
             <small>&nbsp;</small>
             <select id="p-ink">

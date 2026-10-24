@@ -124,6 +124,8 @@ summary { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transf
 .row > button { flex: none; }
 .wide { grid-column: 1 / -1; }
 .hidden { display: none; }
+/* controls the chosen look does not use */
+.offlook { display: none; }
 .note { font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); min-height: 1.6em; margin-top: 0.3rem; }
 .note.bad { color: var(--bad); }
 

@@ -16,8 +16,9 @@ const IRI_TRIANGLES = 2e5;
 
 // the traced materials, for the viewer's materials; glass is a style, so it overrides them
 const MATERIALS = {
-  matte: () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
-  glossy: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
+  matte: o => o.sss > 0 ? translucent(o, 1) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
+  glossy: o => o.sss > 0 ? translucent(o, 0.35, { clearcoat: 1, clearcoatRoughness: 0.08 })
+    : new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }),
   // the colour baked into the vertex colours (iridescent() below), with the sliders' shine; with
   // none, fully rough (a specular intensity of 0 gave black specks, from NaNs in the tracer)
   iridescent: o => o.spec > 0 ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: o.rough, metalness: 0, specularIntensity: o.spec })
@@ -70,6 +71,15 @@ function iridescent(v) {
   g.setAttribute('color', new THREE.BufferAttribute(col, 4));
   g.setIndex(new THREE.BufferAttribute(index, 1));
   return g;
+}
+
+// Subsurface scattering, which the tracer does not have, stood in for by part of the light passing
+// into the solid through a frosted surface and being dimmed on its way through: light reaches the
+// shaded side and the creases, as in wax or marble (Blender gets real subsurface scattering).
+function translucent(o, roughness, extra = {}) {
+  return new THREE.MeshPhysicalMaterial({
+    vertexColors: true, metalness: 0, roughness, transmission: 0.4 * o.sss, ior: 1.4, ...extra,
+  });
 }
 
 export class Tracer {

@@ -56,8 +56,8 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
     iri: { ...o.iri, hue: o.hue, chroma: o.chroma, lightness: LIGHTNESS, spec: o.spec, rough: o.rough },
     // matte, glossy, iridescent; glass and frame are styles that override it
     material: o.style === 'solid' ? o.material : o.style,
-    // glass: the index of refraction
-    ior: o.ior,
+    // glass: the index of refraction; matte and glossy: subsurface scattering
+    ior: o.ior, sss: o.sss,
     stage, stageColour: rgb(new THREE.Color(o.stage)),
     background: transparent ? null : rgb(new THREE.Color(o.stage)),
     // the tracer's key light: 3 × 3 units of radiance 7 where the directional light is; Cycles
@@ -200,6 +200,11 @@ def shape_material(kind):
     links.new(colour.outputs['Color'], bsdf.inputs['Base Color'])
     set_input(bsdf, ['Roughness'], 1.0)
     set_input(bsdf, ['Metallic'], 0.0)
+    if kind in ('matte', 'glossy') and DATA['sss'] > 0:
+        # light that enters and spreads a little way, warmer the farther it goes (wax, marble)
+        set_input(bsdf, ['Subsurface Weight', 'Subsurface'], DATA['sss'])
+        set_input(bsdf, ['Subsurface Radius'], (1.0, 0.75, 0.55))
+        set_input(bsdf, ['Subsurface Scale'], 0.3)
     if kind == 'matte':
         set_input(bsdf, ['Specular IOR Level', 'Specular'], 0.0)
     elif kind == 'glossy':
