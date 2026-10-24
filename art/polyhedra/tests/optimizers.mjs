@@ -96,4 +96,23 @@ for (const [text, d] of [['D', 7], ['tD', 13], ['tI', 7]]) {
   expect(shapeDistance(run(steps), run(keep)) < SAME_SHAPE, 'prune tkD: the shorter chain gives another shape');
 }
 
+// The symmetric random start (O1): exactly symmetric under the subgroup asked for, with that
+// point group, different for every seed, and the optimizers after it keep the subgroup only.
+{
+  const want = { all: 'Ih', rot: 'I', face: 'C5v', facerot: 'C5', vertex: 'Cs' };
+  for (const [group, name] of Object.entries(want)) {
+    const S = new Session('tI');
+    S.symmetries();
+    const r = S.run({ opt: 'symmetric', seed: 7, group });
+    expect(r.group === name, `symmetric ${group} on tI: ${r.group}, not ${name}`);
+    expect(asymmetry(S.P.pos, S.sub) < 1e-6, `symmetric ${group}: not symmetric under its subgroup`);
+    S.run({ opt: 'regular' });
+    expect(asymmetry(S.P.pos, S.sub) < 1e-6, `symmetric ${group}, then regular: lost the subgroup`);
+    expect(pointGroup(fitMatrices(S.P.pos, S.sub).Rs) === name, `symmetric ${group}, then regular: not ${name}`);
+  }
+  const a = new Session('tI'); a.symmetries(); a.run({ opt: 'symmetric', seed: 1 });
+  const b = new Session('tI'); b.symmetries(); b.run({ opt: 'symmetric', seed: 2 });
+  expect(shapeDistance(a.P.pos, b.P.pos) > 0.05, 'symmetric: two seeds give the same shape');
+}
+
 finish('optimizers');

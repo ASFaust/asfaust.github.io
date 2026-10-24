@@ -95,6 +95,17 @@
               <button type="button" data-opt="built"><b>As built</b><span>where the operators put them</span></button>
               <button type="button" data-opt="random"><b>Random</b><span>a cloud of random points</span></button>
               <div class="split double">
+                <button type="button" data-opt="symmetric"><b>Symmetric random</b><span>random points, then made symmetric</span></button>
+                <select id="p-subgroup" title="Which symmetries the random points are given, and the optimizers after them keep: all of the shape's, its rotations only, or those of its most symmetric face or vertex">
+                  <option value="all">All symmetries</option>
+                  <option value="rot">Rotations only</option>
+                  <option value="face">Round a face</option>
+                  <option value="facerot">Round a face, rotations</option>
+                  <option value="vertex">Round a vertex</option>
+                  <option value="vertexrot">Round a vertex, rotations</option>
+                </select>
+              </div>
+              <div class="split double">
                 <button type="button" data-opt="spectral"><b>Spectral</b><span>from the graph’s eigenvectors</span></button>
                 <select id="p-matrix" title="The matrix whose eigenvectors place the vertices; on graphs where every vertex has the same number of edges, adjacency, Laplacian and vertex mean give the same layouts">
                   <option value="adjacency">Adjacency</option>

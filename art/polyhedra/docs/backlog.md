@@ -36,7 +36,6 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 | ID | item | done when |
 |---|---|---|
-| O1 | **Symmetry-only optimizer** (owner, 2026-10-23, not fully defined): from a random init, enforce only the symmetry, or a subgroup of it, and nothing else, so non-convexity comes from the start rather than from face pressure and every seed looks different. The owner expects it to be too messy on its own and wants to see it anyway, to learn what then needs forcing. Needs subgroups ([symmetry.md](symmetry.md#open)). Note: from random points the fitted matrices mean nothing, so take the representation from the canonical (or a spectral) shape and project the random points onto it with those fixed matrices; then perhaps follow with Flat faces. → [realization/README.md](realization/README.md#goal-b-artsy-shapes) | Renders over several seeds and subgroups shown to the owner, with notes on what looks wrong. |
 
 **Parked** (do not start without the owner): random weights per symmetry orbit, as a switch next to Whiten ([spectral.md](realization/spectral.md#owners-observations)); per-orbit k for Star faces; the isotoxal star target for `anzD`-like faces ([regular-faces.md](realization/regular-faces.md#open-questions)); the scrape-off morph; spectral leftovers (mirrored duplicates, 4+-dimensional eigenspaces, characters, a sparse solver: [spectral.md](realization/spectral.md#open-parked-only-if-the-owner-finds-a-concrete-need)).
 
@@ -55,6 +54,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-24.** O1 Symmetric random start: random points made exactly symmetric under a chosen subgroup (all, rotations, round a face or vertex), kept by the optimizers after it; 36 sample renders and findings shown to the owner. → [realization/README.md](realization/README.md#goal-b-artsy-shapes)
 - **2026-10-24.** R1 Looks: a Look menu with eleven looks (paper, mathy, sculpture, tiles, glass, iridescent, godrays, tubes, glowing lines, soft, plus custom), each with only its controls; Tone (the site's OKLCh picker), Subsurface, Refraction, Light inside, Fog, Form, Tube width, Rounding, Glow, Metal, Inset. Approved by the owner; no preset left unused; old URLs dropped by the owner. The Examples menu is now Favourites, at the top of Shape. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles)
 - **2026-10-23.** X1 self-intersection test (`js/selfx.js`, `selfX` in `metrics()`), calibrated: 0 on every catalogue shape, many on stellations; X2 survey harness (`tests/survey.mjs`, CSV or JSON, optional screenshots). → [exploration.md](exploration.md#tools)
 - **2026-10-23.** R7 Detached solid faces: *Detach faces* and *Tile thickness* in Appearance (URL `gap`, `thk`); the tiles are drawn, traced, sent to Blender and saved as OBJ/STL in place of the faces (`js/tiles.js`). → [rendering.md](rendering.md#r7-detached-solid-faces)

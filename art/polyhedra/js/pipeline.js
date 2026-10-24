@@ -7,7 +7,7 @@ import { seed } from './seeds.js';
 import { flatten, Realizer } from './canonical.js';
 import { FaceRelaxer } from './faces.js';
 import { Readable } from './readable.js';
-import { automorphisms, symmetrize } from './symmetry.js';
+import { automorphisms, symmetrize, fitMatrices, subgroup, project, pointGroup } from './symmetry.js';
 import { check, topology } from './mesh.js';
 import { adjust, whiten, randomPositions, shake, shapeDistance } from './frame.js';
 import { spectralStarts, density, SPECTRAL_MAX } from './spectral.js';
@@ -25,7 +25,8 @@ const SYM_EVERY = 10;
 // one after another. The inits put the vertices somewhere to start from; shake moves them a little
 // from where they are. Inits and shake take no rounds.
 export const OPTIMIZERS = ['canonical', 'readable', 'regular', 'star', 'affine', 'mean', 'flat', 'stellate', 'edges', 'mix'];
-export const INITS = ['built', 'random', 'spectral'];
+// symmetric: random points made symmetric under a subgroup (O1), which the optimizers then keep
+export const INITS = ['built', 'random', 'symmetric', 'spectral'];
 export const INSTANT = [...INITS, 'shake'];
 // the optimizers of faces.js: detached faces (and edges) with targets
 const FACES = ['regular', 'star', 'affine', 'mean', 'stellate', 'edges', 'mix'];
@@ -149,6 +150,8 @@ export class Session {
     // 'spectral'; a spectral start is exactly symmetric, though often under other matrices than the
     // shape as built, which symmetrize() refits every time
     this.symmetric = true;
+    // the subgroup a symmetric random start keeps, null for the whole group
+    this.sub = null;
     // the spectral starts of each matrix, computed when first asked for
     this.starts = new Map();
     // the operators' construction without relaxation, for readable, built when first needed
@@ -166,13 +169,25 @@ export class Session {
   // An init or a shake, in place. A spectral init returns { spectral: what the page shows }.
   instant(step, onStage) {
     const P = this.P;
-    if (step.opt === 'built') { P.pos.set(this.built); this.symmetric = true; return {}; }
-    if (step.opt === 'random') { randomPositions(P.pos, step.seed); this.symmetric = false; return {}; }
+    if (step.opt === 'built') { P.pos.set(this.built); this.symmetric = true; this.sub = null; return {}; }
+    if (step.opt === 'random') { randomPositions(P.pos, step.seed); this.symmetric = false; this.sub = null; return {}; }
+    if (step.opt === 'symmetric') {
+      // the matrices of the shape as built, where every automorphism is an isometry; fitted to
+      // the random points they would mean nothing
+      randomPositions(P.pos, step.seed);
+      const all = this.maps || this.symmetries().maps;
+      const { maps, Rs } = subgroup(P.faces, all, fitMatrices(this.built, all).Rs, step.group || 'all');
+      project(P.pos, maps, Rs);
+      this.symmetric = true;
+      this.sub = maps;
+      return { group: pointGroup(Rs) };
+    }
     if (step.opt === 'shake') {
       shake(P.pos, this.flat.edges, step.seed);
       // the noise averaged over the symmetries keeps them; without, it breaks them. The matrices
       // are fitted to the shaken shape, so one pass leaves about 1e-5; the next ones make it exact.
-      if (this.symmetric && step.keep !== false && this.maps && this.maps.length > 1) for (let k = 0; k < 3; k++) symmetrize(P.pos, this.maps);
+      const maps = this.sub || this.maps;
+      if (this.symmetric && step.keep !== false && maps && maps.length > 1) for (let k = 0; k < 3; k++) symmetrize(P.pos, maps);
       return {};
     }
     if (P.nv > SPECTRAL_MAX) return { spectral: { tooBig: true } };
@@ -184,6 +199,7 @@ export class Session {
     const index = ((Math.round(step.index || 1) - 1) % list.length + list.length) % list.length + 1, s = list[index - 1];
     P.pos.set(s.pos);
     this.symmetric = true;
+    this.sub = null;
     return { spectral: { index, count: list.length, values: s.values, dims: s.dims, density: s.density, group: s.group } };
   }
 
@@ -192,7 +208,7 @@ export class Session {
     if (step.opt === 'readable' && !this.raw) this.raw = build(this.text, { relax: false }).P.pos;
     return new Realization(this.P, this.flat, step.opt, {
       regularity: step.regularity, pointedness: step.pointedness, weights: step.weights, flags: step.flags,
-      maps: this.symmetric && step.keep !== false ? this.maps : null, rawPos: this.raw,
+      maps: this.symmetric && step.keep !== false ? this.sub || this.maps : null, rawPos: this.raw,
     });
   }
 
@@ -204,8 +220,8 @@ export class Session {
     return R;
   }
 
-  state() { return { pos: Float64Array.from(this.P.pos), symmetric: this.symmetric }; }
-  restore(s) { this.P.pos.set(s.pos); this.symmetric = s.symmetric; }
+  state() { return { pos: Float64Array.from(this.P.pos), symmetric: this.symmetric, sub: this.sub }; }
+  restore(s) { this.P.pos.set(s.pos); this.symmetric = s.symmetric; this.sub = s.sub ?? null; }
 }
 
 // Two shapes count as the same when shapeDistance (frame.js: up to position, size and rotation)

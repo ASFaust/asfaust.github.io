@@ -194,6 +194,46 @@ export function symmetrize(pos, maps) {
   for (let i = 0; i < pos.length; i++) pos[i] = out[i] / g + centre[i % 3];
 }
 
+// ---------- subgroups (O1) ----------
+
+// The subgroups a symmetric random start can keep: all of them; the rotations only; the ones that
+// map the most symmetric face, or vertex, to itself (the polygon's own symmetry, Cnv or Cn round its
+// axis), and their rotations.
+export const SUBGROUPS = ['all', 'rot', 'face', 'facerot', 'vertex', 'vertexrot'];
+
+// The automorphisms of the subgroup kind, with the matrices Rs (fitted to the symmetric shape as
+// built, one per map) that go with them.
+export function subgroup(faces, maps, Rs, kind) {
+  let keep = maps.map((m, k) => k);
+  if (kind.startsWith('face') || kind.startsWith('vertex')) {
+    // the stabilizer of each face (as a set of vertices) or vertex; the largest wins, the first of equals
+    const fixes = kind.startsWith('face')
+      ? faces.map(f => keep.filter(k => { const v = maps[k].v, s = new Set(f); return f.every(i => s.has(v[i])); }))
+      : Array.from(maps[0].v, (_, i) => keep.filter(k => maps[k].v[i] === i));
+    keep = fixes.reduce((a, b) => (b.length > a.length ? b : a));
+  }
+  if (kind === 'rot' || kind.endsWith('rot')) keep = keep.filter(k => det(Rs[k]) > 0);
+  return { maps: keep.map(k => maps[k]), Rs: keep.map(k => Rs[k]) };
+}
+
+// Averages the shape over the given maps with fixed matrices, in place (symmetrize() fits them to
+// the shape instead, which means nothing for random points): each vertex becomes the mean of
+// R⁻¹ x_φ(i), so the result is exactly symmetric under them.
+export function project(pos, maps, Rs) {
+  const n = pos.length / 3, out = new Float64Array(pos.length), c = [0, 0, 0];
+  for (let i = 0; i < pos.length; i++) c[i % 3] += pos[i] / n;
+  for (let k = 0; k < maps.length; k++) {
+    const R = Rs[k], v = maps[k].v;
+    for (let i = 0; i < n; i++) {
+      const j = 3 * v[i], x = pos[j] - c[0], y = pos[j + 1] - c[1], z = pos[j + 2] - c[2];
+      out[3 * i] += R[0] * x + R[3] * y + R[6] * z;
+      out[3 * i + 1] += R[1] * x + R[4] * y + R[7] * z;
+      out[3 * i + 2] += R[2] * x + R[5] * y + R[8] * z;
+    }
+  }
+  for (let i = 0; i < pos.length; i++) pos[i] = out[i] / maps.length;
+}
+
 // ---------- naming the point group ----------
 
 // the unit vector R leaves fixed (s = 1) or flips (s = −1): a null vector of R − sI

@@ -10,6 +10,7 @@ import { obj, stl, download } from './export.js';
 import { EXAMPLES } from './examples.js';
 import { NUM, ONE, POINTED, weightsText, stepsText, parseSteps, flagsText, message } from './chain.js';
 import { blenderScene } from './blender.js';
+import { SUBGROUPS } from './symmetry.js';
 
 const $ = id => document.getElementById(id);
 
@@ -245,6 +246,7 @@ function progressOf(opt, m) {
 // The step a button asks for, from the fields and switches as they are now.
 function stepNow(opt) {
   if (opt === 'random') return { opt, seed: 1 + Math.floor(Math.random() * 999999) };
+  if (opt === 'symmetric') return { opt, seed: 1 + Math.floor(Math.random() * 999999), group: ONE($('p-subgroup').value, SUBGROUPS, 'all') };
   if (opt === 'shake') return { opt, seed: 1 + Math.floor(Math.random() * 999999), ...($('p-keep').checked ? {} : { flags: 'a' }) };
   if (opt === 'spectral') return { opt, index: Math.round(NUM($('p-spectral').value, 1, 9999, 1)), matrix: ONE($('p-matrix').value, MATRICES, 'adjacency') };
   if (opt === 'built') return { opt };
@@ -307,7 +309,7 @@ function setRunning(t) {
 
 const LABEL = {
   canonical: 'Canonical', readable: 'Readable', regular: 'Regular faces', star: 'Star faces', affine: 'Affine faces', mean: 'Face mean', flat: 'Flat faces',
-  stellate: 'Stellate', edges: 'Equal edges', mix: 'Mix', shake: 'Shake', random: 'Random', spectral: 'Spectral', built: 'As built',
+  stellate: 'Stellate', edges: 'Equal edges', mix: 'Mix', shake: 'Shake', random: 'Random', symmetric: 'Symmetric random', spectral: 'Spectral', built: 'As built',
 };
 const MIX_LABEL = {
   flat: 'Flat', regular: 'Regular', star: 'Star', affine: 'Affine', stellate: 'Stellate', mean: 'Face mean', edges: 'Equal edges', tangent: 'Tangent edges', sphere: 'Sphere',
@@ -315,7 +317,7 @@ const MIX_LABEL = {
 const FLAG = { c: 'centred', o: 'orthogonalised', n: 'normalised', w: 'whitened', a: 'no symmetry' };
 function stepLabel(t) {
   return LABEL[t.opt] + (t.opt === 'regular' && t.regularity !== 1 ? ' ' + t.regularity : '')
-    + (POINTED.includes(t.opt) && t.pointedness !== 0.3 ? ' ' + t.pointedness : '') + (t.opt === 'spectral' ? ` ${t.index} (${MATRIX[t.matrix || 'adjacency']})` : '')
+    + (POINTED.includes(t.opt) && t.pointedness !== 0.3 ? ' ' + t.pointedness : '') + (t.opt === 'spectral' ? ` ${t.index} (${MATRIX[t.matrix || 'adjacency']})` : '') + (t.opt === 'symmetric' && t.group && t.group !== 'all' ? ' (' + $('p-subgroup').querySelector(`[value=${t.group}]`).textContent.toLowerCase() + ')' : '')
     + (t.opt === 'mix' ? ' ' + TARGETS.filter(k => t.weights[k] > 0).map(k => MIX_LABEL[k].toLowerCase() + ' ' + t.weights[k]).join(', ') : '')
     + (t.flags ? ', ' + [...t.flags].map(c => FLAG[c]).join(', ') : '')
     + (t.it !== undefined ? `, stopped at ${t.it.toLocaleString('en')}` : '');
@@ -355,6 +357,7 @@ const sci = x => x.toExponential(0).replace('e-', '·10⁻').replace(/\d+$/, d =
 function realizationNote(t, m) {
   const { it, err } = m;
   if (t && t.opt === 'random') return 'Every vertex at a random point; the faces are tangled and bent. An optimizer brings order.';
+  if (t && t.opt === 'symmetric') return `Random points averaged over ${m.group ? 'the symmetry group ' + m.group : 'the symmetries'}, so every copy of a vertex moved the same way; the optimizers after it keep that group and no more. Each click is a new seed.`;
   if (t && t.opt === 'shake') return 'Every vertex moved a little at random' + (t.flags?.includes('a') ? ', the symmetry broken.' : ', the same way in every symmetric copy, so the symmetry stays.') + ' The next optimizer starts from here.';
   if (t && t.opt === 'spectral') return spectralNote(m.spectral, t.matrix);
   if (!t || !err) return 'Vertices where the operators put them; faces need not be flat.';
@@ -878,6 +881,7 @@ $('shareBtn').addEventListener('click', share);
 $('mix-from').addEventListener('click', mixFromLast);
 // another matrix has another list, which starts again from its smoothest layout
 $('p-matrix').addEventListener('change', () => { $('p-spectral').value = 1; optimize('spectral'); });
+$('p-subgroup').addEventListener('change', () => optimize('symmetric'));
 $('swatch-add').addEventListener('click', () => {
   st.custom = [...paletteNow(), paletteNow().at(-1)];
   showLook(); writeHash();
@@ -952,6 +956,7 @@ function load(state) {
     showMix();
   }
   $('p-matrix').value = st.steps.find(t => t.opt === 'spectral')?.matrix ?? 'adjacency';
+  $('p-subgroup').value = st.steps.find(t => t.opt === 'symmetric')?.group ?? 'all';
   showLook();
   $('p-notation').value = st.text;
   run();
