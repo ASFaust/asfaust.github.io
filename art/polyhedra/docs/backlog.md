@@ -8,7 +8,7 @@ When you finish an item: move it to *Done* with the date and one line; put the f
 
 ## Rendering (R): [rendering.md](rendering.md)
 
-Suggested start: R21 (the owner tests RT; R20 and R22 are in); the owner's next priority after rendering is O1, then X8.
+Suggested start: R21 (the owner tests RT; R20 and R22 are in); O1 is in; X8 is next.
 
 | ID | item | done when |
 |---|---|---|
@@ -32,10 +32,7 @@ The tools (X1 self-intersection, X2 survey harness) are built; each question sta
 
 ## Optimizers (O): [realization/README.md](realization/README.md#goal-b-artsy-shapes)
 
-The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One experiment is wanted:
-
-| ID | item | done when |
-|---|---|---|
+The owner has mostly stopped looking for new artsy optimizers (2026-10-23). The one experiment wanted, O1, is built (see Done); what follows from it waits for the owner's verdict on its renders.
 
 **Parked** (do not start without the owner): random weights per symmetry orbit, as a switch next to Whiten ([spectral.md](realization/spectral.md#owners-observations)); per-orbit k for Star faces; the isotoxal star target for `anzD`-like faces ([regular-faces.md](realization/regular-faces.md#open-questions)); the scrape-off morph; spectral leftovers (mirrored duplicates, 4+-dimensional eigenspaces, characters, a sparse solver: [spectral.md](realization/spectral.md#open-parked-only-if-the-owner-finds-a-concrete-need)).
 
