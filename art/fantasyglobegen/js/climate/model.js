@@ -77,6 +77,7 @@ export const EARTH = {
   equatorialWidth: 29.4,     // degrees from the thermal equator where it can
   minCoriolis: 11.4,         // degrees: near the equator the wind turns as if this far out
   frictionOcean: 1.4e-5, frictionLand: 1.6e-5,
+  eqDrag: 0, eqDragLat: 8,   // 1/s of extra drag at the equator, fading over eqDragLat degrees
   maxWind: 25.7,             // m/s
   windMixing: 697e3,         // m: eddies mix momentum this far, so the trades reach the equator
   // moisture
@@ -179,6 +180,10 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     const e = 6 * i + k, j = ops.nbr[e];
     fEdge[e] = P.rotation * (sinLat[i] + sinLat[j]);
     rEdge[e] = 0.5 * ((ocean[i] ? P.frictionOcean : P.frictionLand) + (ocean[j] ? P.frictionOcean : P.frictionLand));
+    // near the equator, where Coriolis fades, the air's own momentum carried in from either
+    // side and mixed down from above slows the flow like extra drag
+    const sl = 0.5 * (sinLat[i] + sinLat[j]) / Math.sin(P.eqDragLat * Math.PI / 180);
+    rEdge[e] += P.eqDrag * Math.exp(-sl * sl);
   }
 
   const phi = new Float64Array(N), un = new Float64Array(E6), wind = new Float64Array(3 * N);
