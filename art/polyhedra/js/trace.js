@@ -22,7 +22,7 @@ const MATERIALS = {
   // none, fully rough (a specular intensity of 0 gave black specks, from NaNs in the tracer)
   iridescent: o => o.spec > 0 ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: o.rough, metalness: 0, specularIntensity: o.spec })
     : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
-  glass: () => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.03, metalness: 0, transmission: 1, ior: 1.5, thickness: 0.05, side: THREE.DoubleSide }),
+  glass: o => new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.03, metalness: 0, transmission: 1, ior: o.ior, thickness: 0.05, side: THREE.DoubleSide }),
 };
 
 // The iridescent faces for the tracer, which takes no custom shaders: every triangle the viewer
@@ -30,7 +30,7 @@ const MATERIALS = {
 // it is now (a trace starts again whenever the camera moves). The terms change smoothly within a
 // face, so a fine enough grid of corners shows no seams.
 function iridescent(v) {
-  const src = v.faces.geometry.attributes, P = src.position.array, Nm = src.normal.array, U = src.film.array, Rg = src.ring.array;
+  const src = v.faces.geometry.attributes, P = src.position.array, Nm = src.normal.array, U = src.film.array;
   const tris = P.length / 9, n = Math.max(1, Math.min(16, Math.floor(Math.sqrt(IRI_TRIANGLES / tris))));
   const per = (n + 1) * (n + 2) / 2;
   const pos = new Float32Array(3 * per * tris), nor = new Float32Array(3 * per * tris), col = new Float32Array(4 * per * tris).fill(1);
@@ -55,8 +55,7 @@ function iridescent(v) {
       c *= s;
       // the reflected view, -V + 2 (N·V) N, with N facing the eye
       const rx = -V.x + 2 * c * s * N.x, ry = -V.y + 2 * c * s * N.y;
-      const ring = Math.hypot(at(Rg, 4, 0), at(Rg, 4, 1), at(Rg, 4, 2)) / Math.max(Rg[4 * a + 3], 1e-9);
-      col.set(iriColour(v.opts, filmT(at(U, 2, 0), at(U, 2, 1)), 1 - c, holoTerm(rx, ry), ring), 4 * q);
+      col.set(iriColour(v.opts, filmT(at(U, 2, 0), at(U, 2, 1)), 1 - c, holoTerm(rx, ry)), 4 * q);
     }
     // the small triangles, counter-clockwise as the big one
     const id = (i, j) => base + i * (n + 1) - i * (i - 1) / 2 + j;

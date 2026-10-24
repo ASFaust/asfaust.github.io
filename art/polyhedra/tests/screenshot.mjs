@@ -9,10 +9,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const [url, out, wait = '4000', ...evals] = process.argv.slice(2);
 const dir = mkdtempSync(join(tmpdir(), 'polyhedra-chrome-'));
-const chrome = spawn('google-chrome', ['--headless=new', '--remote-debugging-port=9333', `--user-data-dir=${dir}`, '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--window-size=1400,900', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+// a port of its own, so a Chrome left over from another run is never the one driven
+const port = 9400 + Math.floor(Math.random() * 500);
+const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--window-size=1400,900', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let tabs;
-for (let i = 0; i < 50; i++) { try { tabs = await (await fetch('http://127.0.0.1:9333/json')).json(); break; } catch { await sleep(200); } }
+for (let i = 0; i < 50; i++) { try { tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); break; } catch { await sleep(200); } }
 const ws = new WebSocket(tabs.find(t => t.type === 'page').webSocketDebuggerUrl);
 await new Promise(r => ws.onopen = r);
 let id = 0; const pending = new Map();

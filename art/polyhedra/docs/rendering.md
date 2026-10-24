@@ -20,6 +20,9 @@ Proposed from the reference renders (session, 2026-10-23; the owner to confirm o
 7. **Soft and organic.** Candy-like, smooth, translucent. `Figure_6.png` (red, depth of field), `Screenshot from 2026-10-21 16-20-56.png` (pale blue, smooth).
 8. **Glass.** `Figure_7.png`.
 9. **Iridescent.** Monochrome in the sense of having no colour controls; the colour comes from thin-film interference and changes like a rainbow *within* a single face (owner). See R8.
+10. **Godrays** (owner, 2026-10-24, from a render of his not in the reference set): detached faces (R7), dark, with a point light at the centre of the shape and fog, so light shafts shoot out between the cracks.
+
+**The owner's verdict on the candidate renders (2026-10-24):** "love them all", so all ten stay. Refinements: white sculpture and white tiles get some subsurface scattering, to soften them; the glowing lines on dark had one more element in his original render, a soft organic shape (as in look 7) inset inside the lines with a metallic material, so the glow is reflected on it; glass gets a refraction index control (done 2026-10-24: *Refraction*, URL `ior`, 1–2.5, shown for the glass style, in RT and Blender; the fast view's fake glass ignores it).
 
 ### The workflow (proposed by a session, confirmed by the owner, 2026-10-23)
 
@@ -43,7 +46,7 @@ The owner's Blender renders from PolyOp, in `PolyOp/polyop_ref/` (outside the we
 |---|---|---|
 | Specular highlights | On a static print of a non-convex shape you ask yourself "why is that face so lit?" Softened later the same day: the owner is not *sure* what looks good; specular is what makes the current metal and iridescent work at all, metal looks bad anyway and can go, and iridescent is wrong as implemented (see R8) | R2 |
 | Colour everywhere | Colourful faces are the mathy look only | R1 |
-| Iridescent has colour controls and uniform faces | It should vary within a face and with the view (reworked 2026-10-23: a mixer of bands, angle, holo and rings) | R8 |
+| Iridescent has colour controls and uniform faces | It should vary within a face and with the view (reworked 2026-10-23: a mixer of bands, angle and holo) | R8 |
 | AO is terrible | GTAO gives smudges and grain at creases; later the same day: remove it, RT does creases | R3 |
 | No depth of field | Wanted for the sculpture and line looks | R4 |
 | Glass and frame are confusing | The back faces are as strong as the front ones; they need attenuating, or depth fog | R5 |
@@ -106,7 +109,9 @@ Done in its small form (2026-10-23): matte, the default, has `specularIntensity`
 **Done (2026-10-23).** **Decided (owner, 2026-10-23):** no AO in the fast view any more; the path tracer (RT) gives creases and contact shadows for real, which is what AO was standing in for. Delete `GTAOPass`, the `EffectComposer` that only exists for it, `placeAO`, the *Occlusion* and *Reach* sliders and their URL keys (`ao`, `aoSize`); old links that carry them must still load. GTAO had been judged "terrible" (smudges and grain at creases). The alternatives considered before this decision, kept for the record: analytic polygon AO (Lambert's formula over the neighbouring faces, noise-free but blind to deep cavities) and baked ray-traced AO per face.
 
 ### R4. Depth of field
-**Done (2026-10-23), in RT and the Blender scene.** Two Scene sliders: *Depth of field* (`blur`, URL `dof`), the lens opening as a fraction of the shape's radius (0 is off, up to 0.5), and *Focus* (`focus`, URL `fo`), the sharp distance from the camera's distance to the shape's centre minus one radius (near side, −1) to plus one (far side). `Viewer.lens()` turns them into an opening and a distance in world units. RT traces through three-gpu-pathtracer's `PhysicalCamera`, a copy of the viewer's camera whose `bokehSize` (millimetres, a thousandth of a world unit) is the opening; Blender gets `dof.focus_distance` and `aperture_fstop = lens × 1e-3 / opening` (Cycles' opening is focal length over f-number). Both give the same blur, checked side by side at 0.5. **Not done:** the fast view stays sharp (live blur would need `BokehPass` and the `EffectComposer`, deleted with GTAO in R3; the owner composes focus with RT on); the drawn lines stay sharp over a blurred picture, in the page and as Freestyle lines in Blender, so with strong blur thinner edges or none look better. *Refs:* `Figure_6.png`, `hfgdhfgjd.png`, `untitlettzd.png`.
+**Done (2026-10-23), in RT and the Blender scene.** Two Scene sliders: *Depth of field* (`blur`, URL `dof`), the lens opening as a fraction of the shape's radius (0 is off, up to 0.5; since 2026-10-24 the slider is the square root of it, so small openings get most of its travel), and *Focus* (`focus`, URL `fo`), the sharp distance from the camera's distance to the shape's centre minus one radius (near side, −1) to plus one (far side). `Viewer.lens()` turns them into an opening and a distance in world units. RT traces through three-gpu-pathtracer's `PhysicalCamera`, a copy of the viewer's camera whose `bokehSize` (millimetres, a thousandth of a world unit) is the opening; Blender gets `dof.focus_distance` and `aperture_fstop = lens × 1e-3 / opening` (Cycles' opening is focal length over f-number). Both give the same blur, checked side by side at 0.5. **Not done:** the fast view stays sharp (live blur would need `BokehPass` and the `EffectComposer`, deleted with GTAO in R3; the owner composes focus with RT on); the drawn lines stay sharp over a blurred picture, in the page and as Freestyle lines in Blender, so with strong blur thinner edges or none look better. *Refs:* `Figure_6.png`, `hfgdhfgjd.png`, `untitlettzd.png`.
+
+*Owner report (2026-10-24): "all blurry no matter what I select".* Not reproduced: at opening 0.08 on `jtJ37` with a backdrop, focus −0.8 (front sharp, back soft) and +0.8 (the reverse) differ as expected, both in RT (headless, about 40 samples, denoiser off) and in Cycles. On the way, a false lead: `tests/screenshot.mjs` used a fixed debugging port, so a Chrome left running by an earlier test was driven instead of a new one, and a new link only changed the hash of the old page; it now takes a random port. Suspects left: the opening's range (0.5 is a very wide lens; at 0.1 the near side is blurred by about 1 % of the picture when focused on the centre), now eased by the square-root slider; and the denoiser, a 5-pixel edge-aware blur that softens everything at any sample count. Waiting for the owner's link.
 
 ### R5. Attenuate what is behind (glass and frame)
 **Closed (owner, 2026-10-23)** without further work: drawn lines (R6) dim or drop the hidden lines in frame and glass, and the owner's glass render (`bbJ29`, earth palette, orbit colours) read well without fog or lighter back faces. Reopen if a render shows the back competing with the front; the ideas below are what would be tried.
@@ -138,7 +143,6 @@ The current edges have a width in world units, so they get thin where a face is 
 | Bands | `ib` | waves across the whole shape, `Band width` (`fb`) edge lengths long: the first version's film thickness | 0–2, 1 |
 | Angle | `ia` | 1 − cos of the angle between the face and the view | 0–2, 1 |
 | Holo | `iho` | where the view reflects to in the world, `0.5 + 0.35 y + 0.25 x`: changes as the shape turns under a still light, like a hologram foil | 0–2, 0 |
-| Rings | `irg` | distance from the face's centre over that of its farthest corner: soft rings on every face | 0–3, 0 |
 | Cycles | `icy` | multiplies the sum: times round the wheel | 0–4, 1 |
 | Specular, Roughness | `sp`, `ro` | the shine (three's `specularIntensity` and `roughness`) | 0–1, 0; 0–1, 0.35 |
 
@@ -148,7 +152,9 @@ phase = hue/360 + cycles × Σ weight × term. Code: `js/film.js` (the terms, th
 - RT: the tracer takes no custom shaders, so `trace.js` subdivides every drawn triangle n × n (up to 200,000 triangles in all) and bakes the colour at the corners for the camera as it is; a trace restarts on every camera move anyway. With no specular it is a `MeshStandardMaterial` of roughness 1, since `specularIntensity` 0 traced black specks (NaNs).
 - Blender: the same in nodes: the UV map `film`, Geometry Normal and Incoming, Texture Coordinate Reflection (z up), a corner attribute `ring`, the OKLCh conversion in math nodes; Specular IOR Level is half the slider (three's 1 is Blender's 0.5).
 
-The three agree (fast view, RT and Cycles on `jtJ37` with rings, holo and specular).
+The three agree (fast view, RT and Cycles on `jtJ37` with holo and specular).
+
+*Rings* (distance from each face's centre, URL `irg`) were a fourth term for a day; the owner removed them on 2026-10-24, and old links with `irg` ignore it.
 
 *History.* First, three's `iridescence` (thin-film interference on the specular) over a near-black base, the thickness per fan corner: the owner liked the idea, but it was very dark away from highlights, especially in RT, he does not like specular much, wanted control of the band frequency, and the fan's triangles showed. Second, a per-pixel thin-film colour lit diffusely: smooth, but it changed too little with the angle and read as a solid colour. Then an exploration of seven approaches side by side (angle to wheel, pearl, soap bubble of one thickness, holographic foil, angle plus bands, bands alone, three's physical film on a glossy base); the owner liked angle, holo and bands equally and asked for all three as sliders, plus rings centred on each face.
 

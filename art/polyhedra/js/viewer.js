@@ -51,15 +51,15 @@ function paintEdges(material, uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 edist;\nvarying vec3 vEdist;\nattribute vec2 film;\nvarying vec2 vFilm;\nattribute vec4 ring;\nvarying vec4 vRing;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdist = edist;\nvFilm = film;\nvRing = ring;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 edist;\nvarying vec3 vEdist;\nattribute vec2 film;\nvarying vec2 vFilm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdist = edist;\nvFilm = film;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nuniform float uScreen;\nuniform float uDepth;\nuniform float uRef;\nuniform float uFilm;\nvarying vec3 vEdist;\nvarying vec2 vFilm;\nvarying vec4 vRing;\n' + IRI_GLSL)
+      .replace('#include <common>', '#include <common>\nuniform vec3 uInk;\nuniform float uWidth;\nuniform float uFrame;\nuniform float uScreen;\nuniform float uDepth;\nuniform float uRef;\nuniform float uFilm;\nvarying vec3 vEdist;\nvarying vec2 vFilm;\n' + IRI_GLSL)
       .replace('#include <color_fragment>', `#include <color_fragment>
         // the iridescent colour, per pixel, from the face's own normal and the view (film.js)
         if (uFilm > 0.5) {
           vec3 V = normalize(-vViewPosition), fn = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
-          diffuseColor.rgb = iriColour(vFilm, dot(fn, V) < 0.0 ? -fn : fn, V, vRing, viewMatrix);
+          diffuseColor.rgb = iriColour(vFilm, dot(fn, V) < 0.0 ? -fn : fn, V, viewMatrix);
         }
         float line = 0.0;
         if (uScreen > 0.5) {
@@ -130,7 +130,7 @@ export class Viewer {
     this.uniforms = {
       uInk: { value: new THREE.Color(0x1c1c20) }, uWidth: { value: 0 }, uFrame: { value: 0 },
       uScreen: { value: 0 }, uDepth: { value: 0 }, uRef: { value: 1 }, uFilm: { value: 0 },
-      uIriW: { value: new THREE.Vector4(1, 1, 0, 0) }, uIriCycles: { value: 1 }, uIriHue: { value: 0 }, uIriChroma: { value: 0.12 },
+      uIriW: { value: new THREE.Vector3(1, 1, 0) }, uIriCycles: { value: 1 }, uIriHue: { value: 0 }, uIriChroma: { value: 0.12 },
     };
     this.faceMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.45, metalness: 0 });
     this.backMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.BackSide });
@@ -146,7 +146,7 @@ export class Viewer {
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
-      iri: { bands: 1, angle: 1, holo: 0, rings: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35,
+      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -189,10 +189,8 @@ export class Viewer {
     for (const name of ['position', 'normal', 'color', 'edist']) {
       g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9 * tris), 3));
     }
-    // the iridescent bands' coordinates at each corner, and the offset from the face's centre with
-    // the distance to its farthest corner (film.js)
+    // the iridescent bands' coordinates at each corner (film.js)
     g.setAttribute('film', new THREE.BufferAttribute(new Float32Array(6 * tris), 2));
-    g.setAttribute('ring', new THREE.BufferAttribute(new Float32Array(12 * tris), 4));
     // the face of every corner, for the face buffer of the drawn lines
     const fid = new Float32Array(3 * tris);
     for (let f = 0, k = 0; f < m.nf; f++) {
@@ -232,12 +230,11 @@ export class Viewer {
     const m = this.shown;
 
     const attr = this.faces.geometry.attributes;
-    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array, ua = attr.film.array, ra = attr.ring.array, band = this.opts.filmBand * this.meanEdge;
-    let o = 0, cx = 0, cy = 0, cz = 0, rad = 0;
+    const pa = attr.position.array, na = attr.normal.array, da = attr.edist.array, ua = attr.film.array, band = this.opts.filmBand * this.meanEdge;
+    let o = 0;
     const put = (x, y, z, nx, ny, nz) => {
       pa[o] = x; pa[o + 1] = y; pa[o + 2] = z; na[o] = nx; na[o + 1] = ny; na[o + 2] = nz;
       ua.set(filmUV(x, y, z, band), 2 * o / 3);
-      ra.set([x - cx, y - cy, z - cz, rad], 4 * o / 3);
       o += 3;
     };
     // the line through sides of the current face, as [point, inward normal within the face]
@@ -247,8 +244,7 @@ export class Viewer {
     for (let f = 0; f < m.nf; f++) {
       const a = m.fo[f], b = m.fo[f + 1], d = b - a;
       const V = k => 3 * m.fv[a + ((k % d) + d) % d];
-      let nx = 0, ny = 0, nz = 0;
-      cx = cy = cz = rad = 0;
+      let nx = 0, ny = 0, nz = 0, cx = 0, cy = 0, cz = 0;
       for (let k = 0; k < d; k++) {
         const u = V(k), w = V(k + 1);
         nx += (p[u + 1] - p[w + 1]) * (p[u + 2] + p[w + 2]);
@@ -258,7 +254,6 @@ export class Viewer {
       }
       const l = Math.hypot(nx, ny, nz) || 1;
       nx /= l; ny /= l; nz /= l; cx /= d; cy /= d; cz /= d;
-      for (let k = 0; k < d; k++) { const u = V(k); rad = Math.max(rad, Math.hypot(p[u] - cx, p[u + 1] - cy, p[u + 2] - cz)); }
       lines.length = 0;
       for (let k = 0; k < d; k++) {
         const u = V(k), w = V(k + 1);
@@ -288,7 +283,7 @@ export class Viewer {
         put(p[w], p[w + 1], p[w + 2], nx, ny, nz); putDist(p[w], p[w + 1], p[w + 2], prev, L, next);
       }
     }
-    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.film.needsUpdate = true; attr.ring.needsUpdate = true;
+    attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.film.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
     this.lines.setPositions(p);
     this.orient();
@@ -318,7 +313,7 @@ export class Viewer {
       this.faceMat.roughness = o.rough;
       this.scene.environmentIntensity = look.env + 0.4 * o.spec;
       const w = o.iri;
-      this.uniforms.uIriW.value.set(w.bands, w.angle, w.holo, w.rings);
+      this.uniforms.uIriW.value.set(w.bands, w.angle, w.holo);
       this.uniforms.uIriCycles.value = w.cycles;
       this.uniforms.uIriHue.value = o.hue / 360;
       this.uniforms.uIriChroma.value = o.chroma;

@@ -27,18 +27,10 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
   const verts = [];
   for (let i = 0; i < p.length; i += 3) verts.push(toBlender(w.set(p[i], p[i + 1], p[i + 2]).applyMatrix4(M)));
   // a face's colour is that of its first corner in the viewer's buffer
-  const faces = [], colours = [], rings = [], ca = v.faces.geometry.attributes.color.array;
+  const faces = [], colours = [], ca = v.faces.geometry.attributes.color.array;
   for (let f = 0, k = 0; f < m.nf; f++) {
     const a = m.fo[f], d = m.fo[f + 1] - a;
     faces.push(Array.from(m.fv.slice(a, a + d)));
-    // the iridescent rings: each corner's offset from the face's centre over the farthest one's
-    if (o.material === 'iridescent') {
-      const c = [0, 0, 0];
-      for (let i = 0; i < d; i++) for (let j = 0; j < 3; j++) c[j] += p[3 * m.fv[a + i] + j] / d;
-      const off = Array.from({ length: d }, (_, i) => [0, 1, 2].map(j => p[3 * m.fv[a + i] + j] - c[j]));
-      const r = Math.max(...off.map(x => Math.hypot(...x))) || 1;
-      rings.push(off.map(x => x.map(y => r6(y / r))));
-    }
     colours.push([r6(ca[k]), r6(ca[k + 1]), r6(ca[k + 2])]);
     k += 9 * (d === 3 ? 1 : d);
   }
@@ -59,12 +51,13 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
   const data = {
     title,
     verts, faces, colours,
-    // the iridescent bands' two coordinates at each vertex, the rings, and the sliders (film.js)
+    // the iridescent bands' two coordinates at each vertex, and the sliders (film.js)
     film: o.material === 'iridescent' ? Array.from({ length: p.length / 3 }, (_, i) => filmUV(p[3 * i], p[3 * i + 1], p[3 * i + 2], o.filmBand * v.meanEdge).map(r6)) : null,
-    rings: o.material === 'iridescent' ? rings : null,
     iri: { ...o.iri, hue: o.hue, chroma: o.chroma, lightness: LIGHTNESS, spec: o.spec, rough: o.rough },
     // matte, glossy, iridescent; glass and frame are styles that override it
     material: o.style === 'solid' ? o.material : o.style,
+    // glass: the index of refraction
+    ior: o.ior,
     stage, stageColour: rgb(new THREE.Color(o.stage)),
     background: transparent ? null : rgb(new THREE.Color(o.stage)),
     // the tracer's key light: 3 × 3 units of radiance 7 where the directional light is; Cycles
@@ -139,7 +132,7 @@ def mesh_object(name, verts, faces, material, collection=None):
 def film_colour(nodes, links):
     """The iridescent colour per pixel, as the page computes it (film.js): a colour wheel at a
     phase mixed from bands (the 'film' UV map), angle (normal and view), holo (the reflection in
-    the world, z up here) and rings (the 'ring' corner attribute)."""
+    the world, z up here)."""
     I = DATA['iri']
     def op(kind, a, b=None):
         m = nodes.new('ShaderNodeMath')
@@ -175,13 +168,7 @@ def film_colour(nodes, links):
     refl = nodes.new('ShaderNodeSeparateXYZ')
     links.new(tex.outputs['Reflection'], refl.inputs[0])
     holo = add(0.5, op('MULTIPLY', 0.35, refl.outputs['Z']), op('MULTIPLY', 0.25, refl.outputs['X']))
-    ring = nodes.new('ShaderNodeAttribute')
-    ring.attribute_name = 'ring'
-    length = nodes.new('ShaderNodeVectorMath')
-    length.operation = 'LENGTH'
-    links.new(ring.outputs['Vector'], length.inputs[0])
-    rings = length.outputs['Value']
-    mix = add(op('MULTIPLY', bands, I['bands']), op('MULTIPLY', angle, I['angle']), op('MULTIPLY', holo, I['holo']), op('MULTIPLY', rings, I['rings']))
+    mix = add(op('MULTIPLY', bands, I['bands']), op('MULTIPLY', angle, I['angle']), op('MULTIPLY', holo, I['holo']))
     h = op('MULTIPLY', op('ADD', op('MULTIPLY', mix, I['cycles']), I['hue'] / 360), tau)
     a = op('MULTIPLY', op('COSINE', h), I['chroma'])
     b = op('MULTIPLY', op('SINE', h), I['chroma'])
@@ -227,7 +214,7 @@ def shape_material(kind):
     elif kind == 'glass':
         set_input(bsdf, ['Roughness'], 0.03)
         set_input(bsdf, ['Transmission Weight', 'Transmission'], 1.0)
-        set_input(bsdf, ['IOR'], 1.5)
+        set_input(bsdf, ['IOR'], DATA['ior'])
     return mat
 
 
@@ -244,11 +231,6 @@ if DATA['film']:
     layer = shape.data.uv_layers.new(name='film')
     for loop in shape.data.loops:
         layer.data[loop.index].uv = DATA['film'][loop.vertex_index]
-if DATA['rings']:
-    ring = shape.data.attributes.new('ring', 'FLOAT_VECTOR', 'CORNER')
-    for poly in shape.data.polygons:
-        for k, li in enumerate(poly.loop_indices):
-            ring.data[li].vector = DATA['rings'][poly.index][k]
 
 # ---------- the stage ----------
 

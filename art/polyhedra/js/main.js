@@ -19,10 +19,12 @@ const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false,
-  iriBands: 1, iriAngle: 1, iriHolo: 0, iriRings: 0, iriCycles: 1, spec: 0, rough: 0.35,
+  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
+// the widest lens opening (depth of field), in units of the shape's radius
+const MAX_BLUR = 0.5;
 // the longest chain of optimizers kept in the URL
 const MAX_STEPS = 24;
 // the most edges the page will build; more makes the browser struggle
@@ -46,16 +48,16 @@ function sanitize(s) {
     hidden: NUM(s.hidden, 0, 1, DEFAULTS.hidden),
     ink: ONE(s.ink, INKS, DEFAULTS.ink),
     fov: Math.round(NUM(s.fov, 2, 70, DEFAULTS.fov)),
-    blur: NUM(s.blur, 0, 0.5, DEFAULTS.blur),
+    blur: NUM(s.blur, 0, MAX_BLUR, DEFAULTS.blur),
     gap: NUM(s.gap, 0, 0.6, DEFAULTS.gap),
     filmBand: NUM(s.filmBand, 0.5, 10, DEFAULTS.filmBand),
     iriBands: NUM(s.iriBands, 0, 2, DEFAULTS.iriBands),
     iriAngle: NUM(s.iriAngle, 0, 2, DEFAULTS.iriAngle),
     iriHolo: NUM(s.iriHolo, 0, 2, DEFAULTS.iriHolo),
-    iriRings: NUM(s.iriRings, 0, 3, DEFAULTS.iriRings),
     iriCycles: NUM(s.iriCycles, 0, 4, DEFAULTS.iriCycles),
     spec: NUM(s.spec, 0, 1, DEFAULTS.spec),
     rough: NUM(s.rough, 0, 1, DEFAULTS.rough),
+    ior: NUM(s.ior, 1, 2.5, DEFAULTS.ior),
     thick: NUM(s.thick, 0, 1, DEFAULTS.thick),
     focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
     spin: typeof s.spin === 'boolean' ? s.spin : DEFAULTS.spin,
@@ -73,7 +75,7 @@ function sanitize(s) {
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', filmBand: 'fb', spin: 'spin',
-  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriRings: 'irg', iriCycles: 'icy', spec: 'sp', rough: 'ro',
+  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -606,7 +608,7 @@ function randomText() {
 
 // the iridescent look's sliders and its shine: [input, state key, digits shown]
 const IRI_SLIDERS = [['p-filmband', 'filmBand', 1], ['p-ibands', 'iriBands', 2], ['p-iangle', 'iriAngle', 2], ['p-iholo', 'iriHolo', 2],
-  ['p-irings', 'iriRings', 2], ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2]];
+  ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2]];
 
 function showLook() {
   $('p-material').value = st.material;
@@ -636,7 +638,10 @@ function showLook() {
   $('p-gap').value = st.gap; $('v-gap').textContent = st.gap ? st.gap.toFixed(2) : 'off';
   $('p-thick').value = st.thick; $('v-thick').textContent = st.thick ? st.thick.toFixed(2) + ' edges' : 'flat';
   $('p-thick').disabled = st.gap === 0;
-  $('p-blur').value = st.blur; $('v-blur').textContent = st.blur ? st.blur.toFixed(2) : 'off';
+  // the slider is the square root of the opening, so that small openings get most of its travel
+  $('p-blur').value = Math.sqrt(st.blur / MAX_BLUR); $('v-blur').textContent = st.blur ? st.blur.toFixed(3) : 'off';
+  $('ior-param').classList.toggle('hidden', st.style !== 'glass');
+  $('p-ior').value = st.ior; $('v-ior').textContent = st.ior.toFixed(2);
   $('p-focus').value = st.focus; $('v-focus').textContent = st.focus === 0 ? 'centre' : (st.focus < 0 ? 'nearer ' : 'farther ') + Math.abs(st.focus).toFixed(2);
   $('p-focus').disabled = st.blur === 0;
   $('p-orient').value = [...$('p-orient').options].some(o => o.value === st.orient) ? st.orient : 'free';
@@ -654,7 +659,7 @@ function showLook() {
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, filmBand: st.filmBand, spin: st.spin,
-    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, rings: st.iriRings, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough,
+    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -742,7 +747,8 @@ function bindLook() {
   look('p-hidden', 'hidden', el => +el.value);
   look('p-ink', 'ink', el => el.value);
   look('p-fov', 'fov', el => +el.value);
-  look('p-blur', 'blur', el => +el.value);
+  look('p-blur', 'blur', el => +(MAX_BLUR * el.value * el.value).toFixed(4));
+  look('p-ior', 'ior', el => +el.value);
   look('p-gap', 'gap', el => +el.value);
   for (const [id, key] of IRI_SLIDERS) look(id, key, el => +el.value);
   look('p-thick', 'thick', el => +el.value);
