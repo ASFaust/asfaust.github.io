@@ -27,8 +27,10 @@
 // or non-finite values, annual precipitation nowhere above 15 mm/day at this scale (the wettest
 // 2.5° boxes on Earth get about 12).
 //
-// The overall score is the mean of the skills, with precipitation counted twice, since it
-// drives what the globe looks like, less smooth penalties for breaking the physical bounds.
+// The overall score weighs the means of the precipitation skills by 0.5, since rain drives
+// what the globe looks like, temperature (land, seasons) by 0.2, wind (pattern, vectors) by
+// 0.15 and Köppen (group, class) by 0.15, less smooth penalties for breaking the physical
+// bounds. Wind counts on its own so a fit can't buy rain with unphysical winds.
 import { buildGrid, restrict, prolong } from '../js/grid.js';
 import { buildOps } from '../js/climate/ops.js';
 import { oceanMask } from '../js/climate/model.js';
@@ -218,11 +220,11 @@ export function score(res, runLevel, prep) {
   r.checks_ok = bad === 0 && r.water_imbalance < 0.02 && r.P_max < 15;
   // overall
   const Pskills = [r.P_corr, r.P_logcorr, r.P_land_logcorr, r.P_skill, r.Pseason, r.Pzonal, r.Pheight, r.Pdist, r.Plength].map(v => Math.max(0, v));
-  const others = [r.T_land_skill, r.Tseason, (r.u_corr + r.v_corr) / 2, r.wind_skill, r.koppen_group, r.koppen_class].map(v => Math.max(0, v));
   r.score_P = Pskills.reduce((a, b) => a + b) / Pskills.length;
-  // smooth penalties: global precipitation off by 10% costs 0.05, 20 mm/day at the wettest
-  // point 0.033, a 1% leak of water 0.02, and any broken value 0.2
-  r.score = (2 * r.score_P + others.reduce((a, b) => a + b) / others.length) / 3
+  r.score_T = (Math.max(0, r.T_land_skill) + Math.max(0, r.Tseason)) / 2;
+  r.score_wind = (Math.max(0, (r.u_corr + r.v_corr) / 2) + Math.max(0, r.wind_skill)) / 2;
+  r.score_koppen = (r.koppen_group + r.koppen_class) / 2;
+  r.score = 0.5 * r.score_P + 0.2 * r.score_T + 0.15 * r.score_wind + 0.15 * r.score_koppen
     - Math.abs(r.P_global / r.P_global_obs - 1) / 2 - Math.max(0, r.P_max / 15 - 1) / 10
     - 2 * r.water_imbalance - (bad ? 0.2 : 0);
   return r;
@@ -231,7 +233,7 @@ export function score(res, runLevel, prep) {
 export function summary(r) {
   const f = (v, d = 3) => (typeof v === 'number' ? v.toFixed(d) : JSON.stringify(v));
   return [
-    `score ${f(r.score)} (precipitation ${f(r.score_P)})${r.checks_ok ? '' : '  CHECKS FAILED'}`,
+    `score ${f(r.score)} (precipitation ${f(r.score_P)}, temperature ${f(r.score_T)}, wind ${f(r.score_wind)}, Köppen ${f(r.score_koppen)})${r.checks_ok ? '' : '  CHECKS FAILED'}`,
     `P  corr ${f(r.P_corr)} log ${f(r.P_logcorr)} land-log ${f(r.P_land_logcorr)} land ${f(r.P_land_corr)} skill ${f(r.P_skill)} season ${f(r.Pseason)} zonal ${f(r.Pzonal)} height ${f(r.Pheight)} dist ${f(r.Pdist)} length ${f(r.Plength)} ${f(r.P_length)} km`,
     `   by height (model, obs) ${f(r.P_by_height)} · dry land ${f(r.dry_land)} · max ${f(r.P_max, 1)}`,
     `T  land skill ${f(r.T_land_skill)} (rmse ${f(r.T_land_rmse, 1)}) all ${f(r.T_skill)} season ${f(r.Tseason)} · wind u ${f(r.u_corr)} v ${f(r.v_corr)} skill ${f(r.wind_skill)} speed ${f(r.wind_speed)}`,

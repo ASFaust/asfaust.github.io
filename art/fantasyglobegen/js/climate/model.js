@@ -94,6 +94,7 @@ export const EARTH = {
   // Earth (tools/metrics.mjs, Plength). The parameters of rain, wind, ocean and ice were
   // fitted to the observed climate at levels 4 and 5 and checked at level 6.
   rainSteep: 8.72, rainR0: 0.51, rhAscent: 0.096, rhDescent: 0.28,
+  rhStable: 0, stableLat: 30, stableZonal: 1, // rain threshold raised by rhStable per 5 K of surface below the tropics' mean, within stableLat
   rhStorm: 0.22, stormGradient: 0.9, // K per 100 km of zonal-mean gradient for full storminess
   orographicEfficiency: 0.54, oroMinRH: 0.88, // air drier than this doesn't rain going uphill
   oroScale: 150e3,           // m: heights smoothed over this for the lift (0: the grid's own)
@@ -228,6 +229,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     }
   }
 
+  let Ttrop = 0;
   function winds() {
     // the thermal equator: the warmest latitude band, held within ±20°
     zonalMean(T, zT);
@@ -236,7 +238,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let shift = ((best + 0.5) / NB - 0.5) * Math.PI;
     shift = Math.max(-20 * deg, Math.min(20 * deg, shift)) * 0.7;
     const [a0, a1, a2, a3] = P.cellPressure;
-    let Ttrop = 0, Wt = 0;
+    Ttrop = 0; let Wt = 0;
     if (P.lnLat > 0) for (let i = 0; i < N; i++) { const w = ops.area[i] / (1 + (sinLat[i] / Math.sin(P.lnLat * deg)) ** 4); Ttrop += T[i] * w; Wt += w; }
     Ttrop /= Wt || 1;
     // the eddy-driven part, the subtropical high and the subpolar low, grows with the storms
@@ -524,8 +526,12 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const Ts = surfT(i);
       wsA[i] = P.wsat0 * Math.exp(0.0641 * Tls[i] - elev[i] / P.vapourScaleHeight);
       // thrA: the rain rate at r = 0 in mm per substep, as a log
+      // a surface colder than the tropics' free troposphere, which is as warm everywhere as
+      // the tropics' surface on average, lies under an inversion: the air above is stable and
+      // shallow clouds can't grow into rain however moist they are
+      const wt = P.lnLat > 0 ? 1 / (1 + (sinLat[i] / Math.sin(P.stableLat * deg)) ** 4) : 0;
       const r0 = P.rainR0 - P.rhAscent * Math.tanh(Math.max(0, -div[i]) * 4 * DAY) + P.rhDescent * Math.tanh(Math.max(0, div[i]) * 4 * DAY)
-        - P.rhStorm * atBand(storm, i);
+        - P.rhStorm * atBand(storm, i) + P.rhStable * wt * Math.max(0, (P.stableZonal ? atBand(zT, i) : Ttrop) - T[i]) / 5;
       thrA[i] = -P.rainSteep * r0 + Math.log(h / DAY);
       let ef = P.evapCoeff * (speed[i] + P.gust) * qsat(Ts) * h;
       if ((!ocean[i] || iceH[i] > 0) && Ts < 0) ef *= 0.2;
