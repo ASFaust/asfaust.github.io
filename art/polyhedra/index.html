@@ -176,6 +176,7 @@
               <option value="tiles">Detached tiles</option>
               <option value="glass">Glass</option>
               <option value="iridescent">Iridescent</option>
+              <option value="godrays">Godrays</option>
             </select>
           </div>
           <div class="param" data-k="tone">
@@ -367,7 +368,18 @@
               <option value="top">Above</option>
               <option value="side">Side</option>
               <option value="rim">Behind</option>
+              <option value="none">None (dark)</option>
             </select>
+          </div>
+          <div class="param">
+            <label for="p-inner"><span>Light inside</span><span id="v-inner"></span></label>
+            <small>a warm light at the centre of the shape, shining out between detached faces</small>
+            <input type="range" id="p-inner" min="0" max="1" step="0.05">
+          </div>
+          <div class="param">
+            <label for="p-fog"><span>Fog</span><span id="v-fog"></span></label>
+            <small>haze round the shape that shows the light's shafts; with RT and in the Blender scene</small>
+            <input type="range" id="p-fog" min="0" max="1" step="0.05">
           </div>
           <div class="param">
             <label for="p-fov"><span>Perspective</span><span id="v-fov"></span></label>

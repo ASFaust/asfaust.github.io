@@ -7,9 +7,10 @@
 // colour as the background. The drawn lines are not traced; the viewer lays them over the result.
 
 import * as THREE from '../vendor/three.module.min.js';
-import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial, PhysicalCamera } from '../vendor/three-gpu-pathtracer.js';
+import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial, PhysicalCamera, FogVolumeMaterial } from '../vendor/three-gpu-pathtracer.js';
 import { FullScreenQuad } from '../vendor/addons/postprocessing/Pass.js';
 import { filmT, holoTerm, iriColour } from './film.js';
+import { FOG_BOX, FOG_DENSITY } from './viewer.js';
 
 // the most triangles the iridescent faces are subdivided into
 const IRI_TRIANGLES = 2e5;
@@ -150,12 +151,30 @@ export class Tracer {
     }
     // the key light: an area light 3 units wide where the directional one is, facing the shape;
     // bright enough to match it at that distance
-    const key = new THREE.RectAreaLight(0xffffff, 7, 3, 3);
-    key.position.copy(v.key.position);
-    key.lookAt(v.key.target.position);
-    scene.add(key);
+    if (o.light !== 'none') {
+      const key = new THREE.RectAreaLight(0xffffff, 7, 3, 3);
+      key.position.copy(v.key.position);
+      key.lookAt(v.key.target.position);
+      scene.add(key);
+    }
     scene.environment = this.sky;
-    scene.environmentIntensity = 0.8;
+    scene.environmentIntensity = o.light === 'none' ? 0.03 : 0.8;
+    // the light inside, at the shape's centre, as bright as the viewer's
+    if (o.inner > 0) {
+      const inner = new THREE.PointLight(v.inner.color, v.inner.intensity, 0, 2);
+      inner.position.copy(v.target);
+      scene.add(inner);
+    }
+    // Fog: a box of scattering medium round the shape and the camera's view of it, which shows
+    // the light's shafts
+    if (o.fog > 0) {
+      // (density set afterwards: the constructor's first pass over the parameters warns about it)
+      const medium = new FogVolumeMaterial({ color: 0xffffff });
+      medium.density = FOG_DENSITY * o.fog;
+      const fog = new THREE.Mesh(new THREE.BoxGeometry(FOG_BOX, FOG_BOX, FOG_BOX), medium);
+      fog.position.copy(v.target);
+      scene.add(fog);
+    }
     // The background as a texture of one colour. The tracer makes such a texture itself from a
     // colour, but only fills it when the colour differs from the texture's default white, so a
     // white background came out black (three-gpu-pathtracer 0.0.23).

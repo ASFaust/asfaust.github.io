@@ -10,6 +10,7 @@
 
 import * as THREE from '../vendor/three.module.min.js';
 import { filmUV, LIGHTNESS } from './film.js';
+import { FOG_BOX, FOG_DENSITY } from './viewer.js';
 
 const r6 = x => Math.round(x * 1e6) / 1e6;
 const toBlender = v => [r6(v.x), r6(-v.z), r6(v.y)];
@@ -62,8 +63,12 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
     background: transparent ? null : rgb(new THREE.Color(o.stage)),
     // the tracer's key light: 3 × 3 units of radiance 7 where the directional light is; Cycles
     // takes an area light's power in watts, radiance × π × area
-    light: { position: toBlender(v.key.position), target: toBlender(v.key.target.position), size: 3, power: r6(7 * Math.PI * 9) },
-    sky: { top: [1, 1, 1], bottom: rgb(new THREE.Color(0x777777)), exponent: 2, strength: 0.8 },
+    light: o.light === 'none' ? null : { position: toBlender(v.key.position), target: toBlender(v.key.target.position), size: 3, power: r6(7 * Math.PI * 9) },
+    // the light inside: three's point light of intensity I (W/sr here) is a Cycles point light of
+    // 4π I watts; the fog: a box of scattering medium, as the tracer's
+    inner: o.inner > 0 ? { position: toBlender(v.target), power: r6(4 * Math.PI * v.inner.intensity), colour: rgb(v.inner.color) } : null,
+    fog: o.fog > 0 ? { position: toBlender(v.target), size: FOG_BOX, density: r6(FOG_DENSITY * o.fog) } : null,
+    sky: { top: [1, 1, 1], bottom: rgb(new THREE.Color(0x777777)), exponent: 2, strength: o.light === 'none' ? 0.03 : 0.8 },
     camera: { position: toBlender(c.position), target: toBlender(v.target), fov: c.fov, near: r6(c.near), far: r6(c.far) },
     // depth of field: the lens opening and the sharp distance, in scene units
     lens: (({ diameter, distance }) => ({ diameter: r6(diameter), distance: r6(distance) }))(v.lens()),
@@ -255,13 +260,38 @@ if DATA['stage']:
 # ---------- light and sky ----------
 
 L = DATA['light']
-light = bpy.data.lights.new('Key', 'AREA')
-light.shape = 'SQUARE'
-light.size = L['size']
-light.energy = L['power']
-key = bpy.data.objects.new('Key', light)
-scene.collection.objects.link(key)
-look_at(key, L['position'], L['target'])
+if L:
+    light = bpy.data.lights.new('Key', 'AREA')
+    light.shape = 'SQUARE'
+    light.size = L['size']
+    light.energy = L['power']
+    key = bpy.data.objects.new('Key', light)
+    scene.collection.objects.link(key)
+    look_at(key, L['position'], L['target'])
+
+# the light inside the shape, and fog round it to show its shafts
+if DATA['inner']:
+    I = DATA['inner']
+    inner = bpy.data.lights.new('Inside', 'POINT')
+    inner.energy = I['power']
+    inner.color = I['colour']
+    inner.shadow_soft_size = 0.01
+    ob = bpy.data.objects.new('Inside', inner)
+    ob.location = I['position']
+    scene.collection.objects.link(ob)
+if DATA['fog']:
+    F = DATA['fog']
+    h = F['size'] / 2
+    box = [(x, y, z) for x in (-h, h) for y in (-h, h) for z in (-h, h)]
+    sides = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    mat = bpy.data.materials.new('Fog')
+    use_nodes(mat)
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    nodes.remove(nodes['Principled BSDF'])
+    vol = nodes.new('ShaderNodeVolumePrincipled')
+    vol.inputs['Density'].default_value = F['density']
+    links.new(vol.outputs[0], nodes['Material Output'].inputs['Volume'])
+    fog = mesh_object('Fog', [(x + F['position'][0], y + F['position'][1], z + F['position'][2]) for x, y, z in box], sides, mat)
 
 # the sky lights the scene (white above, grey below); the camera sees the background colour
 world = bpy.data.worlds.new('Sky')

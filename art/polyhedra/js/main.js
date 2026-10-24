@@ -19,7 +19,7 @@ const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false,
-  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom',
+  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom', inner: 0, fog: 0,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -59,6 +59,8 @@ function sanitize(s) {
     rough: NUM(s.rough, 0, 1, DEFAULTS.rough),
     ior: NUM(s.ior, 1, 2.5, DEFAULTS.ior),
     sss: NUM(s.sss, 0, 1, DEFAULTS.sss),
+    inner: NUM(s.inner, 0, 1, DEFAULTS.inner),
+    fog: NUM(s.fog, 0, 1, DEFAULTS.fog),
     look: ONE(s.look, Object.keys(LOOKS), DEFAULTS.look),
     thick: NUM(s.thick, 0, 1, DEFAULTS.thick),
     focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
@@ -77,7 +79,7 @@ function sanitize(s) {
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', filmBand: 'fb', spin: 'spin',
-  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk',
+  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk', inner: 'in', fog: 'fog',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -630,6 +632,9 @@ const LOOKS = {
     controls: ['tone', 'ior', 'edge', 'lines', 'hidden', 'ink'] },
   iridescent: { set: () => ({ style: 'solid', material: 'iridescent', edge: 0.15, gap: 0, sss: 0 }),
     controls: ['iri', 'shine', 'hue', 'chroma', 'gap', 'thick', 'edge', 'lines', 'ink'] },
+  // dark tiles round a light, in fog: shafts of light between the cracks (owner, 2026-10-24)
+  godrays: { set: () => ({ style: 'solid', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#2a2a2e'], edge: 0, gap: 0.1, thick: 0.3, sss: 0, ground: 'none', bg: 'dark', light: 'none', inner: 0.8, fog: 0.5 }),
+    controls: ['tone', 'gap', 'thick', 'material', 'edge', 'lines', 'ink'] },
 };
 
 function showLook() {
@@ -638,6 +643,8 @@ function showLook() {
   for (const el of document.querySelectorAll('[data-k]')) el.classList.toggle('offlook', !!uses && !uses.includes(el.dataset.k));
   $('p-tone').value = st.palette === 'custom' && st.colouring === 'single' && st.custom[0] ? st.custom[0] : '#eeeeea';
   $('p-sss').value = st.sss; $('v-sss').textContent = st.sss ? st.sss.toFixed(2) : 'off';
+  $('p-inner').value = st.inner; $('v-inner').textContent = st.inner ? st.inner.toFixed(2) : 'off';
+  $('p-fog').value = st.fog; $('v-fog').textContent = st.fog ? st.fog.toFixed(2) : 'off';
   $('p-material').value = st.material;
   $('p-palette').value = st.palette;
   // iridescent takes its colours from its own wheel (R8): no palette, but hue and chroma, and its
@@ -686,7 +693,7 @@ function showLook() {
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, filmBand: st.filmBand, spin: st.spin,
-    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss,
+    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss, inner: st.inner, fog: st.fog,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -777,9 +784,14 @@ function bindLook() {
   look('p-blur', 'blur', el => +(MAX_BLUR * el.value * el.value).toFixed(4));
   look('p-ior', 'ior', el => +el.value);
   look('p-sss', 'sss', el => +el.value);
+  look('p-inner', 'inner', el => +el.value);
+  look('p-fog', 'fog', el => +el.value);
   // a look sets its starting point; the controls then go on from there
   $('p-look').addEventListener('input', () => {
+    const from = st.look;
     st.look = $('p-look').value;
+    // the godrays' dark stage is the look's own, so leaving it brings the light back
+    if (from === 'godrays' && st.look !== 'godrays') Object.assign(st, { light: 'soft', inner: 0, fog: 0 });
     Object.assign(st, LOOKS[st.look].set(st));
     showLook();
     writeHash();

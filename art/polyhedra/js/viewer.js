@@ -30,9 +30,15 @@ const HOME = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, -0.5, 0))
 export const GROUNDS = ['none', 'floor', 'backdrop'];
 // where the key light comes from, in the camera's frame turned only about the vertical (x right,
 // y up, z towards the camera), so a preset keeps its place in the picture as the camera goes round
-const LIGHTS = { soft: [-2, 3, 4], top: [0.3, 4, 0.8], side: [-4, 1.2, 0.6], rim: [1.5, 2.5, -3] };
+// none: no key light and almost no sky, for a light inside the shape (godrays)
+const LIGHTS = { soft: [-2, 3, 4], top: [0.3, 4, 0.8], side: [-4, 1.2, 0.6], rim: [1.5, 2.5, -3], none: null };
 export const LIGHT_NAMES = Object.keys(LIGHTS);
 const DEG = Math.PI / 180;
+// the fog of RT and the Blender scene: a box this wide (world units: the shape fits the unit
+// sphere) round the shape, and its density at full strength
+export const FOG_BOX = 8, FOG_DENSITY = 0.6;
+// the light inside at full strength (candela, falling off with the square of the distance)
+const INNER = 36;
 // the iridescent film carries its own colour (the path tracer multiplies its texture by this)
 const WHITE = [1, 1, 1];
 // Render: trace after this long without a change, up to this many samples
@@ -97,7 +103,10 @@ export class Viewer {
     Object.assign(this.key.shadow.camera, { left: -1.6, right: 1.6, top: 1.6, bottom: -1.6, near: 1, far: 14 });
     this.key.shadow.mapSize.set(2048, 2048);
     this.key.shadow.bias = -0.0005;
-    this.scene.add(this.key, this.key.target, new THREE.HemisphereLight(0xffffff, 0x888888, 0.5));
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 0.5);
+    // a warm point light at the shape's centre (Scene: Light inside)
+    this.inner = new THREE.PointLight(0xffe8cc, 0, 0, 2);
+    this.scene.add(this.key, this.key.target, this.hemi, this.inner);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -146,7 +155,7 @@ export class Viewer {
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
-      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0,
+      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0, inner: 0, fog: 0,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -303,7 +312,7 @@ export class Viewer {
     for (const k of ['roughness', 'metalness', 'specularIntensity', 'clearcoat', 'clearcoatRoughness', 'iridescence', 'iridescenceIOR', 'iridescenceThicknessRange']) {
       if (look[k] !== undefined) { this.faceMat[k] = look[k]; if (k !== 'roughness') this.backMat[k] = look[k]; }
     }
-    this.scene.environmentIntensity = look.env;
+    this.scene.environmentIntensity = look.env * (o.light === 'none' ? 0.1 : 1);
     const iri = o.material === 'iridescent' && !glass;
     this.uniforms.uFilm.value = iri ? 1 : 0;
     if (o.material === 'iridescent') {
@@ -311,7 +320,7 @@ export class Viewer {
       // comes with it
       this.faceMat.specularIntensity = this.backMat.specularIntensity = o.spec;
       this.faceMat.roughness = o.rough;
-      this.scene.environmentIntensity = look.env + 0.4 * o.spec;
+      this.scene.environmentIntensity = (look.env + 0.4 * o.spec) * (o.light === 'none' ? 0.1 : 1);
       const w = o.iri;
       this.uniforms.uIriW.value.set(w.bands, w.angle, w.holo);
       this.uniforms.uIriCycles.value = w.cycles;
@@ -476,10 +485,15 @@ export class Viewer {
     this.wall.visible = o.ground === 'backdrop';
     this.wall.rotation.y = az;
     this.scene.background = on ? new THREE.Color(o.stage) : null;
-    const k = LIGHTS[o.light] || LIGHTS.soft;
+    const dark = o.light === 'none', k = LIGHTS[o.light] || LIGHTS.soft;
     this.key.position.set(k[0], k[1], k[2]).applyAxisAngle(new THREE.Vector3(0, 1, 0), az).add(this.target);
     this.key.target.position.copy(this.target);
     this.key.castShadow = on;
+    this.key.intensity = dark ? 0 : 1.6;
+    this.hemi.intensity = dark ? 0.04 : 0.5;
+    this.inner.position.copy(this.target);
+    this.inner.intensity = INNER * o.inner;
+    this.inner.visible = o.inner > 0;
   }
 
   placeCamera(aspect) {
