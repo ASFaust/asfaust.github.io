@@ -19,7 +19,7 @@ const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false,
-  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom', inner: 0, fog: 0,
+  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom', inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -61,6 +61,12 @@ function sanitize(s) {
     sss: NUM(s.sss, 0, 1, DEFAULTS.sss),
     inner: NUM(s.inner, 0, 1, DEFAULTS.inner),
     fog: NUM(s.fog, 0, 1, DEFAULTS.fog),
+    form: ONE(s.form, ['faces', 'soft', 'tubes'], DEFAULTS.form),
+    tubeWidth: NUM(s.tubeWidth, 0.01, 0.4, DEFAULTS.tubeWidth),
+    tubeSmooth: Math.round(NUM(s.tubeSmooth, 0, 2, DEFAULTS.tubeSmooth)),
+    glow: NUM(s.glow, 0, 1, DEFAULTS.glow),
+    metal: NUM(s.metal, 0, 1, DEFAULTS.metal),
+    inset: NUM(s.inset, 0, 0.95, DEFAULTS.inset),
     look: ONE(s.look, Object.keys(LOOKS), DEFAULTS.look),
     thick: NUM(s.thick, 0, 1, DEFAULTS.thick),
     focus: NUM(s.focus, -1, 1, DEFAULTS.focus),
@@ -79,7 +85,7 @@ function sanitize(s) {
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', filmBand: 'fb', spin: 'spin',
-  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk', inner: 'in', fog: 'fog',
+  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk', inner: 'in', fog: 'fog', form: 'fm', tubeWidth: 'tw', tubeSmooth: 'tr', glow: 'gl', metal: 'mt', inset: 'ins',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -612,7 +618,8 @@ function randomText() {
 
 // the iridescent look's sliders and its shine: [input, state key, digits shown]
 const IRI_SLIDERS = [['p-filmband', 'filmBand', 1], ['p-ibands', 'iriBands', 2], ['p-iangle', 'iriAngle', 2], ['p-iholo', 'iriHolo', 2],
-  ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2]];
+  ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2],
+  ['p-tubewidth', 'tubeWidth', 2], ['p-tubesmooth', 'tubeSmooth', 0], ['p-glow', 'glow', 2], ['p-metal', 'metal', 2], ['p-inset', 'inset', 2]];
 
 // The looks (R1): a choice that sets the appearance controls to a starting point and shows only the
 // ones it uses. The state stays the controls' own, so a link replays exactly whatever was tuned
@@ -631,11 +638,22 @@ const LOOKS = {
   glass: { set: s => ({ style: 'glass', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#ffffff'], edge: 0.2, hidden: 0.3, gap: 0, sss: 0, ground: s.ground === 'none' ? 'backdrop' : s.ground }),
     controls: ['tone', 'ior', 'edge', 'lines', 'hidden', 'ink'] },
   iridescent: { set: () => ({ style: 'solid', material: 'iridescent', edge: 0.15, gap: 0, sss: 0 }),
-    controls: ['iri', 'shine', 'hue', 'chroma', 'gap', 'thick', 'edge', 'lines', 'ink'] },
+    controls: ['iri', 'shine', 'rough', 'hue', 'chroma', 'gap', 'thick', 'edge', 'lines', 'ink'] },
   // dark tiles round a light, in fog: shafts of light between the cracks (owner, 2026-10-24)
   godrays: { set: () => ({ style: 'solid', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#2a2a2e'], edge: 0, gap: 0.1, thick: 0.3, sss: 0, ground: 'none', bg: 'dark', light: 'none', inner: 0.8, fog: 0.5 }),
     controls: ['tone', 'gap', 'thick', 'material', 'edge', 'lines', 'ink'] },
+  // smooth tubes along the edges, gold (R13)
+  tubes: { set: s => ({ ...SCULPTED(s), custom: ['#e2a84a'], form: 'tubes', tubeWidth: 0.15, tubeSmooth: 2, metal: 1, rough: 0.25, edge: 0, gap: 0, sss: 0 }),
+    controls: ['tone', 'tubewidth', 'tubesmooth', 'metal', 'rough'] },
+  // thin glowing tubes on dark round a smooth metallic body that reflects them
+  glow: { set: () => ({ style: 'solid', colouring: 'single', palette: 'custom', custom: ['#9fd4ff'], form: 'tubes', tubeWidth: 0.025, tubeSmooth: 0, glow: 0.6, metal: 0, rough: 0.35, inset: 0.75, edge: 0, gap: 0, sss: 0, ground: 'none', bg: 'dark', light: 'none' }),
+    controls: ['tone', 'tubewidth', 'tubesmooth', 'glow', 'inset'] },
+  // the faces smoothed into a soft, waxy body (R14, R15)
+  soft: { set: s => ({ ...SCULPTED(s), custom: ['#d6382b'], material: 'glossy', form: 'soft', metal: 0, rough: 0.35, edge: 0, gap: 0, sss: 0.6 }),
+    controls: ['tone', 'sss', 'material', 'metal', 'rough'] },
 };
+// what the looks with their own form or stage leave behind is undone by the others
+const PLAIN = { form: 'faces', glow: 0, inset: 0, metal: 0 };
 
 function showLook() {
   $('p-look').value = st.look;
@@ -653,6 +671,10 @@ function showLook() {
   for (const id of ['colouring-param', 'palette-param']) $(id).classList.toggle('hidden', film);
   for (const el of document.querySelectorAll('.iri')) el.classList.toggle('hidden', !film);
   for (const el of document.querySelectorAll('.shine')) el.classList.toggle('hidden', st.material !== 'iridescent');
+  $('rough-param').classList.toggle('hidden', st.material !== 'iridescent' && st.form === 'faces');
+  $('p-form').value = st.form;
+  for (const id of ['p-tubewidth', 'p-tubesmooth', 'p-glow']) $(id).closest('.param').classList.toggle('hidden', st.form !== 'tubes');
+  $('p-metal').closest('.param').classList.toggle('hidden', st.form === 'faces');
   for (const [id, key, digits] of IRI_SLIDERS) { $(id).value = st[key]; $('v' + id.slice(1)).textContent = st[key].toFixed(digits); }
   for (const id of ['hue-param', 'chroma-param']) $(id).classList.toggle('hidden', !film && st.palette !== 'generated');
   $('p-style').value = st.style;
@@ -693,7 +715,7 @@ function showLook() {
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, filmBand: st.filmBand, spin: st.spin,
-    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss, inner: st.inner, fog: st.fog,
+    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss, inner: st.inner, fog: st.fog, form: st.form, tubeWidth: st.tubeWidth, tubeSmooth: st.tubeSmooth, glow: st.glow, metal: st.metal, inset: st.inset,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -786,12 +808,14 @@ function bindLook() {
   look('p-sss', 'sss', el => +el.value);
   look('p-inner', 'inner', el => +el.value);
   look('p-fog', 'fog', el => +el.value);
+  look('p-form', 'form', el => el.value);
   // a look sets its starting point; the controls then go on from there
   $('p-look').addEventListener('input', () => {
     const from = st.look;
     st.look = $('p-look').value;
     // the godrays' dark stage is the look's own, so leaving it brings the light back
-    if (from === 'godrays' && st.look !== 'godrays') Object.assign(st, { light: 'soft', inner: 0, fog: 0 });
+    if (['godrays', 'glow'].includes(from) && !['godrays', 'glow', 'custom'].includes(st.look)) Object.assign(st, { light: 'soft', inner: 0, fog: 0 });
+    if (st.look !== 'custom') Object.assign(st, PLAIN);
     Object.assign(st, LOOKS[st.look].set(st));
     showLook();
     writeHash();

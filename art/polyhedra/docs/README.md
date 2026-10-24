@@ -81,6 +81,7 @@ js/symmetry.js            automorphisms(), fitMatrices(), symmetrize(), pointGro
 js/viewer.js              three.js scene, painted-edges shader, materials, palette colouring, export render
 js/selfx.js               selfIntersections(): which pairs of faces pass through each other (X1)
 js/tiles.js               detached faces (R7): the tiles' faces and positions
+js/forms.js               other forms (R1): Catmull–Clark smoothing and the edge lattice for tubes
 js/film.js                the iridescent colour (R8): bands, angle, holo and rings on a colour wheel, in JS and GLSL
 js/lines.js               edges drawn on the screen: face-ID buffer, capsule lines, ink composite
 js/blender.js             the Blender scene script: the RT scene as data plus Python that builds it for Cycles

@@ -177,7 +177,44 @@
               <option value="glass">Glass</option>
               <option value="iridescent">Iridescent</option>
               <option value="godrays">Godrays</option>
+              <option value="tubes">Tubes</option>
+              <option value="glow">Glowing lines</option>
+              <option value="soft">Soft</option>
             </select>
+          </div>
+          <div class="param" data-k="form">
+            <label for="p-form"><span>Form</span></label>
+            <small>the faces as they are, smoothed into a soft body, or tubes along the edges</small>
+            <select id="p-form">
+              <option value="faces">Faces</option>
+              <option value="soft">Soft (smoothed)</option>
+              <option value="tubes">Tubes</option>
+            </select>
+          </div>
+          <div class="param" data-k="tubewidth">
+            <label for="p-tubewidth"><span>Tube width</span><span id="v-tubewidth"></span></label>
+            <small>in edge lengths</small>
+            <input type="range" id="p-tubewidth" min="0.01" max="0.4" step="0.01">
+          </div>
+          <div class="param" data-k="tubesmooth">
+            <label for="p-tubesmooth"><span>Rounding</span><span id="v-tubesmooth"></span></label>
+            <small>0: straight square bars; 1–2: smoothed into round, organic tubes that web out where edges meet</small>
+            <input type="range" id="p-tubesmooth" min="0" max="2" step="1">
+          </div>
+          <div class="param" data-k="glow">
+            <label for="p-glow"><span>Glow</span><span id="v-glow"></span></label>
+            <small>the tubes give off light in their colour</small>
+            <input type="range" id="p-glow" min="0" max="1" step="0.05">
+          </div>
+          <div class="param" data-k="metal">
+            <label for="p-metal"><span>Metal</span><span id="v-metal"></span></label>
+            <small>how metallic the soft body or the tubes are</small>
+            <input type="range" id="p-metal" min="0" max="1" step="0.05">
+          </div>
+          <div class="param" data-k="inset">
+            <label for="p-inset"><span>Inset</span><span id="v-inset"></span></label>
+            <small>a smooth metallic body inside, this fraction of the size, that reflects the glow</small>
+            <input type="range" id="p-inset" min="0" max="0.95" step="0.05">
           </div>
           <div class="param" data-k="tone">
             <label for="p-tone"><span>Tone</span></label>
@@ -240,7 +277,7 @@
             <small>shine: highlights and reflections</small>
             <input type="range" id="p-spec" min="0" max="1" step="0.05">
           </div>
-          <div class="param shine" data-k="shine">
+          <div class="param" id="rough-param" data-k="rough">
             <label for="p-rough"><span>Roughness</span><span id="v-rough"></span></label>
             <small>how blurred the shine is</small>
             <input type="range" id="p-rough" min="0" max="1" step="0.05">

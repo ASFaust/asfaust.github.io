@@ -76,6 +76,15 @@ export function sceneData(v, { size, samples, denoise, transparent, title }) {
     lines: o.edge > 0 ? { width: r6(o.edge * 0.01 * size), ink: rgb(v.uniforms.uInk.value), hidden: o.style === 'solid' ? 0 : o.hidden } : null,
     size, samples, denoise,
   };
+  // the other forms (forms.js): their quads in place of the faces, smooth shaded, and the inset
+  const mesh = d => ({ verts: Array.from({ length: d.pos.length / 3 }, (_, i) => toBlender(w.set(d.pos[3 * i], d.pos[3 * i + 1], d.pos[3 * i + 2]).applyMatrix4(M))), faces: d.faces });
+  data.form = null;
+  if (o.form !== 'faces' && v.formData) {
+    const F = mesh(v.formData), f = v.formMat;
+    Object.assign(data, { verts: F.verts, faces: F.faces, colours: F.faces.map(() => rgb(f.color)), film: null, material: 'form', lines: null });
+    data.form = { metal: o.metal, rough: o.rough, glow: r6(f.emissiveIntensity), specular: f.specularIntensity };
+  }
+  data.inset = v.inset.visible && v.insetData ? { ...mesh(v.insetData), colour: rgb(v.insetMat.color), rough: v.insetMat.roughness } : null;
   v.placeCamera(v.aspect || 1);
   return data;
 }
@@ -196,6 +205,20 @@ def shape_material(kind):
     colour = nodes.new('ShaderNodeAttribute')
     colour.attribute_name = 'colour'
     colour.location = (-300, 200)
+    if kind == 'form':
+        F = DATA['form']
+        links.new(colour.outputs['Color'], bsdf.inputs['Base Color'])
+        set_input(bsdf, ['Metallic'], F['metal'])
+        set_input(bsdf, ['Roughness'], F['rough'] if F['specular'] else 1.0)
+        set_input(bsdf, ['Specular IOR Level', 'Specular'], 0.5 * F['specular'])
+        if F['glow'] > 0:
+            links.new(colour.outputs['Color'], bsdf.inputs['Emission Color' if 'Emission Color' in bsdf.inputs else 'Emission'])
+            set_input(bsdf, ['Emission Strength'], F['glow'])
+        if DATA['sss'] > 0 and not F['metal']:
+            set_input(bsdf, ['Subsurface Weight', 'Subsurface'], DATA['sss'])
+            set_input(bsdf, ['Subsurface Radius'], (1.0, 0.75, 0.55))
+            set_input(bsdf, ['Subsurface Scale'], 0.3)
+        return mat
     if kind == 'frame':
         # the faces are not seen, only their lines; they still hide the lines behind them
         nodes.remove(bsdf)
@@ -237,6 +260,21 @@ for i, c in enumerate(DATA['colours']):
     colours.data[i].color = (*c, 1.0)
 if DATA['material'] == 'frame':
     shape.visible_shadow = False
+if DATA['form']:
+    for poly in shape.data.polygons:
+        poly.use_smooth = True
+# the smooth metallic body inside the glowing lines
+if DATA['inset']:
+    N = DATA['inset']
+    metal = bpy.data.materials.new('Inset')
+    use_nodes(metal)
+    b = metal.node_tree.nodes['Principled BSDF']
+    set_input(b, ['Base Color'], (*N['colour'], 1.0))
+    set_input(b, ['Metallic'], 1.0)
+    set_input(b, ['Roughness'], N['rough'])
+    inset = mesh_object('Inset', N['verts'], N['faces'], metal, shapes)
+    for poly in inset.data.polygons:
+        poly.use_smooth = True
 if DATA['film']:
     layer = shape.data.uv_layers.new(name='film')
     for loop in shape.data.loops:
@@ -428,6 +466,40 @@ except Exception:
 for area in getattr(bpy.context.screen, 'areas', []):
     if area.type == 'VIEW_3D':
         area.spaces.active.region_3d.view_perspective = 'CAMERA'
+
+# glowing tubes: a soft bloom round them, from the compositor (its interface differs between
+# Blender versions; without it the render is still right, only without the halo)
+def bloom():
+    if hasattr(scene, 'compositing_node_group'):
+        tree = bpy.data.node_groups.new('Bloom', 'CompositorNodeTree')
+        scene.compositing_node_group = tree
+        tree.interface.new_socket('Image', in_out='OUTPUT', socket_type='NodeSocketColor')
+        out = tree.nodes.new('NodeGroupOutput')
+        target = out.inputs[0]
+    else:
+        scene.use_nodes = True
+        tree = scene.node_tree
+        target = tree.nodes['Composite'].inputs['Image']
+    layers = next((n for n in tree.nodes if n.bl_idname == 'CompositorNodeRLayers'), None) or tree.nodes.new('CompositorNodeRLayers')
+    layers.scene = scene
+    glare = tree.nodes.new('CompositorNodeGlare')
+    for name, value in (('glare_type', 'FOG_GLOW'), ('quality', 'HIGH'), ('threshold', 0.8), ('size', 8)):
+        if hasattr(glare, name):
+            setattr(glare, name, value)
+    for name, value in (('Type', 'Fog Glow'), ('Quality', 'High'), ('Threshold', 0.8), ('Size', 0.5)):
+        if name in glare.inputs:
+            try:
+                glare.inputs[name].default_value = value
+            except (TypeError, ValueError):
+                pass
+    tree.links.new(layers.outputs['Image'], glare.inputs['Image'])
+    tree.links.new(glare.outputs['Image'], target)
+
+if DATA['form'] and DATA['form']['glow'] > 0:
+    try:
+        bloom()
+    except Exception as e:
+        print('No bloom:', e)
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 if '--render' in argv:

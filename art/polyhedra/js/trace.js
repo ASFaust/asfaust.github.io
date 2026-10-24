@@ -83,6 +83,17 @@ function translucent(o, roughness, extra = {}) {
   });
 }
 
+// the material of the other forms, as the viewer's: the tone, its metal, roughness and glow, and
+// subsurface as for the faces
+function formMaterial(v) {
+  const o = v.opts, f = v.formMat;
+  const props = { color: f.color.clone(), metalness: o.metal, roughness: o.rough, emissive: f.emissive.clone(), emissiveIntensity: f.emissiveIntensity };
+  if (o.sss > 0 && !o.metal) { const m = translucent(o, o.rough, props); m.vertexColors = false; return m; }
+  // a specular intensity of 0 traced black specks: a matte form is fully rough instead
+  if (f.specularIntensity === 0) return new THREE.MeshStandardMaterial({ ...props, roughness: 1 });
+  return new THREE.MeshPhysicalMaterial(props);
+}
+
 export class Tracer {
   constructor(renderer) {
     this.renderer = renderer;
@@ -124,7 +135,16 @@ export class Tracer {
       scene.add(m);
     };
     v.scene.updateMatrixWorld(true);
-    if (o.style !== 'frame') {
+    // the other forms (forms.js) in place of the faces, and the inset inside them
+    const copy = m => {
+      const g = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal']) g.setAttribute(k, m.geometry.attributes[k].clone());
+      g.setIndex(m.geometry.index.clone());
+      return g;
+    };
+    if (v.form.visible) add(copy(v.form), formMaterial(v), v.form.matrixWorld);
+    if (v.inset.visible) add(copy(v.inset), new THREE.MeshPhysicalMaterial({ color: v.insetMat.color, metalness: 1, roughness: v.insetMat.roughness }), v.inset.matrixWorld);
+    if (o.style !== 'frame' && o.form === 'faces') {
       const mat = (MATERIALS[o.style === 'glass' ? 'glass' : o.material] || MATERIALS.matte)(o);
       // flat detached faces are seen from both sides
       if (v.tiles === 1) mat.side = THREE.DoubleSide;

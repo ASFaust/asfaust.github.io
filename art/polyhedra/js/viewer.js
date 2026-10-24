@@ -6,6 +6,7 @@ import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { Lines } from './lines.js';
 import { tileMesh, tilePositions } from './tiles.js';
 import { filmUV, IRI_GLSL } from './film.js';
+import { smooth, lattice, triangles } from './forms.js';
 
 export const STYLES = ['solid', 'glass', 'frame'];
 export const COLOURINGS = ['origin', 'sides', 'orbit', 'single'];
@@ -37,6 +38,9 @@ const DEG = Math.PI / 180;
 // the fog of RT and the Blender scene: a box this wide (world units: the shape fits the unit
 // sphere) round the shape, and its density at full strength
 export const FOG_BOX = 8, FOG_DENSITY = 0.6;
+// the emission of glowing tubes at full strength, and the subdivision levels of the other forms
+export const GLOW = 6;
+const SOFT_LEVELS = 3;
 // the light inside at full strength (candela, falling off with the square of the distance)
 const INNER = 36;
 // the iridescent film carries its own colour (the path tracer multiplies its texture by this)
@@ -149,13 +153,22 @@ export class Viewer {
     this.backs = new THREE.Mesh(this.faces.geometry, this.backMat);
     this.backs.renderOrder = -1;
     this.group.add(this.backs, this.faces);
+    // the other forms (forms.js): smooth or tubes in place of the faces, and a smooth inset inside
+    // them, metallic (the glowing lines' look)
+    this.formMat = new THREE.MeshPhysicalMaterial({ roughness: 0.35, metalness: 0 });
+    this.form = new THREE.Mesh(new THREE.BufferGeometry(), this.formMat);
+    this.insetMat = new THREE.MeshPhysicalMaterial({ color: 0x8c8c94, roughness: 0.25, metalness: 1 });
+    this.inset = new THREE.Mesh(new THREE.BufferGeometry(), this.insetMat);
+    this.form.castShadow = this.inset.castShadow = true;
+    this.form.visible = this.inset.visible = false;
+    this.group.add(this.form, this.inset);
 
     this.lines = new Lines();
 
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
-      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0, inner: 0, fog: 0,
+      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0, inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -295,6 +308,7 @@ export class Viewer {
     attr.position.needsUpdate = true; attr.normal.needsUpdate = true; attr.edist.needsUpdate = true; attr.film.needsUpdate = true;
     this.faces.geometry.computeBoundingSphere();
     this.lines.setPositions(p);
+    this.buildForms();
     this.orient();
     this.placeLines();
     this.request();
@@ -351,8 +365,59 @@ export class Viewer {
     // detached faces: new faces when tiles come or go, or gain or lose their thickness
     if (this.mesh && this.tiling() !== this.tiles) { this.shape(); this.setPositions(this.raw); }
     else if (this.mesh && ((this.tiles && (prev.gap !== o.gap || prev.thick !== o.thick)) || prev.filmBand !== o.filmBand)) this.setPositions(this.raw);
+    if (this.mesh && (prev.form !== o.form || prev.tubeWidth !== o.tubeWidth || prev.tubeSmooth !== o.tubeSmooth || prev.inset !== o.inset)) this.buildForms();
+    this.showForms();
     if (prev.fov !== o.fov) this.resize();
     this.request();
+  }
+
+  // The geometry of the other forms, from the polyhedron's faces at the current positions (in the
+  // group's frame, like the faces): this.formData and this.insetData keep the quads for export.
+  buildForms() {
+    const o = this.opts, P = this.mesh, p = this.pos;
+    this.formData = this.insetData = null;
+    if (!P || o.form === 'faces' && !(o.inset > 0)) { this.showForms(); return; }
+    const faces = Array.from({ length: P.nf }, (_, f) => Array.from(P.fv.slice(P.fo[f], P.fo[f + 1])));
+    const put = (mesh, m) => {
+      const t = triangles(m.faces, m.pos), g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(t.position, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(t.normal, 3));
+      g.setIndex(new THREE.BufferAttribute(t.index, 1));
+      mesh.geometry.dispose();
+      mesh.geometry = g;
+    };
+    let soft = null;
+    const smoothed = () => soft || (soft = smooth(faces, p, SOFT_LEVELS));
+    if (o.form === 'tubes') {
+      const w = o.tubeWidth * this.meanEdge, L = lattice(faces, p, w, w);
+      this.formData = smooth(L.faces, L.pos, o.tubeSmooth);
+    } else if (o.form === 'soft') this.formData = smoothed();
+    if (this.formData) put(this.form, this.formData);
+    if (o.inset > 0) {
+      // the smooth shape shrunk towards the centre
+      const s = smoothed(), q = new Float32Array(s.pos.length), c = [0, 0, 0], n = s.pos.length / 3;
+      for (let i = 0; i < s.pos.length; i++) c[i % 3] += s.pos[i] / n;
+      for (let i = 0; i < s.pos.length; i++) q[i] = c[i % 3] + o.inset * (s.pos[i] - c[i % 3]);
+      this.insetData = { faces: s.faces, pos: q };
+      put(this.inset, this.insetData);
+    }
+    this.showForms();
+  }
+
+  // which form shows, and its material: the first palette colour, its metal, glow and roughness
+  showForms() {
+    const o = this.opts, other = o.form !== 'faces';
+    this.faces.visible = !other;
+    this.backs.visible = !other && o.style === 'glass';
+    this.form.visible = other && !!this.formData;
+    this.inset.visible = o.inset > 0 && !!this.insetData;
+    const tone = new THREE.Color(...o.palette[0]);
+    this.formMat.color.copy(tone);
+    this.formMat.metalness = o.metal;
+    this.formMat.roughness = o.rough;
+    this.formMat.emissive.copy(tone);
+    this.formMat.emissiveIntensity = GLOW * o.glow;
+    this.formMat.specularIntensity = o.material === 'matte' && !o.metal ? 0 : 1;
   }
 
   // The width of a line drawn on the screen, in pixels: a fraction of the picture, so that an
@@ -595,7 +660,7 @@ export class Viewer {
   // since the tracer cannot paint bands onto the faces.
   drawLines(traced) {
     const o = this.opts;
-    if (o.lines !== 'drawn' && !(traced && o.edge > 0)) return;
+    if (o.lines !== 'drawn' && !(traced && o.edge > 0) || o.form !== 'faces') return;
     this.lines.draw(this.renderer, this.scene, this.camera, this.group, {
       width: this.linePixels(), depth: o.depthWidth, hidden: o.style === 'solid' ? 0 : o.hidden, ink: this.uniforms.uInk.value, hide: [this.stage],
     });
