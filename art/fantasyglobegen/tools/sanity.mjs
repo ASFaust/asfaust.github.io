@@ -6,7 +6,9 @@
 // mean rain must have the shape found by the Aqua-Planet Experiment (Blackburn et al. 2013):
 // an ITCZ within 10° of the equator, dry subtropics near 20–25°, and storm tracks with more
 // rain near 40–50°. Ridge world: one continent-wide north–south mountain range on the
-// aquaplanet must rain more on its upwind side than on its lee.
+// aquaplanet must rain more on its upwind side than on its lee. Continent world: one block of
+// land must have a drier west coast than east in the subtropics, a drier interior than west
+// coast in the westerlies, a summer monsoon near 15° and a far larger seasonal range inland.
 import { buildGrid } from '../js/grid.js';
 import { buildOps } from '../js/climate/ops.js';
 
@@ -83,6 +85,28 @@ const check = (ok, what) => { console.log((ok ? 'ok   ' : 'FAIL ') + what); if (
   const wW = side(35, 55, -1), wE = side(35, 55, 1), tW = side(5, 25, -1), tE = side(5, 25, 1);
   check(wW > wE, `westerlies: the upwind (west) side is wetter, ${wW.toFixed(2)} against ${wE.toFixed(2)} mm/day`);
   check(tE > tW, `trades: the upwind (east) side is wetter, ${tE.toFixed(2)} against ${tW.toFixed(2)} mm/day`);
+}
+// ---- continent world: one block of land 300 m high, 80° wide, from 35° S to 65° N
+{
+  const deg = Math.PI / 180, height = new Float64Array(N).fill(-4000);
+  for (let i = 0; i < N; i++) if (Math.abs(lon[i]) < 40 * deg && lat[i] > -35 * deg && lat[i] < 65 * deg) height[i] = 300;
+  const res = runClimate({ ops, height, years, params });
+  const P = annual(res.precipitation);
+  const box = (f, la0, la1, lo0, lo1) => {
+    let s = 0, w = 0;
+    for (let i = 0; i < N; i++) { const a = lat[i] / deg, o = lon[i] / deg; if (a >= la0 && a < la1 && o >= lo0 && o < lo1) { s += f[i] * area[i]; w += area[i]; } }
+    return s / w;
+  };
+  const month = (f, m) => f.subarray(m * N, (m + 1) * N);
+  const west = box(P, 20, 30, -40, -28), east = box(P, 20, 30, 28, 40);
+  check(west < east, `continent, 20–30° N: the west coast is drier than the east, ${west.toFixed(2)} against ${east.toFixed(2)} mm/day`);
+  const wc = box(P, 40, 50, -40, -28), inner = box(P, 40, 50, 15, 30);
+  check(inner < wc, `continent, 40–50° N: the interior is drier than the west coast, ${inner.toFixed(2)} against ${wc.toFixed(2)} mm/day`);
+  const jul = box(month(res.precipitation, 6), 10, 20, -20, 20), jan = box(month(res.precipitation, 0), 10, 20, -20, 20);
+  check(jul > 1.5 * jan, `continent, 10–20° N: a summer monsoon, July ${jul.toFixed(2)} against January ${jan.toFixed(2)} mm/day`);
+  const amp = (lo0, lo1) => box(month(res.temperature, 6), 45, 55, lo0, lo1) - box(month(res.temperature, 0), 45, 55, lo0, lo1);
+  const aL = amp(-10, 10), aO = amp(100, 140);
+  check(aL > 2 * aO, `continent, 45–55° N: July − January ${aL.toFixed(1)} K inland against ${aO.toFixed(1)} K over the ocean`);
 }
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);
