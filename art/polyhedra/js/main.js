@@ -659,7 +659,9 @@ function showLook() {
   $('p-look').value = st.look;
   const uses = LOOKS[st.look].controls;
   for (const el of document.querySelectorAll('[data-k]')) el.classList.toggle('offlook', !!uses && !uses.includes(el.dataset.k));
-  $('p-tone').value = st.palette === 'custom' && st.colouring === 'single' && st.custom[0] ? st.custom[0] : '#eeeeea';
+  // only when it differs, so that an open picker keeps its state
+  const tone = st.palette === 'custom' && st.colouring === 'single' && st.custom[0] ? st.custom[0] : '#eeeeea';
+  if ($('p-tone').value !== tone) $('p-tone').value = tone;
   $('p-sss').value = st.sss; $('v-sss').textContent = st.sss ? st.sss.toFixed(2) : 'off';
   $('p-inner').value = st.inner; $('v-inner').textContent = st.inner ? st.inner.toFixed(2) : 'off';
   $('p-fog').value = st.fog; $('v-fog').textContent = st.fog ? st.fog.toFixed(2) : 'off';
