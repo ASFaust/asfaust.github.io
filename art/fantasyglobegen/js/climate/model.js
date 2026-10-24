@@ -412,7 +412,7 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
 
   const diag = new Float64Array(N), kDiff = new Float64Array(N).fill(P.heatDiffusion), rhs = new Float64Array(N);
   const rain = new Float64Array(N), evap = new Float64Array(N), wMean = new Float64Array(N);
-  const flux = new Float64Array(N), invAR2 = new Float64Array(N), rkA = new Float64Array(N), rkB = new Float64Array(N);
+  const flux = new Float64Array(N), invAR2 = new Float64Array(N), rkA = new Float64Array(N), rkB = new Float64Array(N), rkX = new Float64Array(N), invArea = ops.area.map(a => 1 / a);
   const colMass = elev.map(z => Math.exp(-z / P.vapourScaleHeight)), invMass = colMass.map(m => 1 / m);
   for (let i = 0; i < N; i++) invAR2[i] = 1 / (ops.area[i] * R2);
   const wsA = new Float64Array(N), thrA = new Float64Array(N), evA = new Float64Array(N), oroA = new Float64Array(N);
@@ -459,7 +459,6 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       }
       const ice = P.seaIce && ocean[i] ? 0 : 1 / (1 + Math.exp((Ts - P.iceTemp) / 2));
       const alpha = (P.albedo + P.albedoP2 * p2[i]) * (1 - ice) + P.albedoIce * ice;
-      // upwelled water mixes in, implicitly: −ρc w (T − T_up)
       // upwelled water mixes in, implicitly: −ρc w (T − T_up), T_up = T − (T − T_d) e^(−D/d)
       let up = 4.18e6 * P.upwellEfficiency * upwell[i], Td = P.upwellTemp;
       if (P.oceanDynamics) { up *= Math.exp(-Math.max(10, P.thermoDepth + hT[i]) / P.thermoScale); Td = P.deepTemp; }
@@ -558,12 +557,12 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     let stages = 1;
     while ((stages * stages + stages) / 2 * 0.9 < worst) stages++;
     const lapW = (Y, out) => {
-      out.fill(0);
+      for (let i = 0; i < N; i++) { rkX[i] = Y[i] * invMass[i]; out[i] = 0; }
       for (let q = 0; q < nEdge; q++) {
-        const a = edgeA[q], b = edgeB[q], F = edgeD[q] * (Y[b] * invMass[b] - Y[a] * invMass[a]);
+        const a = edgeA[q], b = edgeB[q], F = edgeD[q] * (rkX[b] - rkX[a]);
         out[a] += F; out[b] -= F;
       }
-      for (let i = 0; i < N; i++) out[i] /= ops.area[i];
+      for (let i = 0; i < N; i++) out[i] *= invArea[i];
     };
     const diffuse = () => {
       const w1 = 2 / (stages * stages + stages), tau = hD / R2;
