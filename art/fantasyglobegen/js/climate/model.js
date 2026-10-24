@@ -353,8 +353,20 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
     const h = dt / oSub, r = P.oceanDamping, fMinO = 2 * P.rotation * Math.sin(P.oceanMinCoriolis * deg);
     const cs = 1.2 * 1.3e-3 / (1025 * P.thermoDepth);
     for (let s = 0; s < oSub; s++) {
-      // −g'∇h + τ/(ρH) + A∇²u
-      const g = ops.gradient(hT, oG);
+      // −g'∇h + τ/(ρH) + A∇²u. The gradient uses only the edges between ocean cells, which
+      // makes it the exact negative adjoint of the divergence below, so the gravity waves
+      // conserve energy and the coasts can't feed them
+      const g = oG;
+      for (let i = 0; i < N; i++) {
+        let gx = 0, gy = 0, gz = 0;
+        if (ocean[i]) for (let k = 0; k < ops.nbrCount[i]; k++) {
+          const e = 6 * i + k;
+          if (!oEdge[e]) continue;
+          const w = ops.len[e] * 0.5 * (hT[ops.nbr[e]] - hT[i]);
+          gx += w * ops.nrm[3 * e]; gy += w * ops.nrm[3 * e + 1]; gz += w * ops.nrm[3 * e + 2];
+        }
+        g[3 * i] = gx / ops.area[i]; g[3 * i + 1] = gy / ops.area[i]; g[3 * i + 2] = gz / ops.area[i];
+      }
       for (let i = 0; i < N; i++) {
         if (!ocean[i]) continue;
         let lx = 0, ly = 0, lz = 0;
