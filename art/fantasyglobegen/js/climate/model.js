@@ -36,14 +36,14 @@ export const EARTH = {
   orbit: EARTH_ORBIT,
   // energy
   olrA: 203.3, olrB: 2.09,   // W/m², W/m²/K (T in °C)
-  albedo: 0.30, albedoP2: 0.09, albedoIce: 0.55, iceTemp: -11.4,
+  albedo: 0.30, albedoP2: 0.09, albedoIce: 0.54, iceTemp: -11.9,
   heatDiffusion: 0.4,        // W/m²/K on the unit sphere
   landDiffusion: 1,          // its share over land, where less heat comes in from the sides
-  oceanDepth: 27.3,          // m of mixed layer
+  oceanDepth: 30.9,          // m of mixed layer
   // upwelling: wind pushes surface water sideways (Ekman transport); where it diverges, along
   // the equator and along coasts with the wind running down them, cold water comes up
   upwellTemp: 16,            // °C of the water that comes up (without ocean dynamics)
-  upwellEfficiency: 1.42,    // fraction of the full heat exchange
+  upwellEfficiency: 1.22,    // fraction of the full heat exchange
   // the ocean's warm upper layer over the thermocline, driven by the wind (a reduced-gravity
   // ocean, as in Cane & Zebiak 1985): ∂u/∂t + f k×u = −g'∇h + τ/(ρH) − r u + A∇²u,
   // ∂h/∂t = −H ∇·u − h/τ_h. The wind piles warm water up on the downwind side and draws the
@@ -54,38 +54,38 @@ export const EARTH = {
   // water below and its surface cools like land; it grows from the heat it loses and melts
   // from the top once its surface reaches 0 °C, and from below by the heat the currents bring
   seaIce: true, freezeTemp: -1.8, iceConductivity: 2, iceLatent: 3.0e8, iceAlbedo: 0.54, iceHeat: 1e7, iceMinThickness: 0.2,
-  iceBasalFlux: 1.66,        // W/m² from the ocean below to the ice, besides what upwelling brings
+  iceBasalFlux: 1.83,        // W/m² from the ocean below to the ice, besides what upwelling brings
   oceanDynamics: true,
-  thermoDepth: 162,          // m, H
-  reducedGravity: 0.049,     // m/s², g'
-  oceanDamping: 8.5e-7,      // 1/s, r
-  thermoDamping: 6e-8,       // 1/s, 1/τ_h
+  thermoDepth: 159,          // m, H
+  reducedGravity: 0.046,     // m/s², g'
+  oceanDamping: 6.5e-7,      // 1/s, r
+  thermoDamping: 7.7e-8,     // 1/s, 1/τ_h
   oceanMinCoriolis: 0.5,     // degrees
-  oceanViscosity: 7400,      // m²/s
-  deepTemp: 11.5, thermoScale: 60.3,
-  currentHeat: 1.20,         // share of the upper layer's current that moves the surface heat
-  ekmanLat: 2.20,            // degrees: the Ekman transport fades to nothing at the equator
+  oceanViscosity: 7976,      // m²/s
+  deepTemp: 9.97, thermoScale: 64.2,
+  currentHeat: 1.14,         // share of the upper layer's current that moves the surface heat
+  ekmanLat: 2.15,            // degrees: the Ekman transport fades to nothing at the equator
   landHeat: 1.5e7,           // J/m²/K
   lapseRate: 6.5e-3,         // K/m
   // pressure and wind
-  cellPressure: [-1.4, 2.1, -13.2, 4.0], // hPa: equatorial low, subtropical high, subpolar low, polar high
-  lnLat: 21.5,               // degrees: within this, warm water and land are low against the whole tropics
-  baroRef: 1.06, baroExp: 0.63, // K per 100 km; the eddy-driven pressures go as (gradient/baroRef)^baroExp
-  thermalLow: 0.9,           // hPa per K of land warmer than its latitude
-  thermalLowOcean: 0.77,     // the same over water, which drives the Walker circulation
-  convectionTemp: 27.8,      // °C: the equatorial low sits over water warmer than this
-  equatorialWidth: 29.3,     // degrees from the thermal equator where it can
-  minCoriolis: 11.7,         // degrees: near the equator the wind turns as if this far out
-  frictionOcean: 1.2e-5, frictionLand: 1.7e-5,
-  maxWind: 25.4,             // m/s
-  windMixing: 585e3,         // m: eddies mix momentum this far, so the trades reach the equator
+  cellPressure: [-2.0, 2.0, -13.6, 4.2], // hPa: equatorial low, subtropical high, subpolar low, polar high
+  lnLat: 24.8,               // degrees: within this, warm water and land are low against the whole tropics
+  baroRef: 1.10, baroExp: 0.67, // K per 100 km; the eddy-driven pressures go as (gradient/baroRef)^baroExp
+  thermalLow: 0.97,          // hPa per K of land warmer than its latitude
+  thermalLowOcean: 0.79,     // the same over water, which drives the Walker circulation
+  convectionTemp: 28.4,      // °C: the equatorial low sits over water warmer than this
+  equatorialWidth: 29.4,     // degrees from the thermal equator where it can
+  minCoriolis: 11.4,         // degrees: near the equator the wind turns as if this far out
+  frictionOcean: 1.4e-5, frictionLand: 1.6e-5,
+  maxWind: 25.7,             // m/s
+  windMixing: 697e3,         // m: eddies mix momentum this far, so the trades reach the equator
   // moisture
   wsat0: 13,                 // mm of column vapour at saturation at 0 °C, sea level
   vapourScaleHeight: 2500,   // m
   evapCoeff: 1.56e-3,        // ρ·C_E, kg/m³
   gust: 4,                   // m/s added to the wind for evaporation
   bucket: 150,               // mm
-  moistureDiffusion: 4.4e6,   // m²/s
+  moistureDiffusion: 4.6e6,  // m²/s
   surfaceRH0: 0.32,          // near-surface humidity under a completely dry column
   // rain rate exp(rainSteep (r − rainR0)) mm/day at column saturation r, the form Bretherton
   // et al. (2004) found over tropical oceans; rising air rains at lower r, sinking air at
@@ -93,12 +93,14 @@ export const EARTH = {
   // a substep the onset is gentler, and 8.7 lets air carry its water as far as it does on
   // Earth (tools/metrics.mjs, Plength). The parameters of rain, wind, ocean and ice were
   // fitted to the observed climate at levels 4 and 5 and checked at level 6.
-  rainSteep: 8.72, rainR0: 0.51, rhAscent: 0.096, rhDescent: 0.28,
-  rhStable: 0, stableLat: 30, stableZonal: 1, // rain threshold raised by rhStable per 5 K of surface below the tropics' mean, within stableLat
-  rhStorm: 0.22, stormGradient: 0.9, // K per 100 km of zonal-mean gradient for full storminess
-  orographicEfficiency: 0.54, oroMinRH: 0.88, // air drier than this doesn't rain going uphill
-  oroScale: 150e3,           // m: heights smoothed over this for the lift (0: the grid's own)
-  wtgScale: 178e3,           // m: column saturation from temperature smoothed over this (0: local)
+  rainSteep: 9.09, rainR0: 0.52, rhAscent: 0.1, rhDescent: 0.27,
+  // a surface colder than its latitude lies under an inversion: within stableLat, the rain
+  // threshold rises by rhStable per 5 K (or against the tropics' mean, stableZonal: 0)
+  rhStable: 0.44, stableLat: 38, stableZonal: 1,
+  rhStorm: 0.24, stormGradient: 0.76, // K per 100 km of zonal-mean gradient for full storminess
+  orographicEfficiency: 0.62, oroMinRH: 0.85, // air drier than this doesn't rain going uphill
+  oroScale: 189e3,           // m: heights smoothed over this for the lift (0: the grid's own)
+  wtgScale: 250e3,           // m: column saturation from temperature smoothed over this (0: local)
 };
 
 const LV = 2.5e6, CP_OVER_LV = 1004 / 2.5e6, DAY = 86400;
@@ -526,9 +528,8 @@ export function runClimate({ ops, height, params = {}, years = 5, stepsPerYear =
       const Ts = surfT(i);
       wsA[i] = P.wsat0 * Math.exp(0.0641 * Tls[i] - elev[i] / P.vapourScaleHeight);
       // thrA: the rain rate at r = 0 in mm per substep, as a log
-      // a surface colder than the tropics' free troposphere, which is as warm everywhere as
-      // the tropics' surface on average, lies under an inversion: the air above is stable and
-      // shallow clouds can't grow into rain however moist they are
+      // a surface colder than the air above it, which is about as warm all along its
+      // latitude, lies under an inversion: shallow clouds can't grow into rain however moist
       const wt = P.lnLat > 0 ? 1 / (1 + (sinLat[i] / Math.sin(P.stableLat * deg)) ** 4) : 0;
       const r0 = P.rainR0 - P.rhAscent * Math.tanh(Math.max(0, -div[i]) * 4 * DAY) + P.rhDescent * Math.tanh(Math.max(0, div[i]) * 4 * DAY)
         - P.rhStorm * atBand(storm, i) + P.rhStable * wt * Math.max(0, (P.stableZonal ? atBand(zT, i) : Ttrop) - T[i]) / 5;
