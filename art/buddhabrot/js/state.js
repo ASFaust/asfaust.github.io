@@ -32,6 +32,9 @@ export var DEFAULTS = {
   max_iter: 2000,
   // each orbit's first points left out; they echo where c was sampled (compute.js)
   skip_points: 1,
+  // how zooms find their Metropolis seeds: 'exact' (random draws from the sampler; falls back to backward when they find
+  // nothing) or 'backward' (Newton's method from the view plus importance weights, for deep zooms; compute.js)
+  seeding: 'exact',
   resolution: 2000,
   refine_steps: 10,
   balance: 0.5,
@@ -182,6 +185,7 @@ export function sanitize(data) {
   out.blur_px = clamp(out.blur_px, 0.1, 5);
   out.smooth_hits = out.smooth_hits <= 0 ? 0 : clamp(out.smooth_hits, 100, 1e6);
   if (['bisection', 'grid'].indexOf(out.sampler) < 0) out.sampler = DEFAULTS.sampler;
+  if (['exact', 'backward'].indexOf(out.seeding) < 0) out.seeding = DEFAULTS.seeding;
   // Zoomed views are rendered with Metropolis (compute.js), which needs a known density. Bisection has none, so the
   // bisection sampler always draws the whole set.
   if (out.sampler === 'bisection') {

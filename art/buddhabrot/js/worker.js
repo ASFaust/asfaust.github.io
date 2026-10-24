@@ -10,6 +10,9 @@
 //                                                                                  mirror: seed and metro also record each point's mirror image
 //   { cmd: 'trace', pts, escapingOnly, nearby, sigma, seed }                     → adds the orbits of pts
 //   { cmd: 'seed', pts }                                                         → { pts, f }: those whose orbits reach the view, and their hits
+//   { cmd: 'backseed', count, nmax, seed }                                       → { pts, f }: starting points found by Newton's
+//                                                                                  method in c on f_c^n(0) = w, w in the view, whose
+//                                                                                  orbits reach it; f holds the size of their neighbourhoods
 //   { cmd: 'metro', pts, steps, burn, large, rmin, rmax, seed }                  → { fsteps }: runs one Metropolis chain per point;
 //                                                                                  fsteps sums f over the recorded steps
 //   { cmd: 'grid', r0, r1, n, x0, y0, h, maxIter }                              → { inside }: 1 for grid vertices that stay bounded
@@ -208,6 +211,39 @@ self.onmessage = function(e) {
       progress(sdone);
       var kept = new Float64Array(keep), keptF = new Float64Array(keepF);
       postMessage({ cmd: 'done', pts: kept, f: keptF }, [kept.buffer, keptF.buffer]);
+    } else if (d.cmd === 'backseed') {
+      // Each try: a point w in the view, an orbit length n log-uniform from 2 to nmax, and Newton's method in c on
+      // P_n(c) = w (P_1 = c, P_k+1 = P_k² + c, with P_k' = 2 P_k-1 P_k-1' + 1), started from a draw from the grid density.
+      // Newton stops once P_n(c) is within a tenth of the view of w: closer is pointless, and in deep zooms rounding in c,
+      // magnified by P_n', keeps it from getting much closer. A c whose orbit reaches the view is kept. Near a deep
+      // minibrot of period q, the roots for n
+      // around multiples of q lie close to it, so this finds the orbits that random draws miss.
+      var br = rng(d.seed), bbuf = new Int32Array(2 * histIter), bk = [], bf = [], bgp = [0, 0], bdone = 0;
+      var vw = res / sx, vh = res / sy, tol2 = 0.01 * Math.min(vw * vw, vh * vh), logN = Math.log(d.nmax / 2);
+      for (var t = 0; t < d.count; t++) {
+        var wr = bx0 + br() * vw, wi = by0 + br() * vh, nn = Math.round(2 * Math.exp(logN * br()));
+        pick(grid, br, bgp);
+        var ar = bgp[0], ai = bgp[1], ok = false;
+        for (var it = 0; it < 40 && !ok; it++) {
+          var zr = 0, zi = 0, er = 0, ei = 0;
+          for (var q = 0; q < nn; q++) {
+            var u = 2 * (zr * er - zi * ei) + 1; ei = 2 * (zr * ei + zi * er); er = u;
+            u = zr * zr - zi * zi + ar; zi = 2 * zr * zi + ai; zr = u;
+            if (zr * zr + zi * zi > 1e10) break;
+          }
+          var gr = zr - wr, gi = zi - wi, e2 = er * er + ei * ei;
+          if (!(e2 > 0) || !isFinite(gr)) break;
+          if (gr * gr + gi * gi < tol2) ok = true;
+          ar -= (gr * er + gi * ei) / e2; ai -= (gi * er - gr * ei) / e2;
+          if (ar * ar + ai * ai > 4) break;
+        }
+        // with the root, the size of the view's preimage around it: the view's half-width over |P_n'(c)|
+        if (ok && hits(ar, ai, bbuf, false) > 0) { bk.push(ar, ai); bf.push(0.5 * Math.max(vw, vh) / Math.sqrt(e2)); }
+        if (++bdone === 64) { progress(bdone); bdone = 0; }
+      }
+      progress(bdone);
+      var bpts = new Float64Array(bk), bff = new Float64Array(bf);
+      postMessage({ cmd: 'done', pts: bpts, f: bff }, [bpts.buffer, bff.buffer]);
     } else if (d.cmd === 'metro') {
       // Metropolis chains over c with target p(c)·f(c): p the sampler's density, f the orbit points in the view.
       // A small step has a log-uniform radius and uniform angle, so it is symmetric, and is accepted with probability

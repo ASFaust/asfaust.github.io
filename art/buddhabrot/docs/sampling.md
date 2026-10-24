@@ -130,6 +130,21 @@ At the best chain length: a large step of 0.01 scored about the same as 0.05; 0.
 - Off in the Metropolis chains: their orbits are mostly long escaping ones, and the check slowed seahorse valley by half before the early give-up and still a little after.
 - Result: every regression hash unchanged; seeding about 2×; minibrot zooms 5.8 → 4.7 s and 4.5 → 3.3 s (three runs each, noisy), seahorse within noise; default render 5.3 → 3.1 s, bisection case 39 → 30 s.
 
+**Seed reuse and backward seeding (2026-10-24, owner).**
+- **Reuse** is unbiased: the pool is draws from p filtered by reaching the old view; filtering again by a view inside it gives draws from p conditioned on reaching the new view, with the same number of draws behind them. Checked (64 px, head view −1.42 … −1.22, ±0.1, after a render of −1.5 … −1, ±0.25; brute force 2 × 20 M): reused seeds 0.040 / 0.045 to the reference, fresh seeding 0.042 / 0.039; scale 1.00 / 0.99. Regression hashes unchanged (each case loads a fresh page).
+- **Backward seeding, first try:** chains started at the Newton roots, with a burn-in of 100. Clearly wrong: L1 to random seeding 0.6 and 0.85 in two minibrot views where two random seeds differ by 0.12 and 0.17, and the chains sat on short orbits. Starts must be drawn in proportion to p·f.
+- **Second try:** draw from p restricted to the grid cells around the roots (exact, with a known share of p). The shape matched random seeding within noise, but half the brightness was missing (starts outside the cells) until the cells were widened by 4; and at a view 4·10⁻⁶ wide, 2 million draws from the cells found no seed: the cells are far too coarse there.
+- **Now:** boxes around each root, 8 times the size of the view's preimage there (view half-width / |P_n'(c)|, at most a cell), picked by p × area; half the points drawn from p itself; each seed weighted by p/q. Results at 2 M orbits (L1 between normalized 100 px images; scale is the total brightness against random seeding):
+
+| view | random: time, seed-to-seed L1 | backward: time, L1 to random, scale |
+|---|---|---|
+| minibrot 0.004 wide | 2.4 s, 0.121 | 1.6 s, 0.125, 0.91 |
+| seahorse 0.01 | 2.8 s, 0.252 | 3.7 s, 0.258, 0.96 |
+| 4·10⁻⁵ at −1.7619 | gives up | 0.6 s (seed-to-seed L1 0.14) |
+| 4·10⁻⁶ at −1.7619 | gives up | 0.6 s (seed-to-seed L1 0.14) |
+
+  Without the half drawn from p, the scale was 0.4–0.58 (starts missed); with 0.2 drawn from p it was noisy (2.05 once). The scale varies ±30 % between seeds (random: ±3 %), so backward zooms show their own brightness. Visually (own brightness for both) random and backward look alike within the noise.
+
 ## Densities for the starting points
 
 The goal is to sample long orbits more often, because they contribute more. Every option needs a *known* density, so that Metropolis can use it.

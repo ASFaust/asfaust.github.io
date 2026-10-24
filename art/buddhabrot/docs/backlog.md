@@ -10,9 +10,7 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 
 - **Make zooms look good** (B). Mirroring, the salt filter and the adaptive blur are in (2026-10-23). Open: is the default `smooth_hits` (4000) right across views and sample counts (owner's eye)? The bright single specks in empty regions are handled by the salt filter only where they are isolated; a structural fix would weight orbits with few hits differently, which the splatting does not allow without bias. → [sampling.md](sampling.md#choosing-the-metropolis-settings-2026-10-21)
 
-- **Faster seeding for Metropolis, continued** (B; owner, 2026-10-23). The periodicity check is in (see Done). Further ideas, best first:
-  - **Reuse seeds when zooming into a zoom:** seeds of the current view whose orbits also reach the sub-view are draws from p conditioned on reaching it, so filtering them is unbiased and needs no new seeding points (count the parent's tested points as tested). Also reuse seeds for New seed / more samples on the same view.
-  - **Backward iteration (owner's idea):** solve f_c^n(0) = w for c (Newton in c) from points w in the view, to find starting points that reach it. Caveat: those c are not drawn from p, and starting chains from seeds not drawn from p·f is exactly the bias fixed on 2026-10-21. They could only serve with a burn-in, or as Metropolis proposals if their density were known (it is not). Probably not worth it unless the others fall short.
+- **Deep zooms need far more samples:** at 4·10⁻⁶ wide, backward seeding works but 2 million orbits are only blobs. Measure what a clean deep zoom takes, and whether the brightness of a backward zoom could be made steadier (its norm varies ±30 % between seeds).
 
 - **Raise `GRID.blur`?** Faint arcs remain in minibrot zooms after the smooth density; blur 8 looked smoother in a first test. Finish the comparison (sampling.md, "Bands, and a smooth density"). Method: render a view skipping n and n + 1 points and image the difference.
 
@@ -28,6 +26,8 @@ Label each experiment **type A** (artsy) or **type B** (classical), or both.
 - **More type A examples from the owner,** then revisit the defaults.
 
 ## Done
+
+- **2026-10-24, seed reuse and backward seeding.** A zoom into a zoom (or New seed, more samples) re-tests the last render's seeds instead of seeding afresh, unbiased. "Zoom seeding": random, or backward (Newton's method from the view, draws near the roots plus half from the sampler, importance-weighted; unbiased, own brightness); random falls back to backward when it finds nothing. Backward reaches views 4·10⁻⁶ wide, where random seeding finds no orbit. Regression hashes unchanged.
 
 - **2026-10-23, periodicity check.** Seeding, the grid sampler's direct tracing, the grid and the bisection test a returning orbit for an attracting cycle (Newton on f^p(z) = z, multiplier below 1) and stop it. Images unchanged (all regression hashes match); seeding about 2× as fast, minibrot zooms 20–27 % faster overall, the default render 5.3 → 3.1 s on 4 threads. Metropolis chains leave it off.
 

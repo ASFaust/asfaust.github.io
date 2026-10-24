@@ -1,7 +1,7 @@
 // The heavy part: a pool of workers (worker.js) and the pipeline that turns settings into a histogram.
 // No DOM here; main.js shows the progress.
 import { rng, mixSeed } from './rng.js';
-import { pick } from './grid.js';
+import { pick, weight } from './grid.js';
 import { fullBounds } from './state.js';
 
 var workerURL = new URL('./worker.js', import.meta.url);
@@ -153,13 +153,36 @@ function metroSettings(p) {
 }
 var BATCH_SEEDS = 1048576;
 
+// ---------- seed reuse ----------
+// The seeds of the last Metropolis render: { key, b, mirror, pts, tested }. They are draws from the grid sampler's
+// density p (tested of them) that kept the ones whose orbits reach view b. Every orbit that reaches a view inside b
+// reaches b too, so filtering them for that view gives draws from p conditioned on reaching it, exactly what fresh
+// seeding would give: unbiased, and the tested points count as tested. A zoom into a zoom, New seed, more samples or a
+// display-only change thus start from them (owner, 2026-10-23). A new view that mirrors needs seeds kept with
+// mirroring, since its orbits may reach it only by their mirror image.
+var seedPool = null, poolDraws = 0;
+// for tests and experiments: forget the pool, so the next zoom seeds afresh
+export function clearSeeds() { seedPool = null; }
+function poolKey(p, grid) { return grid.key + '|' + p.skip_points; }
+function reusable(p, grid, view) {
+  var s = seedPool, b = view.b;
+  if (!s || s.key !== poolKey(p, grid) || (view.mirror && !s.mirror)) return null;
+  return b.xmin >= s.b.xmin && b.xmax <= s.b.xmax && b.ymin >= s.b.ymin && b.ymax <= s.b.ymax ? s : null;
+}
+// Backward seeding (owner, 2026-10-24): Newton's method in c on f_c^n(0) = w, for points w in the view, finds starting
+// points whose orbits reach it, where random draws from p find almost none (deep zooms); seeding then draws near them
+// and weights the seeds (batch()). Used when seeding = 'backward', and as a fallback when exact seeding has found no
+// orbit after giveUp draws. perSeed: Newton tries per chain; nmax: the longest n tried; box: the boxes' size in units of
+// the view's preimage; mix: the share of points drawn from p itself.
+export var BACKSEED = { nmax: 500, perSeed: 16, box: 8, mix: 0.5, giveUp: 32 * 2e5 };
+
 // Computes the histogram for the settings p. The callbacks report progress:
 //   ui.stage(name, lo, hi, total)  a new stage, covering lo–hi % of the bar, with total units of work
 //   ui.progress(n)                 n more units done
 //   ui.live()                      false once the run was stopped or replaced; compute then returns null
 // Returns { data: Float32Array, res, b: bounds, total: orbits traced, norm: data × norm = hits per sample per unit area,
 // bands: 1, or 3 with colouring by orbit length (data then holds the short, mid and long band one after another),
-// metro: whether Metropolis drew it, hits: orbit points per unit of data }.
+// metro: whether Metropolis drew it, hits: orbit points per unit of data, backward: seeded backwards }.
 export async function compute(p, ui) {
   var b = { xmin: p.xmin, xmax: p.xmax, ymin: p.ymin, ymax: p.ymax };
   // Orbits that cross a zoomed view mostly start outside it, so starting points always come from the whole set.
@@ -195,16 +218,16 @@ export async function compute(p, ui) {
 
   // Samples count orbits in both methods: a zoom runs samples / chain length chains.
   var ms = metro ? metroSettings(p) : null, units = metro ? Math.max(1, Math.round(p.samples / ms.chain)) : p.samples;
-  var nBatch = Math.ceil(units / BATCH.size), fsum = 0, seeded = 0, fsteps = 0;
+  var nBatch = Math.ceil(units / BATCH.size), fsum = 0, seeded = 0, fsteps = 0, back = false, burn = ms ? ms.burn : 0;
   for (var bi = 0; bi < nBatch; bi++) {
     var n = Math.min(BATCH.size, units - bi * BATCH.size), base = bi * BATCH_SEEDS;
     // this batch's stages share its slice of the bar between 10 and 95 %
     var stage = function(name, lo, hi, total) {
       ui.stage(name + (nBatch > 1 ? ' ' + (bi + 1) + '/' + nBatch : ''), 10 + (85 * bi + lo - 10) / nBatch, 10 + (85 * bi + hi - 10) / nBatch, total);
     };
-    var r = await batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui);
+    var r = await batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui, { b: b, mirror: mirror });
     if (r === null) return null;
-    fsum += r.fsum; seeded += r.seeded; fsteps += r.fsteps;
+    fsum += r.fsum; seeded += r.seeded; fsteps += r.fsteps; back = back || r.back; burn = r.burn;
   }
 
   // norm turns the histogram into hits per starting sample per unit area of the plane, which does not depend on the
@@ -214,7 +237,7 @@ export async function compute(p, ui) {
     total = p.samples * (1 + (known ? 0 : p.nearby_points));
     norm = 1 / (total * pixelArea);
   } else {
-    total = units * (ms.burn + ms.chain);
+    total = units * (burn + ms.chain);
     // Each chain step spreads weight 1 over the view, so the histogram estimates E_π[hits / f] per step, with π ∝ p·f.
     // Hits per p-sample are E_p[hits] = E_π[hits / f] · E_p[f], and E_p[f] is the mean f over all seeding samples.
     // With mirroring, f counts the mirror images too, twice the hits of the orbit alone on average.
@@ -231,7 +254,7 @@ export async function compute(p, ui) {
   // hits: orbit points per unit of data. The direct method counts them. A Metropolis step spreads weight 1 over its
   // f points, so a unit of its data stands for about the mean f of the chains' steps (display.js, adaptive blur).
   var hits = metro ? fsteps / (units * ms.chain) : 1;
-  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb, metro: metro, hits: hits };
+  return { data: sum, res: res, b: b, total: total, norm: norm, bands: nb, metro: metro, hits: hits, backward: back };
 }
 
 // One batch of n samples (for Metropolis, n chains, with the settings ms; ms is null for the direct method) into the
@@ -239,18 +262,23 @@ export async function compute(p, ui) {
 // Returns { fsum, seeded, fsteps }: for Metropolis, the sum of f over the batch's seeding points, their number, and the sum
 // of f over the chains' steps (0 otherwise),
 // or null once the run was stopped.
-async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) {
-  var metro = !!ms;
+async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui, view) {
+  var metro = !!ms, backward = metro && p.seeding === 'backward';
+  // The first batch of a Metropolis render may start from the last render's seeds. Fresh points it then adds come from
+  // a stream not used before in this page (salt 6), so they never repeat points already in the pool.
+  var pool = metro && base === 0 && !backward ? reusable(p, grid, view) : null;
   // 1. starting points c, two numbers per sample; Metropolis tests at least SEEDING.min of them for seeds
-  var ns = metro ? Math.max(n, SEEDING.min) : n, outside = new Float64Array(2 * ns);
-  if (!bisection) {
+  var ns = metro ? Math.max(n, SEEDING.min) : n, outside = pool || backward ? null : new Float64Array(2 * ns), gp = [0, 0];
+  if (!bisection && outside) {
     stage('Sampling', 10, 12);
     await tick();
-    var grand = rng(mixSeed(p.seed, 5, base)), gp = [0, 0];
+    var grand = rng(mixSeed(p.seed, 5, base));
     for (var i = 0; i < ns; i++) {
       pick(grid, grand, gp);
       outside[2 * i] = gp[0]; outside[2 * i + 1] = gp[1];
     }
+  } else if (!bisection) {
+    grand = rng(mixSeed(p.seed, 6, ++poolDraws));
   } else {
     // Each sample starts at a random mixed cell of the grid, as a pair of one of its inside corners and one of its
     // outside corners, a cell apart. Mixed cells are spread evenly along the boundary, minibrots included. The workers
@@ -289,11 +317,12 @@ async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) 
       var slice = outside.slice(2 * c[0], 2 * c[1]);
       return { msg: { cmd: 'trace', pts: slice, escapingOnly: known, nearby: known ? 0 : p.nearby_points, sigma: p.nearby_spread, seed: mixSeed(p.seed, 2, base + i) }, transfer: [slice.buffer] };
     }), nTrace, null, ui.progress);
-    return ui.live() ? { fsum: 0, seeded: 0, fsteps: 0 } : null;
+    return ui.live() ? { fsum: 0, seeded: 0, fsteps: 0, back: false, burn: 0 } : null;
   }
   // 2a. keep the starting points whose orbits cross the view
-  var found = [], foundF = [], nFound = 0, seeded = 0;
-  async function seedFrom(pts, count) {
+  var found = [], foundF = [], nFound = 0, seeded = 0, back = false;
+  // tests count points; tested is how many draws from p they stand for (more than count for the pool's filtered seeds)
+  async function seedFrom(pts, count, tested) {
     stage('Seeding', lo, lo + 5, count);
     var got = [], gotF = [];
     await runJobs(chunks(count, nTrace, 4, 64).map(function(c, i) {
@@ -301,27 +330,88 @@ async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) 
       return { idx: i, msg: { cmd: 'seed', pts: slice }, transfer: [slice.buffer] };
     }), nTrace, function(job, d) { got[job.idx] = d.pts; gotF[job.idx] = d.f; }, ui.progress);
     got.forEach(function(f, i) { found.push(f); foundF.push(gotF[i]); nFound += f.length / 2; });
-    seeded += count;
+    seeded += tested;
   }
-  await seedFrom(outside, ns);
+  if (pool) await seedFrom(pool.pts, pool.pts.length / 2, pool.tested);
+  else if (outside) await seedFrom(outside, ns, ns);
   outside = null;
   // Adaptive seeding. A small or deep view yields few seeds, and chains that share few starts stay near them: the image
   // then shows the seeds rather than the distribution, lopsided and different with every seed (a minibrot on the real
   // axis, owner, 2026-10-21). So the seeding points keep doubling until there is a seed per chain, up to as many
   // seeding points as the batch traces orbits. Views with seeds enough cost nothing extra (docs/sampling.md).
+  // A pool smaller than SEEDING.min is topped up to it first. draw(gp) puts a fresh point into gp and returns 1 (the
+  // pool's seeds are the ones that stand for more draws).
   var cap = Math.max(ns, n * ms.chain);
-  while (!bisection && nFound < n && seeded < cap && ui.live()) {
-    var more = Math.min(seeded, cap - seeded), extra = new Float64Array(2 * more);
-    for (var k = 0; k < more; k++) { pick(grid, grand, gp); extra[2 * k] = gp[0]; extra[2 * k + 1] = gp[1]; }
-    await seedFrom(extra, more);
+  function draw(gp) { pick(grid, grand, gp); return 1; }
+  var qDensity = null, dens = 0;
+  async function seedMore() {
+    while (!bisection && (nFound < n || seeded < ns) && seeded < cap && ui.live()) {
+      if (!back && nFound === 0 && seeded >= BACKSEED.giveUp) return;
+      var more = Math.min(Math.max(seeded, ns - seeded), cap - seeded), extra = new Float64Array(2 * more), tested = 0;
+      for (var k = 0; k < more; k++) { tested += draw(gp); extra[2 * k] = gp[0]; extra[2 * k + 1] = gp[1]; }
+      await seedFrom(extra, more, tested);
+    }
   }
+  if (!backward) await seedMore();
   if (!ui.live()) return null;
-  if (nFound === 0) throw new Error('No starting orbit reaches this view. Raise the samples or max iterations.');
+  if (nFound === 0) {
+    // Backward seeding: asked for, or the fallback when exact seeding found nothing. Newton's method from the view finds
+    // starting points that reach it ('backseed'). Seeding then draws half its points from small boxes around them and
+    // half from p itself (q = mix · p + (1 − mix) · boxes) and weights each seed by p/q: defensive importance sampling,
+    // unbiased, since q covers wherever p does, and the weights stay below 1 / mix. Without the share drawn from p, the
+    // starts outside every box were missed: the shape matched, but half the brightness was gone (docs/sampling.md).
+    back = true;
+    var tries = n * BACKSEED.perSeed, roots = [];
+    stage('Seeding backwards', lo, lo + 5, tries);
+    await runJobs(chunks(tries, nTrace, 4, 64).map(function(c, i) {
+      return { idx: i, msg: { cmd: 'backseed', count: c[1] - c[0], nmax: Math.min(p.max_iter, BACKSEED.nmax), seed: mixSeed(p.seed, 7, base + i) } };
+    }), nTrace, function(job, d) { roots[job.idx] = d; }, ui.progress);
+    if (!ui.live()) return null;
+    // The proposal q: a mixture of boxes, one around each root, as wide as BACKSEED.box times the view's preimage there
+    // (at most a grid cell), picked with probability proportional to p times their area, so q looks like p nearby.
+    var bc = [], bw = [], nRoots = 0;
+    roots.forEach(function(r, i) {
+      for (var k = 0; k < r.pts.length; k += 2) { bc.push(r.pts[k], r.pts[k + 1]); bw.push(Math.min(grid.h, BACKSEED.box * r.f[k / 2])); nRoots++; }
+    });
+    if (nRoots === 0) throw new Error('No starting orbit reaches this view, not even seeded backwards. Raise the max iterations.');
+    var wTot = grid.cum[grid.cum.length - 1], dens = 1 / (wTot * grid.h * grid.h), bcum = new Float64Array(nRoots), bsum = 0;
+    for (var k = 0; k < nRoots; k++) bcum[k] = bsum += weight(grid, bc[2 * k], bc[2 * k + 1]) * bw[k] * bw[k] + 1e-300;
+    var mix = BACKSEED.mix;
+    draw = function(gp) {
+      if (grand() < mix) { pick(grid, grand, gp); return 1; }
+      var x = grand() * bsum, q0 = 0, q1 = nRoots - 1;
+      while (q0 < q1) { var mid = (q0 + q1) >> 1; if (bcum[mid] > x) q1 = mid; else q0 = mid + 1; }
+      gp[0] = bc[2 * q0] + (2 * grand() - 1) * bw[q0];
+      gp[1] = bc[2 * q0 + 1] + (2 * grand() - 1) * bw[q0];
+      return 1;
+    };
+    // q's density at a point: its boxes' shares over their areas, summed over the boxes that hold it
+    qDensity = function(x, y) {
+      var d = 0, prev = 0;
+      for (var k = 0; k < nRoots; k++) {
+        var share = bcum[k] - prev; prev = bcum[k];
+        if (Math.abs(x - bc[2 * k]) <= bw[k] && Math.abs(y - bc[2 * k + 1]) <= bw[k]) d += share / (4 * bw[k] * bw[k]);
+      }
+      return mix * weight(grid, x, y) * dens + (1 - mix) * d / bsum;
+    };
+    found = []; foundF = []; nFound = 0; seeded = 0;
+    await seedMore();
+    if (!ui.live()) return null;
+    if (nFound === 0) throw new Error('No starting orbit reaches this view, not even seeded backwards. Raise the max iterations.');
+  }
+  // Seeded backwards, each seed counts with its importance weight p/q: the chains then still start in proportion to
+  // p·f, and fsum / seeded still estimates E_p[f] (over the boxes' reach).
   var seeds = new Float64Array(2 * nFound), cum = new Float64Array(nFound), o = 0, fsum = 0;
   found.forEach(function(f, i) {
     seeds.set(f, 2 * o);
-    foundF[i].forEach(function(v) { cum[o++] = fsum += v; });
+    foundF[i].forEach(function(v, k) {
+      if (qDensity) v *= weight(grid, f[2 * k], f[2 * k + 1]) * dens / qDensity(f[2 * k], f[2 * k + 1]);
+      cum[o++] = fsum += v;
+    });
   });
+  // seeds found backwards carry weights, which the pool does not keep
+  if (metro && base === 0 && !back) seedPool = { key: poolKey(p, grid), b: view.b, mirror: view.mirror, pts: seeds.slice(), tested: seeded };
+  var burn = ms.burn;
 
   // 2b. one chain per sample. The chains' target is proportional to f, so each start is drawn from the seeds with
   // probability proportional to f: the chains then start in their stationary distribution and need no burn-in.
@@ -333,11 +423,11 @@ async function batch(p, n, base, grid, ms, bisection, known, nTrace, stage, ui) 
     while (q0 < q1) { var mid = (q0 + q1) >> 1; if (cum[mid] > x) q1 = mid; else q0 = mid + 1; }
     starts[2 * j] = seeds[2 * q0]; starts[2 * j + 1] = seeds[2 * q0 + 1];
   }
-  stage('Metropolis', lo + 5, 95, n * (ms.burn + ms.chain));
+  stage('Metropolis', lo + 5, 95, n * (burn + ms.chain));
   var fsteps = 0;
   await runJobs(chunks(n, nTrace, 16, 1).map(function(c, i) {
     var slice = starts.slice(2 * c[0], 2 * c[1]);
-    return { msg: { cmd: 'metro', pts: slice, steps: ms.chain, burn: ms.burn, large: ms.large, rmin: ms.rmin, rmax: ms.rmax, seed: mixSeed(p.seed, 4, base + i) }, transfer: [slice.buffer] };
+    return { msg: { cmd: 'metro', pts: slice, steps: ms.chain, burn: burn, large: ms.large, rmin: ms.rmin, rmax: ms.rmax, seed: mixSeed(p.seed, 4, base + i) }, transfer: [slice.buffer] };
   }), nTrace, function(job, d) { fsteps += d.fsteps; }, ui.progress, true);   // pinned: fractional weights, whose sums depend on their order
-  return ui.live() ? { fsum: fsum, seeded: seeded, fsteps: fsteps } : null;
+  return ui.live() ? { fsum: fsum, seeded: seeded, fsteps: fsteps, back: back, burn: burn } : null;
 }

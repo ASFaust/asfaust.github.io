@@ -30,6 +30,8 @@ function syncInputs() {
   });
   Object.keys(NUMBER_IDS).forEach(function(k) { $('p-' + NUMBER_IDS[k]).value = st[k]; });
   $('p-sampler').value = st.sampler;
+  $('p-seeding').value = st.seeding;
+  document.querySelectorAll('.zoom-only').forEach(function(el) { el.classList.toggle('hidden', fullBounds()); });
   var metro = !fullBounds(), bisection = st.sampler === 'bisection';
   document.querySelectorAll('.bisection-only').forEach(function(el) { el.classList.toggle('hidden', !bisection); });
   document.querySelectorAll('.density-only').forEach(function(el) { el.classList.toggle('hidden', bisection); });
@@ -103,8 +105,8 @@ async function generate() {
     view.reset();
     render();
     lastSecs = (performance.now() - t0) / 1000;
-    var missing = !isWhole(r.b) && !refFor(r);
-    showStats(missing ? ' · rendering the whole set for its brightness…' : '');
+    var missing = !isWhole(r.b) && !r.backward && !refFor(r);
+    showStats(missing ? ' · rendering the whole set for its brightness…' : undefined);
     // A zoom without a whole-set render to borrow its brightness from (a page loaded straight into a zoom, or new
     // settings) gets one now, in the same run, so that Stop keeps the zoom.
     if (missing) {
@@ -147,7 +149,7 @@ function refResolution(res) { return Math.max(128, Math.ceil(res / blockFor({ re
 var lastSecs = 0;             // time of the last render, not counting its background reference
 function showStats(note) {
   var r = result;
-  if (note === undefined) note = isWhole(r.b) ? '' : refFor(r) ? ' · brightness of the whole set' : ' · brightness of this view only';
+  if (note === undefined) note = isWhole(r.b) ? '' : (r.backward ? ' · seeded backwards' : '') + (refFor(r) ? ' · brightness of the whole set' : ' · brightness of this view only');
   $('stats').textContent = r.total.toLocaleString('en-US') + ' orbits in ' + lastSecs.toFixed(1) + ' s on ' + nCores + ' threads' + note;
 }
 
@@ -172,7 +174,9 @@ function setStatus(text) {
 
 // ---------- display ----------
 function showLengthNote() { $('lengthNote').classList.toggle('hidden', !(st.colour_mode === 'length' && result && result.bands !== 3)); }
-function refFor(r) { return !isWhole(r.b) && reference && reference.key === r.key ? reference.result : null; }
+// A zoom seeded backwards keeps its own brightness: its norm varies by about ±30 % from seed to seed (the seeds' weights),
+// and deep zooms are too faint for the whole set's brightness anyway.
+function refFor(r) { return !isWhole(r.b) && !r.backward && reference && reference.key === r.key ? reference.result : null; }
 // The canvas shows a preview summed down to about the stage's size in device pixels (display.pooled), so that the
 // display settings stay quick at any resolution. Saving renders the full resolution with the preview's statistics.
 function blockFor(r) { return Math.max(1, Math.floor(r.res / Math.max(256, Math.ceil(stage.clientWidth * (window.devicePixelRatio || 1))))); }
@@ -280,6 +284,7 @@ Object.keys(NUMBER_IDS).forEach(function(k) {
     writeHash();
   });
 });
+$('p-seeding').addEventListener('change', function() { st.seeding = this.value; writeHash(); });
 $('p-sampler').addEventListener('change', function() { setState(Object.assign({}, st, { sampler: this.value })); syncInputs(); writeHash(); });
 $('p-scale').addEventListener('change', function() { st.scale_mode = this.value; syncInputs(); scheduleRender(); writeHash(); });
 $('p-balance').addEventListener('input', function() { st.balance = +this.value; $('v-balance').textContent = st.balance.toFixed(2); writeHash(); });
