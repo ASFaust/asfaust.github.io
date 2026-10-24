@@ -52,6 +52,11 @@
         <summary>Shape</summary>
         <div class="params">
           <div class="param wide">
+            <label for="p-example"><span>Favourites</span></label>
+            <small>the shapes from the catalogue, each with its chain of optimizers and its look</small>
+            <select id="p-example"></select>
+          </div>
+          <div class="param wide">
             <label for="p-notation"><span>Notation</span></label>
             <div class="row">
               <input type="text" class="mono" id="p-notation" spellcheck="false" autocomplete="off" autocapitalize="off">
@@ -76,11 +81,6 @@
             <label for="p-named"><span>Named shapes</span></label>
             <small>Archimedean and Catalan solids are all one operator away from a Platonic one</small>
             <select id="p-named"></select>
-          </div>
-          <div class="param wide">
-            <label for="p-example"><span>Examples</span></label>
-            <small>shapes worth seeing, each with its chain of optimizers and its look</small>
-            <select id="p-example"></select>
           </div>
         </div>
       </details>
@@ -220,6 +220,11 @@
             <label><span>Tone</span></label>
             <small>the one colour of the faces</small>
             <oklch-picker id="p-tone" aria-label="Tone"></oklch-picker>
+          </div>
+          <div class="param" data-k="grain">
+            <label for="p-grain"><span>Grain</span><span id="v-grain"></span></label>
+            <small>specks and a soft mottle over the whole picture, like paper</small>
+            <input type="range" id="p-grain" min="0" max="1" step="0.05">
           </div>
           <div class="param" data-k="sss">
             <label for="p-sss"><span>Subsurface</span><span id="v-sss"></span></label>
@@ -395,6 +400,7 @@
             <select id="p-bg">
               <option value="light">Light</option>
               <option value="dark">Dark</option>
+              <option value="paper">Paper</option>
             </select>
           </div>
           <div class="param">

@@ -57,6 +57,25 @@ const FAR = 1e9;   // the distance to a line that does not count
 // cut away. With uScreen the distances are measured in pixels instead: an affine function divided
 // by the length of its screen gradient is the distance in pixels to where it is zero, so the band
 // keeps its width however the face is tilted (each face paints half the line).
+// Paper grain (R10): specks and a soft mottle laid over the finished picture, darkening it a
+// little. Fixed in the picture, not on the shape, so it does not crawl as the shape turns; its scale
+// follows the picture's height, so an export of any size looks like the view.
+const GRAIN_FRAGMENT = `
+uniform float uGrain;
+uniform float uHeight;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0)), f.x), f.y);
+}
+void main() {
+  vec2 p = gl_FragCoord.xy / uHeight * 800.0;
+  float speck = pow(hash(floor(p)), 6.0);
+  float mottle = noise(p / 9.0) * 0.6 + noise(p / 3.0) * 0.4;
+  gl_FragColor = vec4(0.0, 0.0, 0.0, uGrain * (0.18 * speck + 0.07 * mottle));
+}`;
+
 function paintEdges(material, uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
@@ -164,11 +183,19 @@ export class Viewer {
     this.group.add(this.form, this.inset);
 
     this.lines = new Lines();
+    this.grain = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms: { uGrain: { value: 0 }, uHeight: { value: 1 } },
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: GRAIN_FRAGMENT, transparent: true, depthTest: false, depthWrite: false,
+    }));
+    this.grain.frustumCulled = false;
+    this.grainScene = new THREE.Scene();
+    this.grainScene.add(this.grain);
 
     this.opts = {
       style: 'solid', material: 'matte', colouring: 'origin', palette: [[0.8, 0.8, 0.8]],
       edge: 0.5, lines: 'drawn', hidden: 0, depthWidth: 0, fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false, ink: 'auto', dark: false,
-      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0, inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0,
+      iri: { bands: 1, angle: 1, holo: 0, cycles: 1 }, hue: 230, chroma: 0.12, spec: 0, rough: 0.35, ior: 1.5, sss: 0, inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0, grain: 0,
       orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', stage: '#ffffff',
     };
     this.faceOrbit = null;
@@ -622,6 +649,7 @@ export class Viewer {
     if (this.tracer.samples >= TRACE_MAX && this.traced) return;
     this.tracer.render();
     this.drawLines(true);
+    this.drawGrain();
     this.traced = true;
     if (this.onTrace) this.onTrace(this.tracer.samples);
   }
@@ -654,6 +682,19 @@ export class Viewer {
     this.uniforms.uRef.value = this.camera.position.distanceTo(this.target);
     this.renderer.render(this.scene, this.camera);
     this.drawLines(false);
+    this.drawGrain();
+  }
+
+  drawGrain() {
+    const g = this.opts.grain, r = this.renderer;
+    if (!g) return;
+    const m = this.grain.material.uniforms;
+    m.uGrain.value = g;
+    m.uHeight.value = r.getDrawingBufferSize(new THREE.Vector2()).y;
+    const auto = r.autoClear;
+    r.autoClear = false;
+    r.render(this.grainScene, this.camera);
+    r.autoClear = auto;
   }
 
   // The drawn lines over the picture. Over a traced picture they stand in for every edge type,
@@ -768,6 +809,7 @@ export class Viewer {
           await new Promise(res => requestAnimationFrame(res));
         }
         this.drawLines(true);
+        this.drawGrain();
       } else this.draw();
       return await new Promise(res => this.canvas.toBlob(res, 'image/png'));
     } finally {

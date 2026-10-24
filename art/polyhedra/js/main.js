@@ -19,7 +19,7 @@ const DEFAULTS = {
   text: 'tkD', steps: [{ opt: 'canonical' }],
   style: 'solid', material: 'matte', colouring: 'origin', palette: 'generated', custom: [],
   hue: 230, chroma: 0.12, edge: 0.5, lines: 'drawn', depthWidth: 0, hidden: 0.25, ink: 'auto', fov: 30, blur: 0, focus: 0, gap: 0, thick: 0.3, filmBand: 2.5, spin: false,
-  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom', inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0,
+  iriBands: 1, iriAngle: 1, iriHolo: 0, iriCycles: 1, spec: 0, rough: 0.35, ior: 1.5, sss: 0, look: 'custom', inner: 0, fog: 0, form: 'faces', tubeWidth: 0.15, tubeSmooth: 2, glow: 0, metal: 0, inset: 0, grain: 0,
   orient: 'free', ground: 'none', lift: 0, elev: 0, azim: 0, light: 'soft', bg: '',
 };
 const MAX_SWATCHES = 16;
@@ -59,6 +59,7 @@ function sanitize(s) {
     rough: NUM(s.rough, 0, 1, DEFAULTS.rough),
     ior: NUM(s.ior, 1, 2.5, DEFAULTS.ior),
     sss: NUM(s.sss, 0, 1, DEFAULTS.sss),
+    grain: NUM(s.grain, 0, 1, DEFAULTS.grain),
     inner: NUM(s.inner, 0, 1, DEFAULTS.inner),
     fog: NUM(s.fog, 0, 1, DEFAULTS.fog),
     form: ONE(s.form, ['faces', 'soft', 'tubes'], DEFAULTS.form),
@@ -78,14 +79,14 @@ function sanitize(s) {
     azim: Math.round(NUM(s.azim, -180, 180, DEFAULTS.azim)),
     light: ONE(s.light, LIGHT_NAMES, DEFAULTS.light),
     // '' follows the page's theme until a background is chosen
-    bg: ONE(s.bg, ['light', 'dark'], ''),
+    bg: ONE(s.bg, ['light', 'dark', 'paper'], ''),
   };
 }
 
 const KEYS = {
   text: 'n', steps: 'm', style: 'st', material: 'mat',
   colouring: 'c', palette: 'pal', custom: 'pc', hue: 'h', chroma: 'ch', edge: 'e', lines: 'ln', depthWidth: 'ed', hidden: 'hid', ink: 'ink', fov: 'fov', blur: 'dof', focus: 'fo', gap: 'gap', thick: 'thk', filmBand: 'fb', spin: 'spin',
-  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk', inner: 'in', fog: 'fog', form: 'fm', tubeWidth: 'tw', tubeSmooth: 'tr', glow: 'gl', metal: 'mt', inset: 'ins',
+  iriBands: 'ib', iriAngle: 'ia', iriHolo: 'iho', iriCycles: 'icy', spec: 'sp', rough: 'ro', ior: 'ior', sss: 'ss', look: 'lk', inner: 'in', fog: 'fog', form: 'fm', tubeWidth: 'tw', tubeSmooth: 'tr', glow: 'gl', metal: 'mt', inset: 'ins', grain: 'gn',
   orient: 'or', ground: 'gr', lift: 'lift', elev: 'el', azim: 'az', light: 'li', bg: 'bg',
 };
 
@@ -619,7 +620,7 @@ function randomText() {
 // the iridescent look's sliders and its shine: [input, state key, digits shown]
 const IRI_SLIDERS = [['p-filmband', 'filmBand', 1], ['p-ibands', 'iriBands', 2], ['p-iangle', 'iriAngle', 2], ['p-iholo', 'iriHolo', 2],
   ['p-icycles', 'iriCycles', 2], ['p-spec', 'spec', 2], ['p-rough', 'rough', 2],
-  ['p-tubewidth', 'tubeWidth', 2], ['p-tubesmooth', 'tubeSmooth', 0], ['p-glow', 'glow', 2], ['p-metal', 'metal', 2], ['p-inset', 'inset', 2]];
+  ['p-tubewidth', 'tubeWidth', 2], ['p-tubesmooth', 'tubeSmooth', 0], ['p-glow', 'glow', 2], ['p-metal', 'metal', 2], ['p-inset', 'inset', 2], ['p-grain', 'grain', 2]];
 
 // The looks (R1): a choice that sets the appearance controls to a starting point and shows only the
 // ones it uses. The state stays the controls' own, so a link replays exactly whatever was tuned
@@ -627,8 +628,8 @@ const IRI_SLIDERS = [['p-filmband', 'filmBand', 1], ['p-ibands', 'iriBands', 2],
 const SCULPTED = s => ({ style: 'solid', colouring: 'single', palette: 'custom', custom: [(s.palette === 'custom' && s.colouring === 'single' && s.custom[0]) || '#eeeeea'], ground: s.ground === 'none' ? 'backdrop' : s.ground });
 const LOOKS = {
   custom: { set: () => ({}), controls: null },
-  paper: { set: () => ({ style: 'frame', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#f7f5f0'], ink: 'dark', lines: 'drawn', edge: 0.3, hidden: 0.25, gap: 0, sss: 0, bg: 'light', ground: 'none' }),
-    controls: ['style', 'tone', 'edge', 'lines', 'depthwidth', 'hidden'] },
+  paper: { set: () => ({ style: 'frame', material: 'matte', colouring: 'single', palette: 'custom', custom: ['#f7f5f0'], ink: 'dark', lines: 'drawn', edge: 0.3, hidden: 0.25, gap: 0, sss: 0, bg: 'paper', ground: 'none', grain: 0.5 }),
+    controls: ['style', 'tone', 'grain', 'edge', 'lines', 'depthwidth', 'hidden'] },
   mathy: { set: () => ({ style: 'solid', material: 'matte', colouring: 'sides', palette: 'generated', ink: 'dark', lines: 'drawn', edge: 0.4, gap: 0, sss: 0 }),
     controls: ['style', 'colouring', 'palette', 'hue', 'chroma', 'edge', 'lines', 'depthwidth', 'hidden', 'ink'] },
   sculpture: { set: s => ({ ...SCULPTED(s), material: 'matte', edge: 0, gap: 0, sss: 0.5 }),
@@ -653,7 +654,7 @@ const LOOKS = {
     controls: ['tone', 'sss', 'material', 'metal', 'rough'] },
 };
 // what the looks with their own form or stage leave behind is undone by the others
-const PLAIN = { form: 'faces', glow: 0, inset: 0, metal: 0 };
+const PLAIN = { form: 'faces', glow: 0, inset: 0, metal: 0, grain: 0 };
 
 function showLook() {
   $('p-look').value = st.look;
@@ -717,7 +718,7 @@ function showLook() {
     style: st.style, material: st.material, colouring: st.colouring, palette: currentPalette(),
     orient: st.orient, ground: st.ground, lift: st.lift, elev: st.elev, azim: st.azim, light: st.light, stage: stageBackground(),
     edge: st.edge, lines: st.lines, depthWidth: st.depthWidth, hidden: st.hidden, ink: st.ink, fov: st.fov, blur: st.blur, focus: st.focus, gap: st.gap, thick: st.thick, filmBand: st.filmBand, spin: st.spin,
-    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss, inner: st.inner, fog: st.fog, form: st.form, tubeWidth: st.tubeWidth, tubeSmooth: st.tubeSmooth, glow: st.glow, metal: st.metal, inset: st.inset,
+    iri: { bands: st.iriBands, angle: st.iriAngle, holo: st.iriHolo, cycles: st.iriCycles }, hue: st.hue, chroma: st.chroma, spec: st.spec, rough: st.rough, ior: st.ior, sss: st.sss, inner: st.inner, fog: st.fog, form: st.form, tubeWidth: st.tubeWidth, tubeSmooth: st.tubeSmooth, glow: st.glow, metal: st.metal, inset: st.inset, grain: st.grain,
     dark: background() === 'dark',
   });
   showSwatches();
@@ -817,6 +818,8 @@ function bindLook() {
     st.look = $('p-look').value;
     // the godrays' dark stage is the look's own, so leaving it brings the light back
     if (['godrays', 'glow'].includes(from) && !['godrays', 'glow', 'custom'].includes(st.look)) Object.assign(st, { light: 'soft', inner: 0, fog: 0 });
+    // and the paper's
+    if (from === 'paper' && st.look !== 'custom' && st.bg === 'paper') st.bg = '';
     if (st.look !== 'custom') Object.assign(st, PLAIN);
     Object.assign(st, LOOKS[st.look].set(st));
     showLook();
@@ -891,7 +894,7 @@ const fileName = ext => `polyhedron-${st.text}.${ext}`;
 // The scene's background: chosen, or else the theme's. The scene does not change with the theme
 // once a background is chosen.
 function background() { return st.bg || (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'); }
-function stageBackground() { return background() === 'dark' ? '#0f0f10' : '#ffffff'; }
+function stageBackground() { return { dark: '#0f0f10', paper: '#f3efe6' }[background()] || '#ffffff'; }
 $('saveBtn').addEventListener('click', () => {
   $('canvas').toBlob(b => b && download(b, fileName('png')), 'image/png');
 });

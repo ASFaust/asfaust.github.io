@@ -8,14 +8,13 @@ When you finish an item: move it to *Done* with the date and one line; put the f
 
 ## Rendering (R): [rendering.md](rendering.md)
 
-Suggested start: R21 (the owner tests RT; R20 and R22 are in), then R1 once the owner has confirmed the looks.
+Suggested start: R21 (the owner tests RT; R20 and R22 are in); the owner's next priority after rendering is O1, then X8.
 
 | ID | item | done when |
 |---|---|---|
-| R1 | **Looks instead of materials × palettes × styles.** A Look choice, part 1 built 2026-10-24 (menu with paper, mathy, sculpture, tiles, glass, iridescent; Tone; Subsurface, real in Blender, approximated in RT); godrays, tubes, glowing lines (with the metallic inset) and soft built the same day (`js/forms.js`: Catmull–Clark and an edge lattice; Light inside, Fog). Left: the owner's verdict, and deleting presets nothing uses. The owner kept all nine candidates (2026-10-24) and added a tenth, godrays (dark detached faces, a light inside, fog, light shafts between the cracks); refinements: subsurface scattering for white sculpture and white tiles, the glowing lines with a soft metallic shape inset to reflect them; each look with only its own controls; colour only in mathy; delete unused presets; old URLs map to the nearest look. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles) | The owner has picked the looks from sample renders, and the panel offers them. |
 | R8 | **Iridescent reworked**, built 2026-10-23 and reworked with the owner: a colour wheel at a phase mixed from bands, angle and holo, each with a slider (face rings tried and removed 2026-10-24), times Cycles, plus Specular and Roughness; per pixel in the fast view, baked on subdivided faces in RT, nodes in Blender. Owner to judge. → [R8](rendering.md#r8-iridescent-reworked) | Owner approves a render. |
 | R21 | **Render toggle** (the RT checkbox), built 2026-10-23, owner to test (it froze the desktop before the tile change; untested since). Then: light tuning, denoiser on or off by default. → [Render toggle](rendering.md#the-render-toggle-r21) | Sculpture renders with shadows and creases from the page, 2048² in under a minute, without freezing the desktop. |
-| R10 | **Paper finish**: off-white, grain, optional AO, maybe hatching. → [R10](rendering.md#r10-paper-finish) | Part of the paper look, approved by the owner. |
+| R10 | **Paper finish**, built 2026-10-24: Paper background and a Grain slider in the paper look. Owner to judge; AO and hatching not done. → [R10](rendering.md#r10-paper-finish) | Approved by the owner. |
 | R11–R19 | Older ideas: staging, glow lines and bloom, tubes, smooth subdivision, fake SSS, real glass, per-face painting, turntable export, orthographic camera. → [rendering.md](rendering.md#older-ideas-still-open) | Each when its look is confirmed. |
 
 ## Exploration (X): [exploration.md](exploration.md)
@@ -56,6 +55,7 @@ The owner has mostly stopped looking for new artsy optimizers (2026-10-23). One 
 
 ## Done
 
+- **2026-10-24.** R1 Looks: a Look menu with eleven looks (paper, mathy, sculpture, tiles, glass, iridescent, godrays, tubes, glowing lines, soft, plus custom), each with only its controls; Tone (the site's OKLCh picker), Subsurface, Refraction, Light inside, Fog, Form, Tube width, Rounding, Glow, Metal, Inset. Approved by the owner; no preset left unused; old URLs dropped by the owner. The Examples menu is now Favourites, at the top of Shape. → [R1](rendering.md#r1-looks-instead-of-materials--palettes--styles)
 - **2026-10-23.** X1 self-intersection test (`js/selfx.js`, `selfX` in `metrics()`), calibrated: 0 on every catalogue shape, many on stellations; X2 survey harness (`tests/survey.mjs`, CSV or JSON, optional screenshots). → [exploration.md](exploration.md#tools)
 - **2026-10-23.** R7 Detached solid faces: *Detach faces* and *Tile thickness* in Appearance (URL `gap`, `thk`); the tiles are drawn, traced, sent to Blender and saved as OBJ/STL in place of the faces (`js/tiles.js`). → [rendering.md](rendering.md#r7-detached-solid-faces)
 - **2026-10-23.** R4 Depth of field: *Depth of field* and *Focus* in the Scene panel (URL `dof`, `fo`), traced by RT (PhysicalCamera) and carried into the Blender scene; the fast view stays sharp, and the drawn lines stay sharp. Found on the way: a white background traced black (library bug, worked round). → [rendering.md](rendering.md#r4-depth-of-field)
