@@ -1,7 +1,7 @@
 {
  "format": 1,
  "built": "2026-10-27",
- "source": "136d180+changes",
+ "source": "09fe81c",
  "firmware": [
   {
    "version": "5.52",
@@ -316,6 +316,35 @@
      "old": "3846faf7e3fa41f600003946c8f25900fbf748fc",
      "new": "3846314644f2f143c8f2fe33984700bf00bf00bf",
      "why": "PadStore_Set, pad param 0x70 with new VARI bits: stop + re-trigger the pad's voices -> hook_vari_changed (switch them in place, app1/payload/vari.c)"
+    }
+   ]
+  },
+  {
+   "id": "tuner",
+   "name": "Guitar tuner",
+   "text": "Press BANK A and BANK B together on the main screen to open a tuner: it shows the nearest note and how many cents sharp or flat you are. It listens to the SP's output, input effects included, so keep other sounds quiet while tuning; EXT SOURCE is switched on so the input is heard. EXIT or the same two buttons take you back. Pressing VALUE steps through a few diagnostic screens and back.",
+   "group": null,
+   "payload": true,
+   "warning": null,
+   "doc": "docs/app1/topics/tuner.md",
+   "changes": [
+    {
+     "offset": 2207748,
+     "old": "8cb52380",
+     "new": "ec45fe83",
+     "why": "page record 93: handler slot 0x8023B58C -> cpage_host_slot (custom pages)"
+    },
+    {
+     "offset": 2418996,
+     "old": "b9391880",
+     "new": "0944fe83",
+     "why": "top screen vtable slot 0x18 (key down) -> hook_top_key_down (BANK A + B)"
+    },
+    {
+     "offset": 119152,
+     "old": "f0b581b0044640f6d010",
+     "new": "dff800f0d10ffe8300bf",
+     "why": "Audio_RxHandler (ITCM): 'push; sub sp; mov r4, r0; movw r0' -> 'ldr.w pc, [pc]' + address of hook_audio_rx + nop (receive word 0 into the tuner's ring; audio_rx_orig runs the four and continues at 0x1CA8A)"
     }
    ]
   }
