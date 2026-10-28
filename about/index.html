@@ -165,15 +165,6 @@
     <ul class="link-list">
       <li>
         <div class="link-title">
-          <a href="../CV.pdf">CV</a>
-        </div>
-        <div class="link-meta">
-          <span>Curriculum vitae</span>
-          <span class="domain">PDF</span>
-        </div>
-      </li>
-      <li>
-        <div class="link-title">
           <a href="https://www.youtube.com/@asfaust312">YouTube</a>
         </div>
         <div class="link-meta">
@@ -184,8 +175,9 @@
     </ul>
 
     <h2 class="section-gap">Contact</h2>
-    <p class="contact-hint">Slide until it makes sense.</p>
+    <p class="contact-hint">Slide until it makes sense, for email and CV.</p>
     <p class="contact" id="contact"></p>
+    <p class="contact" id="cv"></p>
     <div class="slider-wrap">
       <input type="range" id="emailSlider" min="0" max="300" value="0" aria-label="Email decoder">
       <span class="slider-mark" id="sliderMark"></span>
@@ -218,6 +210,7 @@
       var slider = document.getElementById('emailSlider');
       var mark = document.getElementById('sliderMark');
       var contact = document.getElementById('contact');
+      var cv = document.getElementById('cv');
       var looksValid = /^[\w.+-]+@[\w-]+\.[a-z]{2,}$/;
 
       function shift(s, i) {
@@ -250,8 +243,15 @@
           a.textContent = text;
           contact.textContent = '';
           contact.appendChild(a);
+          // The CV link is only built here, so it never sits in the page source.
+          var c = document.createElement('a');
+          c.href = '../CV.pdf';
+          c.textContent = 'CV.pdf';
+          cv.textContent = '';
+          cv.appendChild(c);
         } else {
           contact.textContent = text;
+          cv.textContent = '';
         }
       }
       slider.addEventListener('input', update);
